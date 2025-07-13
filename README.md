@@ -2,6 +2,8 @@
 
 PyFr is the **game-changing Python microservice framework** that eliminates weeks of boilerplate setup and delivers **production-ready services in under 10 minutes**. Inspired by GoFr's revolutionary architecture and powered by cutting-edge tools like UV, Ruff, and OpenTelemetry, it's the framework that transforms microservice development from painful to **absolutely delightful**. Perfect for teams who demand excellence without complexity!
 
+> PyFr is influenced by [GoFr](https://gofr.dev), the Go microservice framework that has redefined how teams build and deploy services. With PyFr, you get the same **context-driven architecture** and **developer experience excellence**, but tailored for Python's rich ecosystem.
+
 ## **🔥 The Painful Reality We're Solving**
 Building Python microservices is **unnecessarily brutal**. Developers waste **2-4 weeks** configuring observability, database adapters, testing frameworks, CI/CD pipelines, and deployment infrastructure. Every team reinvents the same wheel, leading to:
 - 💸 **Massive time waste** on repetitive boilerplate
