@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from collections.abc import MutableMapping
 from typing import Any
 
 import orjson
@@ -22,10 +23,44 @@ def _json_dumps(obj: Any, default: Any = None, **_: Any) -> str:
     return orjson.dumps(obj, default=default).decode()
 
 
-def _shared_processors() -> list[Processor]:
+def _bind_resource_attributes(
+    *, service_name: str, service_version: str, environment: str
+) -> Processor:
+    """Bind the three static resource attributes spec 7.6 requires.
+
+    `trace_id`/`span_id` are legitimately M2 — they need an active
+    OpenTelemetry span. These three are plain strings already known at
+    configuration time, so every record can carry them from line one:
+    without `service.name` you cannot filter one service's records out of
+    a shared backend, and without `service.version` you cannot tell which
+    release produced a line during a rollout.
+    """
+    resource = {
+        "service.name": service_name,
+        "service.version": service_version,
+        "deployment.environment": environment,
+    }
+
+    def add_resource_attributes(
+        logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        event_dict.update(resource)
+        return event_dict
+
+    return add_resource_attributes
+
+
+def _shared_processors(
+    *, service_name: str, service_version: str, environment: str
+) -> list[Processor]:
     return [
         # Correlation id and anything else middleware bound for this request.
         structlog.contextvars.merge_contextvars,
+        _bind_resource_attributes(
+            service_name=service_name,
+            service_version=service_version,
+            environment=environment,
+        ),
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
@@ -41,9 +76,15 @@ def configure_logging(
     environment: str,
     level: str,
     levels: dict[str, str],
+    service_name: str = "reference-service",
+    service_version: str = "0.0.0",
 ) -> None:
     """Configure structlog and route the standard library through it."""
-    shared = _shared_processors()
+    shared = _shared_processors(
+        service_name=service_name,
+        service_version=service_version,
+        environment=environment,
+    )
 
     renderer: Processor = (
         structlog.dev.ConsoleRenderer()

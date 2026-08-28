@@ -4156,6 +4156,90 @@ actually true:
 | `APP_OTEL__LOGS_ENABLED` | `false` | Reserved for M2; would double log ingest if enabled alongside a platform log agent |
 ```
 
+### Finding 5 — log records lacked the three resource attributes the spec requires
+
+Spec 7.6 names `service.name`, `service.version` and `deployment.environment`
+in the field contract, and the spec's M0 row claims structured logging "in
+full". Records carried `timestamp`, `level`, `event`, `logger`,
+`correlation_id` only. (`trace_id`/`span_id` are legitimately M2 — they
+need an active OpenTelemetry span; these three are static strings already
+available at configuration time.)
+
+Edits Task 3 Step 3's `observability/logging.py` — a new processor binds
+the three constants into every record, structlog-native or bridged from
+the standard library, and `configure_logging` gains two keyword
+parameters (defaulted, so the many test call sites that do not care about
+these values did not need to change):
+
+```python
+def _bind_resource_attributes(
+    *, service_name: str, service_version: str, environment: str
+) -> Processor:
+    resource = {
+        "service.name": service_name,
+        "service.version": service_version,
+        "deployment.environment": environment,
+    }
+
+    def add_resource_attributes(
+        logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        event_dict.update(resource)
+        return event_dict
+
+    return add_resource_attributes
+
+
+def _shared_processors(
+    *, service_name: str, service_version: str, environment: str
+) -> list[Processor]:
+    return [
+        structlog.contextvars.merge_contextvars,
+        _bind_resource_attributes(
+            service_name=service_name,
+            service_version=service_version,
+            environment=environment,
+        ),
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.dict_tracebacks,
+    ]
+
+
+def configure_logging(
+    *,
+    environment: str,
+    level: str,
+    levels: dict[str, str],
+    service_name: str = "reference-service",
+    service_version: str = "0.0.0",
+) -> None:
+    """Configure structlog and route the standard library through it."""
+    shared = _shared_processors(
+        service_name=service_name,
+        service_version=service_version,
+        environment=environment,
+    )
+```
+
+Edits Task 9 Step 6's `main.py` — the two new values are already in scope:
+
+```python
+    configure_logging(
+        environment=resolved.environment,
+        level=resolved.log.level,
+        levels=resolved.log.levels,
+        service_name=resolved.service_name,
+        service_version=__version__,
+    )
+```
+
+Adds `test_records_carry_the_three_static_resource_attributes` and
+`test_a_standard_library_record_also_carries_resource_attributes` to
+Task 3's `tests/unit/test_logging.py`.
+
 ---
 
 ## Definition of done for M0

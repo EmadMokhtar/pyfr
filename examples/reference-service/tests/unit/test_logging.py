@@ -29,6 +29,55 @@ def test_structlog_call_renders_json_to_stdout(
     assert "timestamp" in payload
 
 
+def test_records_carry_the_three_static_resource_attributes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Spec 7.6's field contract, minus trace_id/span_id (legitimately M2).
+
+    Without service.name you cannot filter one service's records out of a
+    shared backend; without service.version you cannot tell which release
+    produced a line during a rollout.
+    """
+    configure_logging(
+        environment="production",
+        level="info",
+        levels={},
+        service_name="reference-service",
+        service_version="1.2.3",
+    )
+
+    structlog.get_logger().info("order.placed")
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["service.name"] == "reference-service"
+    assert payload["service.version"] == "1.2.3"
+    assert payload["deployment.environment"] == "production"
+
+
+def test_a_standard_library_record_also_carries_resource_attributes(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The resource attributes go through `foreign_pre_chain` too.
+
+    A library logging through the standard `logging` module must not
+    bypass the same shared processors a structlog call goes through.
+    """
+    configure_logging(
+        environment="production",
+        level="info",
+        levels={},
+        service_name="reference-service",
+        service_version="1.2.3",
+    )
+
+    logging.getLogger("some.library").warning("connection retried")
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["service.name"] == "reference-service"
+    assert payload["service.version"] == "1.2.3"
+    assert payload["deployment.environment"] == "production"
+
+
 def test_standard_library_record_gets_the_same_shape(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

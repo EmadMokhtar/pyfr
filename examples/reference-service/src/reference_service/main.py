@@ -27,6 +27,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         environment=resolved.environment,
         level=resolved.log.level,
         levels=resolved.log.levels,
+        service_name=resolved.service_name,
+        service_version=__version__,
     )
 
     @asynccontextmanager
