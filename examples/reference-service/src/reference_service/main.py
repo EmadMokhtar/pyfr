@@ -15,7 +15,7 @@ from reference_service.settings import Settings, load_settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    resolved = settings or load_settings()
+    resolved = settings if settings is not None else load_settings()
 
     configure_logging(
         environment=resolved.environment,
