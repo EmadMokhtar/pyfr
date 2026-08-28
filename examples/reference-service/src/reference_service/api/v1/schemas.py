@@ -23,7 +23,11 @@ class MoneyOut(BaseModel):
 class OrderLineIn(BaseModel):
     sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     quantity: Annotated[int, Field(gt=0)]
-    unit_amount: Annotated[Decimal, Field(ge=0)]
+    # Mirrors domain.order.Money.amount: without these bounds, a value the
+    # domain rejects (e.g. "10.123", three decimal places) passes this
+    # schema and blows up as an unhandled ValidationError deep inside the
+    # use case instead of a 422 at the edge.
+    unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
 

@@ -87,6 +87,24 @@ def test_an_order_with_no_lines_is_refused(client: TestClient) -> None:
     assert client.post("/api/v1/orders", json=payload).status_code == 422
 
 
+def test_too_many_decimal_places_is_a_422_not_a_500(client: TestClient) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    `OrderLineIn.unit_amount` used to accept any non-negative `Decimal`,
+    while `domain.order.Money.amount` caps it at two decimal places. A
+    value like "10.123" used to pass the HTTP schema and the application
+    command, then blow up inside `PlaceOrder` as a raw pydantic
+    `ValidationError` — neither a `DomainError` nor a
+    `RequestValidationError`, so the catch-all handler answered 500 for
+    ordinary bad input. Confirmed by reverting the fix and rerunning this
+    test: it failed with `assert 500 == 422`.
+    """
+    response = client.post("/api/v1/orders", json=a_payload(amount="10.123"))
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
 def test_the_real_application_pins_its_middleware_order(
     settings: Settings,
     capsys: pytest.CaptureFixture[str],

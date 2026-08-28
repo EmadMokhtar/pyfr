@@ -3928,6 +3928,91 @@ precommit:
 check: lint typecheck imports test precommit
 ```
 
+### Finding 2 — a well-formed request returned 500 instead of 422
+
+Three layers constrained the same field differently: the api schema's
+`OrderLineIn.unit_amount` only required `ge=0`; the command's
+`PlaceOrderLine.unit_amount` had no constraint at all; the domain's
+`Money.amount` requires `max_digits=14, decimal_places=2`. A value like
+`"10.123"` passed the HTTP schema and the command, then raised a raw
+`pydantic_core.ValidationError` inside `PlaceOrder` — neither a
+`DomainError` nor a `RequestValidationError` — so the catch-all handler
+answered 500. Confirmed pre-fix: with the fix reverted,
+`tests/api/test_orders.py::test_too_many_decimal_places_is_a_422_not_a_500`
+does not merely fail an assertion — the client fixture's
+`raise_server_exceptions=True` (the default) surfaces the crash directly:
+
+```
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Money
+amount
+  Decimal input should have no more than 2 decimal places [type=decimal_max_places, input_value=Decimal('10.123'), input_type=Decimal]
+FAILED tests/api/test_orders.py::test_too_many_decimal_places_is_a_422_not_a_500
+```
+
+Edits Task 12 Step 3's `api/v1/schemas.py` — `OrderLineIn.unit_amount` gains
+the domain's bounds:
+
+```python
+class OrderLineIn(BaseModel):
+    sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    quantity: Annotated[int, Field(gt=0)]
+    # Mirrors domain.order.Money.amount: without these bounds, a value the
+    # domain rejects (e.g. "10.123", three decimal places) passes this
+    # schema and blows up as an unhandled ValidationError deep inside the
+    # use case instead of a 422 at the edge.
+    unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
+    currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
+```
+
+Edits Task 6 Step 3's `application/dtos.py` — `PlaceOrderLine` gains the
+same bounds plus the `sku`/`currency` constraints it lacked, so the command
+is trustworthy for a non-HTTP caller too:
+
+```python
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+
+class PlaceOrderLine(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    # These mirror the api schema's and the domain's constraints. A command
+    # is the application layer's own input type — it must stand on its own
+    # for a non-HTTP caller, not rely on api/v1/schemas.py having already
+    # filtered bad input.
+    sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    quantity: Annotated[int, Field(gt=0)]
+    unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
+    currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
+```
+
+Edits Task 10 Step 3's `api/errors.py` — a handler for a raw
+`pydantic.ValidationError`, registered as a net for the next place a
+deeper layer validates input a shallower layer already accepted:
+
+```python
+from pydantic import ValidationError as PydanticValidationError
+
+    @app.exception_handler(PydanticValidationError)
+    async def _pydantic_validation_error(
+        request: Request, exc: PydanticValidationError
+    ) -> JSONResponse:
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/validation_error",
+                title="Request validation failed",
+                status=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc.errors()),
+                instance=request.url.path,
+            )
+        )
+```
+
+Adds `test_too_many_decimal_places_is_a_422_not_a_500` to Task 12's
+`tests/api/test_orders.py` and
+`test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500` (plus a
+`/deep-validation` route on the test app) to Task 10's
+`tests/api/test_errors.py`.
+
 All of the following must hold before M1 starts:
 
 - [ ] `just check` exits 0 — lint, mypy, import-linter and the full test suite.

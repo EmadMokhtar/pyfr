@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
 
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 
@@ -80,6 +81,24 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/validation_error",
+                title="Request validation failed",
+                status=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc.errors()),
+                instance=request.url.path,
+            )
+        )
+
+    @app.exception_handler(PydanticValidationError)
+    async def _pydantic_validation_error(
+        request: Request, exc: PydanticValidationError
+    ) -> JSONResponse:
+        # A net for the next place a raw pydantic model validates input
+        # a shallower layer already accepted: without this, such a error
+        # is neither a DomainError nor a RequestValidationError, so it falls
+        # through to the catch-all below and becomes an unearned 500.
         return _problem_response(
             ProblemDetail(
                 type=f"{PROBLEM_TYPE_BASE}/validation_error",

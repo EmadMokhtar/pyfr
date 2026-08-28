@@ -11,16 +11,20 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class PlaceOrderLine(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    sku: str
+    # These mirror the api schema's and the domain's constraints. A command
+    # is the application layer's own input type — it must stand on its own
+    # for a non-HTTP caller, not rely on api/v1/schemas.py having already
+    # filtered bad input.
+    sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
     quantity: Annotated[int, Field(gt=0)]
-    unit_amount: Decimal
-    currency: str
+    unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
+    currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
 
 class PlaceOrderCommand(BaseModel):

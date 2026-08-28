@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import BaseModel, Field
 
 from reference_service.api.errors import register_error_handlers, status_for
 from reference_service.domain.errors import DomainError, OrderNotFoundError
@@ -11,6 +12,10 @@ from reference_service.domain.order import OrderId
 class UnmappedError(DomainError):
     code = "unmapped"
     title = "Unmapped rule"
+
+
+class _StrictlyPositive(BaseModel):
+    value: int = Field(gt=0)
 
 
 def build_app() -> FastAPI:
@@ -28,6 +33,13 @@ def build_app() -> FastAPI:
     @app.get("/exploding")
     async def exploding() -> None:
         raise RuntimeError("a secret internal detail")
+
+    @app.get("/deep-validation")
+    async def deep_validation() -> None:
+        # A raw pydantic model validated somewhere deep in a call stack,
+        # the way a use case validates a domain value object — not the
+        # request body FastAPI already validated on the way in.
+        _StrictlyPositive(value=-1)
 
     return app
 
@@ -61,6 +73,22 @@ def test_an_unexpected_error_does_not_leak_internals() -> None:
     body = response.json()
     assert "a secret internal detail" not in response.text
     assert body["title"] == "Internal server error"
+
+
+def test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500() -> None:
+    """The net: a raw pydantic ValidationError raised below the api layer.
+
+    Without a handler for it, this is neither a DomainError nor a
+    RequestValidationError, so it falls through to the catch-all and
+    answers 500 for input FastAPI's own request validation never saw.
+    """
+    client = TestClient(build_app())
+
+    response = client.get("/deep-validation")
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["title"] == "Request validation failed"
 
 
 def test_request_validation_produces_problem_details() -> None:
