@@ -1291,6 +1291,7 @@ git commit -m "feat: add domain errors and order repository port"
 - Create: `examples/reference-service/src/reference_service/application/dtos.py`
 - Create: `examples/reference-service/src/reference_service/application/place_order.py`
 - Create: `examples/reference-service/src/reference_service/application/get_order.py`
+- Create: `examples/reference-service/tests/fakes.py` — the shared `FakeOrderRepository`, so the two test files below do not each carry an identical copy
 - Test: `examples/reference-service/tests/unit/test_place_order.py`
 - Test: `examples/reference-service/tests/unit/test_get_order.py`
 
@@ -1302,7 +1303,35 @@ git commit -m "feat: add domain errors and order repository port"
   - `PlaceOrder(orders: OrderRepository)` with `async def __call__(self, command: PlaceOrderCommand) -> Order`
   - `GetOrder(orders: OrderRepository)` with `async def __call__(self, order_id: OrderId) -> Order`, raising `OrderNotFoundError`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Write the shared fake, then the failing tests**
+
+`tests/fakes.py` — one copy, imported by both test files below. Defining it
+twice would be verbatim duplication of a logic block:
+
+```python
+"""Test doubles shared across the suite."""
+
+from __future__ import annotations
+
+from reference_service.domain.order import Order, OrderId
+
+
+class FakeOrderRepository:
+    """An in-memory stand-in satisfying the OrderRepository port.
+
+    Hand-written rather than reusing the real adapter, so the application
+    tests demonstrate that a use case needs no infrastructure whatsoever.
+    """
+
+    def __init__(self) -> None:
+        self.saved: list[Order] = []
+
+    async def get(self, order_id: OrderId) -> Order | None:
+        return next((order for order in self.saved if order.id == order_id), None)
+
+    async def save(self, order: Order) -> None:
+        self.saved.append(order)
+```
 
 `tests/unit/test_place_order.py`:
 
@@ -1314,20 +1343,7 @@ import pytest
 
 from reference_service.application.dtos import PlaceOrderCommand, PlaceOrderLine
 from reference_service.application.place_order import PlaceOrder
-from reference_service.domain.order import Order, OrderId
-
-
-class FakeOrderRepository:
-    """A hand-written fake. The use case needs no database to be tested."""
-
-    def __init__(self) -> None:
-        self.saved: list[Order] = []
-
-    async def get(self, order_id: OrderId) -> Order | None:
-        return next((o for o in self.saved if o.id == order_id), None)
-
-    async def save(self, order: Order) -> None:
-        self.saved.append(order)
+from tests.fakes import FakeOrderRepository
 
 
 def a_command(quantity: int = 2, amount: str = "10.00") -> PlaceOrderCommand:
@@ -1388,18 +1404,8 @@ from reference_service.application.dtos import PlaceOrderCommand, PlaceOrderLine
 from reference_service.application.get_order import GetOrder
 from reference_service.application.place_order import PlaceOrder
 from reference_service.domain.errors import OrderNotFoundError
-from reference_service.domain.order import Order, OrderId
-
-
-class FakeOrderRepository:
-    def __init__(self) -> None:
-        self.saved: list[Order] = []
-
-    async def get(self, order_id: OrderId) -> Order | None:
-        return next((o for o in self.saved if o.id == order_id), None)
-
-    async def save(self, order: Order) -> None:
-        self.saved.append(order)
+from reference_service.domain.order import OrderId
+from tests.fakes import FakeOrderRepository
 
 
 async def test_returns_a_stored_order() -> None:
