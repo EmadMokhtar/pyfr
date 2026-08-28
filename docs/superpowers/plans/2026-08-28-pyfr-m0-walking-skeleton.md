@@ -2772,7 +2772,16 @@ def test_context_does_not_leak_between_requests(
     client.get("/orders/b", headers={CORRELATION_HEADER: "second"})
 
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert all(r.get("correlation_id") == "second" for r in records)
+    assert records, "no log records captured, so this test proves nothing"
+
+    # Assert the actual invariant rather than "every line carries the id".
+    # Third-party libraries log through the standard-library bridge from
+    # outside any request context — httpx emits a client-side INFO line for
+    # every call — and those records legitimately have no correlation id.
+    # Requiring one on every line tests the bridge, not the leak.
+    seen = {record.get("correlation_id") for record in records}
+    assert "first" not in seen, "the previous request's correlation id leaked"
+    assert "second" in seen, "the current request's correlation id is missing"
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -2797,7 +2806,6 @@ streaming responses and background tasks; a plain callable does not.
 from __future__ import annotations
 
 import time
-from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import uuid4
 
