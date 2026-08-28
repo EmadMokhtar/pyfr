@@ -23,7 +23,10 @@ typecheck:
 test:
     uv run pytest
 
-check: lint typecheck test
+imports:
+    uv run lint-imports
+
+check: lint typecheck imports test
 
 up:
     docker compose up --build

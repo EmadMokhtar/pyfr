@@ -1,0 +1,30 @@
+[importlinter]
+root_package = reference_service
+include_external_packages = True
+
+[importlinter:contract:domain-independence]
+name = Domain imports no other layer and no web or database framework
+type = forbidden
+source_modules =
+    reference_service.domain
+forbidden_modules =
+    reference_service.api
+    reference_service.application
+    reference_service.infrastructure
+    reference_service.container
+    reference_service.main
+    fastapi
+    starlette
+
+[importlinter:contract:application-independence]
+name = Application imports neither api nor infrastructure
+type = forbidden
+source_modules =
+    reference_service.application
+forbidden_modules =
+    reference_service.api
+    reference_service.infrastructure
+    reference_service.container
+    reference_service.main
+    fastapi
+    starlette
