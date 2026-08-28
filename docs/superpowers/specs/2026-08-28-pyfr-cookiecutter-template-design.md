@@ -1,3 +1,4 @@
+
 # PyFr — Python Microservice Cookiecutter Template
 
 **Design specification**
@@ -74,6 +75,7 @@ Each decision below is fixed. Changing one invalidates the sections that follow 
 | D12 | golang-migrate owns the schema | Language-agnostic, runs without the application, plain SQL |
 | D13 | SQLAlchemy 2.0 async retained, with a model/schema drift gate | Typed querying plus an automated link between SQL and Python models |
 | D14 | Generated projects update from newer template versions via a git vendor branch | Keeps cookiecutter and its first-party Backstage action; adds no third-party update dependency; git supplies a real merge base, so deleted example code stays deleted |
+| D15 | Structured logs go to standard output as JSON; OTLP log export is opt-in | stdout survives collector outages and captures crashes and pre-initialisation failures; OTLP added on top gives local trace-to-log correlation in Grafana with no scraper to wire up |
 
 ---
 
@@ -439,7 +441,8 @@ one dashboard works across both.
 - Resource attributes: `service.name`, `service.version`, `deployment.environment`.
 - Sampling: parent-based with a configurable ratio — 100% locally, lower in
   production.
-- One pipeline for all three signals: traces, metrics and logs leave over OTLP.
+- Traces and metrics leave over OTLP. Logs take a different route by default —
+  see section 7.6.
 - Logs are structlog JSON. A processor injects the active `trace_id` and `span_id`
   into every line, so a log entry links back to its trace.
 
@@ -482,6 +485,106 @@ a fixed line, it alerts on how fast the error budget is being consumed, measured
 over two windows at once: a fast-burn rule pages for a sudden outage, a slow-burn
 rule opens a ticket for steady low-level failure. Using two windows together is
 what prevents both alert storms from brief blips and silent slow degradation.
+
+### 7.6 Structured logging
+
+**Transport (D15). Standard output is the source of truth; OTLP log export is
+opt-in.**
+
+```
+PRODUCTION   app -> stdout (JSON) -> platform log agent -> Loki
+             APP_OTEL__LOGS_ENABLED=false        (default)
+
+LOCAL        app -> stdout (console renderer, colour, human-readable)
+                \-> OTLP -> grafana/otel-lgtm -> Loki
+             APP_OTEL__LOGS_ENABLED=true         (set by the o11y profile)
+```
+
+Standard output survives a collector outage, and it captures crashes and any
+failure occurring before the OpenTelemetry SDK has initialised — which is exactly
+the output you need when a service will not start. OTLP is added on top so a
+developer sees logs beside the matching trace in Grafana without wiring up a log
+scraper on their laptop.
+
+**Enabling OTLP logs in production alongside a platform agent doubles ingest
+volume and cost.** The setting carries a comment saying so, and the generated
+configuration reference (section 10.3) repeats the warning.
+
+**One pipeline for every record, including third-party ones.** uvicorn,
+SQLAlchemy, boto3 and httpx log through the standard library's `logging` module,
+not structlog. structlog's `ProcessorFormatter` is installed as the formatter on
+the root `logging` handler so those records pass through the same processor chain
+and emerge in the same shape. Without this bridge roughly half the output during
+an incident is unstructured text sitting beside the clean JSON.
+
+```python
+# observability/logging.py — shape, not final code
+shared_processors = [
+    structlog.contextvars.merge_contextvars,     # correlation id, user id
+    structlog.processors.add_log_level,
+    structlog.processors.TimeStamper(fmt="iso", utc=True),
+    add_otel_context,                            # trace_id, span_id
+    redact_sensitive_fields,                     # section 12, item 6
+    structlog.processors.StackInfoRenderer(),
+    structlog.processors.dict_tracebacks,        # exceptions as structure
+]
+renderer = (
+    structlog.dev.ConsoleRenderer()
+    if settings.environment == "local"
+    else structlog.processors.JSONRenderer(serializer=orjson.dumps)
+)
+```
+
+`dict_tracebacks` is not cosmetic. A default traceback is multi-line text, so a
+log backend ingests one exception as many unrelated entries with nothing joining
+them. Rendered as a structured field it stays one searchable event.
+
+**The field-name contract.** Every record carries a fixed set of keys, named to
+follow the same OpenTelemetry semantic conventions as the traces and metrics
+(section 7.2), so one query works across a Python service and a Go one:
+
+| Key | Source | Example |
+|---|---|---|
+| `timestamp` | processor | `2026-08-28T09:14:22.481Z` |
+| `level` | processor | `error` |
+| `event` | the call site | `order.placed` |
+| `logger` | standard library logger name | `my_service.application.place_order` |
+| `service.name`, `service.version`, `deployment.environment` | resource attributes | |
+| `trace_id`, `span_id` | the active span | |
+| `correlation_id` | context variables, bound by middleware | |
+| `http.request.method`, `http.route`, `http.response.status_code`, `duration_ms` | access log records only | |
+
+`event` is a short, stable, lowercase dotted identifier — `order.placed`, never a
+sentence — so events can be grouped and counted. Variable data goes in fields and
+is never interpolated into the message.
+
+**Access logging.** uvicorn's own access log is disabled (`access_log=False`) and
+replaced by middleware emitting one structured record per request. It logs
+`http.route`, the route *template* `/orders/{order_id}`, and never the raw path.
+Raw paths make every order identifier a distinct label value — **high
+cardinality**, meaning a field with an unbounded number of distinct values, which
+is the standard way to overwhelm a log or metrics backend. Health endpoints are
+excluded by default, because a readiness probe firing every two seconds otherwise
+dominates the volume.
+
+**Levels are configuration, not code.** `APP_LOG__LEVEL` sets the root level and
+`APP_LOG__LEVELS` takes a per-logger mapping, so silencing a chatty library needs
+no code change and no redeployment of a new image:
+
+```
+APP_LOG__LEVEL=info
+APP_LOG__LEVELS='{"sqlalchemy.engine":"warning","botocore":"warning"}'
+```
+
+**Redaction** (section 12, item 6) is a processor in the shared chain rather than a
+responsibility of each call site, so it covers third-party records too. It masks by
+key name from a configured list, and a unit test asserts a known secret never
+reaches the rendered output.
+
+**Testing.** `structlog.testing.capture_logs` lets unit tests assert on emitted
+events as dictionaries instead of matching text — a test states that an
+`order.rejected` event was emitted with `reason="insufficient_funds"`, which does
+not break when someone rewords a message.
 
 ---
 
@@ -966,7 +1069,8 @@ one created from the command line, with no portal plugin work at all.
    read timeouts, bounded retries with backoff, and a circuit breaker. A missing
    timeout is the most common way one slow dependency freezes a whole service.
 6. **Log redaction** — a structlog processor masking configured field names, so
-   `password` or `card_number` cannot reach Loki by accident.
+   `password` or `card_number` cannot reach Loki by accident. It sits in the shared
+   processor chain (section 7.6), so it covers third-party records too.
 7. **Fail-fast settings** and `just config-check` (section 5.1).
 
 **Supply chain and security.** Dependency vulnerability scanning (`pip-audit`),
@@ -1008,7 +1112,7 @@ generated projects updatable.
 
 | # | Milestone | What exists at the end |
 |---|---|---|
-| **M0** | Walking skeleton | FastAPI app factory and lifespan, Pydantic Settings, structlog JSON, the three health endpoints, Problem Details, correlation IDs, graceful shutdown, one example domain slice on an in-memory repository, unit tests with Hypothesis, `justfile`, ruff, mypy, import-linter, pre-commit, Dockerfile, compose. `just up` serves a working API. |
+| **M0** | Walking skeleton | FastAPI app factory and lifespan, Pydantic Settings, structured logging in full (section 7.6: the standard-library bridge, the field-name contract, structured tracebacks, the replacement access log, configurable per-logger levels, and the console renderer for local work), the three health endpoints, Problem Details, correlation IDs, graceful shutdown, one example domain slice on an in-memory repository, unit tests with Hypothesis, `justfile`, ruff, mypy, import-linter, pre-commit, Dockerfile, compose. `just up` serves a working API. |
 | **M1** | Persistence | golang-migrate end to end, the migrations image, SQLAlchemy async models and the PostgreSQL adapter, Testcontainers integration tests, all four schema gates. |
 | **M2** | Observability | OpenTelemetry SDK and auto-instrumentation, trace-to-log correlation, the `o11y` compose profile, three dashboards, SLO recording rules and burn-rate alerts. |
 | **M3** | Contract and test depth | `openapi.json` with its drift gate, Schemathesis, oasdiff plus the version cross-check, the outbound httpx client, VCR cassettes, mutmut configured. |
@@ -1042,6 +1146,9 @@ walking skeleton is a shipping product, not scaffolding.
 | A squashed or rewritten history destroys the pristine first commit, so the branch cannot be reconstructed | `just update-check` detects it and points to a documented manual re-point procedure in `docs/how-to/update-from-template.md` |
 | Teams that diverged heavily hit conflicts on every update and stop updating | The `.pyfr-update-ignore` default (section 11.4) keeps the frequently-rewritten paths out of the merge entirely; the weekly job opens an issue rather than an unmergeable pull request |
 | Non-deterministic regeneration produces spurious diffs on the template branch | Regeneration mode suppresses the side-effectful half of the post-generation hook (section 11.3); the golden diff test already pins template output byte-for-byte |
+| OTLP log export left enabled in production alongside a platform agent, doubling ingest volume and cost | Off by default; a comment on the setting and an explicit warning in the generated configuration reference (section 7.6) |
+| A log field with unbounded distinct values overwhelms the log backend | The access log records `http.route` templates rather than raw paths, and health endpoints are excluded by default (section 7.6) |
+| A third-party library logs a secret that call-site redaction would miss | Redaction is a processor in the shared chain, so it also covers standard-library records bridged from third-party code (section 7.6) |
 
 ---
 
@@ -1061,12 +1168,15 @@ walking skeleton is a shipping product, not scaffolding.
 | Entity | An object with an identity that persists through change |
 | Error budget | The amount of failure an SLO permits, for example 0.1% of requests over 30 days |
 | gitleaks | A scanner that blocks commits containing secrets |
+| High cardinality | A field with an unbounded number of distinct values (a raw URL path, a user id); the usual way a metrics or log backend is overwhelmed |
 | Init container | A container that runs to completion before the main application container starts |
+| Log agent | A process run by the platform that reads containers' standard output and forwards it to a log store; Grafana Alloy, Fluent Bit and Promtail are examples |
 | Merge base | The most recent commit two branches share; the "before" state a three-way merge compares both sides against |
 | Mutation testing | Introducing small deliberate bugs to check whether tests actually catch them |
 | oasdiff | A tool comparing two OpenAPI specifications, classifying changes as breaking or not |
 | OTLP | OpenTelemetry Protocol — the wire format for traces, metrics and logs |
 | Port and adapter | An interface owned by the domain (port) and a technology-specific implementation (adapter) |
+| `ProcessorFormatter` | The structlog component installed on the standard library's root log handler so third-party records pass through the same processor chain |
 | Property-based testing | Generating many random inputs to check a rule holds, rather than testing fixed examples |
 | Protocol | Python's structural interface — satisfied by having the right methods, with no inheritance |
 | RED metrics | Rate, Errors, Duration — the three signals a request-serving service needs |
@@ -1078,6 +1188,7 @@ walking skeleton is a shipping product, not scaffolding.
 | SLI | Service Level Indicator — a measured number describing user-visible quality |
 | SLO | Service Level Objective — the target for an SLI over a window |
 | sqlfluff | A linter and formatter for SQL files |
+| structlog | The structured logging library; each record is key/value data rendered at the end, not a pre-formatted string |
 | Testcontainers | A library that starts real dependencies in Docker for the duration of a test run |
 | Three-way merge | A merge using three inputs — the merge base, their version and yours — so a tool can tell "they changed it" apart from "you changed it" |
 | Trivy | A scanner finding known vulnerabilities in container images |
