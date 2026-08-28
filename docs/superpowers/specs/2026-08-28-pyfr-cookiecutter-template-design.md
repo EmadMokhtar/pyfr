@@ -239,18 +239,29 @@ class Money(BaseModel):
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
 class Order(BaseModel):
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(frozen=True)
     id: OrderId
-    lines: Annotated[list[OrderLine], Field(min_length=1)]
+    lines: Annotated[tuple[OrderLine, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
     def total_must_match_lines(self) -> "Order": ...
 ```
 
-`validate_assignment=True` is the part that matters for DDD: an invalid `Order`
-cannot exist even after a field is reassigned, so the entity protects its own
-rules rather than trusting its callers. `frozen=True` gives value objects the
-immutability and value equality their definition requires.
+`frozen=True` is the part that matters for DDD, on both the entity and the
+value object — not `validate_assignment=True`. An earlier draft of this
+design used `validate_assignment=True` on `Order`, reasoning that
+re-running validators on every reassignment would stop an invalid `Order`
+existing after construction. M0's implementation found that reasoning
+false: Pydantic's `validate_assignment` assigns the new value to the field
+*first* and only runs the `after` model validator *second*, so a rejected
+reassignment still leaves the bad value in place — the raised
+`ValidationError` tells the caller "rejected" while the object itself says
+otherwise. `frozen=True` avoids the ordering problem entirely by refusing
+the assignment before any mutation happens, so there is no window in which
+a bad value can land. It also closes the equivalent gap for a `list`
+field's *contents* (`order.lines.append(...)` never goes through
+assignment at all, so `frozen` alone cannot stop it) — hence `lines` is a
+`tuple`, which has no `append`, rather than a `list`.
 
 ### 4.5 API schemas are separate
 

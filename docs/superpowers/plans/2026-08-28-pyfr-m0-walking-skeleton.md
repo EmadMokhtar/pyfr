@@ -4903,6 +4903,604 @@ APP_OTEL__LOGS_ENABLED=false
 
 ---
 
+## Task 16: Third review fix wave
+
+An automated reviewer left thirteen findings on the open pull request after
+Task 15. This task closes all thirteen — one Critical, seven Important, four
+Minor, plus a "considered and deferred" item the review verified was
+architecturally correct but out of scope for M0 — as one more fix wave. As
+with Tasks 14 and 15, each finding below edits a snippet an earlier task (or
+a later finding) already wrote, rather than creating new files; read this
+task after the one that introduced the file it touches.
+
+### Finding 1 — a failed assignment left the `Order` aggregate corrupt (Critical)
+
+Task 15 Finding 11 gave `Order` `validate_assignment=True` and a docstring
+claiming "an invalid Order cannot exist at any point in its life". Both were
+wrong in the same way: Pydantic's `validate_assignment` **assigns the new
+value to the field first, then runs the `after` model validator** — so when
+the validator rejects the new value, the assignment has already happened,
+and the object is left holding it. `test_invariant_is_rechecked_when_a_field_is_reassigned`
+only asserted that the reassignment raised `ValidationError`; it never
+checked that `order.total` survived, so the corruption went unnoticed.
+
+Confirmed with a standalone probe against the unpatched code:
+
+```
+before: 10.00
+raised: ValidationError
+AFTER FAILED ASSIGNMENT: 99.00
+INVARIANT HOLDS? False
+```
+
+Edits Task 15 Finding 11's `domain/order.py` — `frozen=True` replaces
+`validate_assignment=True`. Frozen refuses the assignment itself, before any
+mutation happens, so there is no window in which a bad value has landed; an
+invalid `Order` still cannot be constructed (the constructor already runs
+every validator), and now an existing `Order` cannot be corrupted after
+construction either:
+
+```python
+class Order(BaseModel):
+    """An entity: it has an identity and protects its own invariants.
+
+    `frozen=True` is the part that matters, not `validate_assignment=True`.
+    Pydantic's `validate_assignment` assigns the new value to the field
+    FIRST and only then runs the `after` model validator; when the
+    validator raises, the assignment has already happened, so the object is
+    left corrupt with the invalid value in place — the validator's
+    exception tells the caller "rejected" while `self.__dict__` says
+    otherwise. `frozen=True` sidesteps that ordering problem entirely: it
+    refuses the assignment itself, before any mutation, so there is no
+    window in which a bad value has landed. An invalid Order still cannot
+    be constructed — that guarantee comes from the constructor already
+    running every validator — and now an existing Order cannot be
+    corrupted after construction either. This also covers `lines`: a
+    mutable `list` would let `order.lines.append(bad_line)` corrupt the
+    entity without ever going through assignment at all (append mutates
+    the existing list in place). `tuple` closes that gap independently of
+    `frozen`: it has no `append`, and Pydantic still coerces an ordinary
+    list at construction time, so call sites are unaffected.
+    """
+
+    model_config = ConfigDict(frozen=True)
+```
+
+Edits Task 15 Finding 11's `tests/unit/test_order.py` — the existing test
+gains the assertion that was missing, and its docstring records why that
+assertion is the one that matters:
+
+```python
+def test_invariant_is_rechecked_when_a_field_is_reassigned() -> None:
+    """`frozen=True` is what stops an entity being corrupted later.
+
+    Asserting only that the assignment raises is not enough: Pydantic's
+    `validate_assignment` (the mechanism this used to rely on) assigns the
+    new value FIRST and runs the `after` validator second, so a raised
+    ValidationError does not mean the object was left alone — confirmed by
+    probing the unpatched code, where `order.total` read back as 99.00
+    after this exact assignment raised. `frozen=True` refuses the
+    assignment before any mutation happens, so the second assertion below
+    is the one that actually catches the corruption.
+    """
+    order = build_order(line(price="10.00"))
+
+    with pytest.raises(ValidationError):
+        order.total = money("99.00")
+    assert order.total == money("10.00")
+```
+
+Checked for anything else that mutates an `Order`: nothing does.
+`tests/unit/test_memory_repository.py` uses `order.model_copy(update=...)`,
+which creates a new object rather than mutating the existing one — left
+unchanged, since it is unaffected by this fix.
+
+Verified after the fix: rerunning the same probe against the patched code
+now reads back `10.00` and `INVARIANT HOLDS? True`. Full gate stays green.
+
+### Finding 2 — `/readyz` leaked internal exception detail
+
+`ReadinessRegistry.run` put the raw exception message into the readiness
+response (`f"error: {exc}"`). Exception messages from database drivers and
+HTTP clients routinely carry hostnames, connection strings, and credentials,
+and `/readyz` is often reachable inside a cluster, not only by the
+orchestrator's own probe.
+
+Edits Task 9 Step 4's `container.py` — the response gets only the bounded
+exception type name; the full exception goes to the log instead, via a new
+module-level `structlog` logger:
+
+```python
+import structlog
+
+_logger = structlog.get_logger(__name__)
+
+# ...
+
+            except TimeoutError:
+                # No untrusted content in this branch's message: keep it as is.
+                return name, f"error: timeout after {timeout}s"
+            except Exception as exc:
+                # A failing check reports; it never takes the endpoint down.
+                #
+                # The exception's own message is deliberately NOT put into the
+                # response: /readyz is reachable inside a cluster, and an
+                # exception message from a database driver or an HTTP client
+                # routinely carries hostnames, connection strings, or
+                # credentials. The response gets only the bounded exception
+                # type name; the full exception — with its message and
+                # traceback — goes to the log instead, where an operator can
+                # still see it.
+                _logger.exception("readiness_check.failed", check=name)
+                return name, f"error: {type(exc).__name__}"
+```
+
+The existing `.startswith("error")` assertions in
+`tests/unit/test_readiness_registry.py` and `tests/api/test_health.py`
+still pass unchanged, since `"error: RuntimeError"` still starts with
+`"error"`. Adds
+`test_a_failing_check_reports_the_exception_type_not_its_message` to
+`tests/unit/test_readiness_registry.py`, raising an exception whose message
+embeds a fake credential and asserting it never reaches the result.
+
+### Finding 3 — uvicorn's own log records bypassed the standard-library bridge
+
+Spec 7.6 promises "one pipeline for every record, including third-party
+ones" (section 7.6, quoted above Task 3). uvicorn installs handlers on the
+non-propagating `uvicorn`, `uvicorn.error` and `uvicorn.access` loggers
+*before* the app factory ever runs, so clearing only the root logger's
+handlers (Task 3 Step 3's original `configure_logging`) left those three
+loggers' records on uvicorn's own text handler — never reaching
+`ProcessorFormatter` at all.
+
+Edits Task 14 Finding 6's `observability/logging.py` — after the root
+logger is configured, the same treatment is applied to uvicorn's three
+loggers:
+
+```python
+    # uvicorn installs its own handlers on these three loggers, and sets
+    # them non-propagating, before the app factory ever runs — so clearing
+    # only the root logger's handlers (above) is not enough; uvicorn's
+    # records would still reach uvicorn's own text handler instead of this
+    # one, and never propagate up to root at all. Clearing their handlers
+    # and turning propagation back on routes their records through this
+    # same formatter, so "every log record passes through one processor
+    # chain" (the module docstring's promise) also holds for uvicorn's own
+    # startup, access, and connection-level lines, not just third-party
+    # libraries that log through the standard logging module the ordinary
+    # way.
+    for uvicorn_logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(uvicorn_logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+```
+
+Adds `test_a_uvicorn_record_gets_the_same_shape_as_everything_else` to
+Task 3's `tests/unit/test_logging.py`, logging through
+`logging.getLogger("uvicorn.error")` directly and asserting the JSON
+payload has the same shape (`event`, `level`, `logger`, `service.name`,
+`timestamp`) as a record from structlog or any other bridged logger.
+
+### Finding 4 — the app's drain deadline exceeded the container's kill deadline
+
+Task 13 Step 2's `Dockerfile` passes uvicorn
+`--timeout-graceful-shutdown 30`, letting in-flight requests drain for up
+to 30 seconds on SIGTERM. Docker and Compose send SIGKILL after 10 seconds
+by default, well under that — so a request still running at 10 seconds is
+killed, not drained, and the 30 was a promise the container did not keep.
+
+Edits Task 13 Step 3's `compose.yaml` — `stop_grace_period` raised
+comfortably above the app's own deadline:
+
+```yaml
+    # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
+    # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
+    # (and Docker's) own default kill deadline is 10s, so without raising
+    # it here the container is SIGKILLed at 10s regardless — a promise
+    # uvicorn cannot keep. Set comfortably above the app's own deadline so
+    # the app's timeout is always the one that governs shutdown.
+    stop_grace_period: 40s
+```
+
+Edits Task 13 Step 8's `README.md` — a new section records the identical
+mismatch for a Kubernetes deployment, since Kubernetes' own default
+(`terminationGracePeriodSeconds: 30`) happens to equal uvicorn's deadline
+here exactly, leaving no margin at all and making the same bug easy to
+reintroduce:
+
+```markdown
+## Graceful shutdown and the orchestrator's kill deadline
+
+The container's `CMD` passes uvicorn `--timeout-graceful-shutdown 30`: on
+SIGTERM, uvicorn stops accepting new connections but lets in-flight
+requests finish for up to 30 seconds before it exits. That number is only
+a promise if the orchestrator's own kill deadline is set comfortably
+above it — otherwise requests still running when the deadline hits are
+killed, not drained, no matter what uvicorn was told. `compose.yaml` sets
+`stop_grace_period: 40s` for exactly this reason: Docker Compose's own
+default is 10 seconds, well under uvicorn's 30. A Kubernetes deployment
+has the identical mismatch and needs the identical fix —
+`terminationGracePeriodSeconds` on the pod spec, set the same way, above
+uvicorn's `--timeout-graceful-shutdown`. It is easy to miss because
+Kubernetes' own default (30s) happens to equal uvicorn's deadline here
+exactly, leaving no margin at all.
+```
+
+### Finding 5 — `PlaceOrderCommand.lines` was mutable
+
+`frozen=True` on a Pydantic model is shallow: it refuses reassigning a
+field, but a `list` field's contents can still be appended to or cleared
+after validation. Task 15 Finding 1 gave `PlaceOrderCommand.lines` a
+`list[PlaceOrderLine]` type, so a non-HTTP caller could turn a valid,
+one-currency command into an empty or mixed-currency one after
+construction, bypassing both `min_length` and
+`lines_must_share_one_currency` — the exact gap Task 15 Finding 11 had
+already closed for the domain `Order.lines`.
+
+Edits Task 15 Finding 1's `services/order.py` — `tuple[PlaceOrderLine, ...]`,
+matching what `domain/order.py` already does, for the identical reason:
+
+```python
+class PlaceOrderCommand(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    customer_id: UUID
+    # `tuple`, not `list`: `frozen=True` is shallow, so a `list` field could
+    # still be appended to or cleared after validation — a non-HTTP caller
+    # could turn a valid command into an empty or mixed-currency one,
+    # bypassing both `min_length` and `lines_must_share_one_currency` below.
+    # Matches domain.order.Order.lines, which closes the identical gap the
+    # same way. Pydantic still coerces an incoming list at construction
+    # time, so call sites are unaffected.
+    lines: Annotated[tuple[PlaceOrderLine, ...], Field(min_length=1)]
+```
+
+Rippled to two call sites, exactly as Task 15 Finding 11's identical change
+to `Order.lines` had rippled before: Task 12 Step 4's `api/v1/mappers.py`
+(the list comprehension building `PlaceOrderCommand` becomes a generator
+passed to `tuple(...)`), and Task 6's `tests/unit/test_order_service.py`
+(four `lines=[...]` literals become `lines=(...)` tuple literals). `uv run
+mypy` was run specifically to confirm the field type is actually enforced
+at construction without the pydantic mypy plugin (this project does not
+enable it) — it caught all five call sites needing the change, then passed
+clean once they were fixed.
+
+### Finding 6 — nested settings were not actually frozen
+
+`SettingsConfigDict(frozen=True)` on `Settings` (Task 2 Step 3) is not
+recursive: it refuses reassigning `Settings`'s own top-level fields, but
+`settings.log`, `settings.otel` and the `dict` inside `settings.log.levels`
+all remained mutable, despite the module docstring's frozen-settings
+contract.
+
+Edits Task 14 Finding 6's `settings.py` — `model_config = ConfigDict(frozen=True)`
+added to both `LogSettings` and `OtelSettings` independently, and the
+module docstring corrected to state precisely what remains mutable even
+so, rather than overclaiming (the same defect class as Finding 1 above —
+a docstring promising more than the code delivers):
+
+```python
+"""Application configuration.
+
+Settings are read once at startup and are frozen. A missing or malformed
+variable stops the process immediately with a readable message, rather than
+producing a 500 response an hour later.
+
+"Frozen" is precise, not a slogan: `SettingsConfigDict(frozen=True)` on
+`Settings` is NOT recursive — it only refuses reassigning `Settings`'s own
+top-level fields (`settings.http_port = 9000` raises). Without their own
+`model_config`, `settings.log` and `settings.otel` would still allow
+`settings.log.level = "debug"` to succeed silently. `LogSettings` and
+`OtelSettings` below each carry `frozen=True` for exactly this reason.
+
+One gap remains even with both frozen: `LogSettings.levels` is a plain
+`dict`. `frozen=True` refuses REASSIGNING the `levels` field itself
+(`settings.log.levels = {...}` raises), but the dict object it already
+holds stays an ordinary mutable dict — `settings.log.levels["x"] = "debug"`
+succeeds. Nothing in this codebase mutates it, so this is not a live bug,
+but a docstring claiming settings are simply "frozen" without this caveat
+would be claiming more than the code delivers.
+"""
+```
+
+```python
+class LogSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    level: LogLevel = "info"
+    levels: dict[str, LogLevel] = Field(default_factory=dict)
+
+
+class OtelSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    enabled: bool = False
+```
+
+Adds `test_nested_settings_are_frozen_too` (asserts `settings.log.level =
+"debug"` and `settings.otel.enabled = True` both raise) and
+`test_log_levels_dict_contents_remain_mutable_despite_frozen` (pins the one
+documented gap, so a future change either fixes it deliberately or updates
+the docstring — not both silently drifting apart) to Task 2's
+`tests/unit/test_settings.py`.
+
+### Finding 7 — OpenAPI did not describe the real error responses
+
+Registering runtime exception handlers (Task 10 Step 4) does not change
+FastAPI's generated schema, so `/docs` advertised FastAPI's default
+validation-error shape for 422 at `application/json` and said nothing at
+all about 404 or 500 — a generated client built from that document would
+disagree with what the service actually returns.
+
+Confirmed FastAPI's `responses={...: {"model": ProblemDetail}}` shape does
+NOT work for a non-default media type: FastAPI always attaches a `model`
+entry's schema under the route's own response media type
+(`application/json`) regardless of any `content` key also given, verified
+against a minimal app — giving both produced an empty
+`application/problem+json` entry AND a duplicate `application/json` entry
+carrying the schema. Embedding the JSON schema directly under the real
+media type is the only way to get one correct entry.
+
+Edits Task 10 Step 3's `api/errors.py` (as extended by Task 14 Findings 2
+and 10, and Task 15 Finding 2) — two reusable helpers and a global
+responses mapping:
+
+```python
+from typing import Any
+
+# ...
+
+def _problem_content() -> dict[str, Any]:
+    """The `content` dict FastAPI needs to document a response at its real
+    media type.
+
+    NOT `{"model": ProblemDetail}` at the top level of a `responses` entry:
+    FastAPI always attaches a `model` entry's schema under the ROUTE's own
+    response media type (`application/json` by default) no matter what
+    `content` key is also present — verified against a minimal app: giving
+    both produced an empty `application/problem+json` entry AND a
+    duplicate `application/json` entry carrying the schema, which is
+    exactly the drift this exists to remove. Embedding the JSON schema
+    directly under the real media type is the only way to get one correct
+    entry instead of two, one of them wrong.
+    """
+    return {PROBLEM_MEDIA_TYPE: {"schema": ProblemDetail.model_json_schema()}}
+
+
+def problem_response(description: str) -> dict[str, Any]:
+    """One reusable OpenAPI `responses` entry describing a Problem Details
+    response, for use in a route decorator's or `FastAPI()`'s `responses=`.
+
+    Registering the runtime exception handlers below does not, by itself,
+    change what FastAPI generates for `/docs` or `/openapi.json` — a
+    generated client built from the undocumented schema would disagree
+    with what the service actually returns. This is what makes the two
+    agree.
+    """
+    return {"description": description, "content": _problem_content()}
+
+
+# Every route can hit request validation (422, via RequestValidationError)
+# or an unexpected failure (500, via the catch-all Exception handler), so
+# these are applied globally, in main.py's `FastAPI(responses=...)`. The
+# 404 for OrderNotFoundError is NOT included here: unlike 422 and 500, only
+# some routes can actually produce it, so it is applied per-route instead,
+# where it is true — see api/v1/router.py's `get_order`.
+DEFAULT_PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
+    status.HTTP_422_UNPROCESSABLE_CONTENT: problem_response(
+        "Request validation failed"
+    ),
+    status.HTTP_500_INTERNAL_SERVER_ERROR: problem_response("Internal server error"),
+}
+```
+
+Edits Task 9 Step 6's `main.py` (since extended by Tasks 10 Step 4, 11 Step
+4 and 12 Step 6) — `FastAPI(...)` gains `responses=DEFAULT_PROBLEM_RESPONSES`:
+
+```python
+    app = FastAPI(
+        title=resolved.service_name,
+        version=__version__,
+        lifespan=lifespan,
+        # Every route can hit request validation (422) or an unexpected
+        # failure (500); see api/errors.py's DEFAULT_PROBLEM_RESPONSES for
+        # why this, and not the model=/handler registration below, is what
+        # makes the OpenAPI document describe those responses correctly.
+        responses=DEFAULT_PROBLEM_RESPONSES,
+    )
+```
+
+Edits Task 12 Step 5's `api/v1/router.py` — `get_order` documents its own
+404, since only this route can actually raise `OrderNotFoundError`:
+
+```python
+@router.get(
+    "/{order_id}",
+    response_model=OrderResponse,
+    # Not in main.py's global DEFAULT_PROBLEM_RESPONSES: unlike 422 and 500,
+    # only this route can actually raise OrderNotFoundError, so documenting
+    # 404 here — and nowhere else — is what makes the schema describe what
+    # each route actually does, rather than a blanket approximation.
+    responses={status.HTTP_404_NOT_FOUND: problem_response("Order not found")},
+)
+async def get_order(order_id: UUID, fetch: GetOrderDep) -> OrderResponse:
+```
+
+Adds `test_the_openapi_document_advertises_problem_details_for_errors` to
+Task 12's `tests/api/test_orders.py`, asserting
+`application/problem+json` appears in the generated schema's 422 and 500
+entries for `POST /api/v1/orders` and the 404 entry for
+`GET /api/v1/orders/{order_id}`.
+
+### Finding 8 — `just dev` double-logged every request
+
+Unlike Task 13 Step 2's `Dockerfile` CMD, Task 1 Step 5's `dev` recipe left
+uvicorn's native access logger on, so every request produced two log
+lines — one from Task 11's `AccessLogMiddleware`, and one from uvicorn's
+own access logger carrying the raw path the replacement middleware exists
+to avoid.
+
+Edits Task 1 Step 5's `justfile`:
+
+```make
+dev:
+    uv run uvicorn reference_service.main:create_app --factory --reload --port ${APP_HTTP_PORT:-8000} --no-access-log
+```
+
+### Finding 9 — compose duplicated and drifted from the image healthcheck
+
+Task 13 Step 3's `compose.yaml` hardcoded port 8000 in its own
+`healthcheck:` block, while Task 13 Step 2's `Dockerfile` `HEALTHCHECK`
+reads `APP_HTTP_PORT` — the two drift apart the moment the port is
+overridden, and Compose applies the image's own `HEALTHCHECK`
+automatically regardless, so the block was also pure duplication.
+
+Edits Task 13 Step 3's `compose.yaml` — the `healthcheck:` block is deleted
+entirely, removing both the drift and the duplication in one move:
+
+```yaml
+    stop_grace_period: 40s
+    # No healthcheck: block here. The image already declares one (see the
+    # Dockerfile's HEALTHCHECK), and it reads APP_HTTP_PORT the same way
+    # the CMD does. A hardcoded port here would drift from that the moment
+    # APP_HTTP_PORT is overridden — Compose applies the image's own
+    # healthcheck automatically, so duplicating it just to hardcode the
+    # port both drifts and repeats the same instruction twice.
+```
+
+### Finding 10 — `just check` could rewrite the tree silently
+
+Task 15 Finding 4 fixed `precommit`'s hooks so `check`'s pre-commit step no
+longer mutated the tree in the cases it checked, but several hooks in
+Task 14 Finding 1's `.pre-commit-config.yaml` mutate by design
+(`ruff-format`, `uv-lock`, `end-of-file-fixer`, `trailing-whitespace`), so a
+recipe literally named `check` could still modify files and exit 0 — and
+pass again on a second run with no one noticing the tree had changed.
+
+Edits Task 14 Finding 1's `justfile` — `git diff --exit-code` runs
+immediately after the existing dependency chain, turning any such mutation
+into a loud failure instead of a silent one. The hooks themselves stay in
+place, since running them is how the config is known to still work:
+
+```make
+# Several pre-commit hooks mutate files (ruff-format, uv-lock,
+# end-of-file-fixer, trailing-whitespace), so `precommit` above can modify
+# the tree and still exit 0 — a `check` that only runs it would pass on a
+# second run without anyone noticing the tree changed. `git diff --exit-code`
+# after it turns any such mutation into a loud failure instead of a silent
+# one. Keep the hooks running here regardless: that is how we know the
+# config itself still works, not just that the tree was already clean.
+check: lint typecheck imports test precommit
+    git diff --exit-code
+```
+
+Edits Task 13 Step 8's `README.md` — the `just check` row in the commands
+table now describes the added step.
+
+Verified: `uvx --from rust-just just check`, then `git status --porcelain`,
+reports a clean tree.
+
+### Finding 11 — `request.validation_error` omitted a field the other three carried, and a typo
+
+`request.validation_error` (Task 14 Finding 2) was the only
+request-outcome log event missing `http.response.status_code`: the access
+log, `request.domain_error` and `request.unhandled_error` all carry it, so
+this one event alone could not be aggregated with the others by status
+code. Separately, a comment in the same handler read "such a error"
+instead of "such an error".
+
+Edits Task 10 Step 3's `api/errors.py` (as extended by Task 14 Findings 2
+and 10, and Task 15 Finding 2):
+
+```python
+        _logger.warning(
+            "request.validation_error",
+            # Same key names as AccessLogMiddleware, _domain_error above,
+            # and _unexpected_error below, so every request-outcome event
+            # can be aggregated on the same fields — this one used to omit
+            # http.response.status_code while the other three carried it.
+            **{
+                "http.route": _route_template(request.scope),
+                "http.response.status_code": status.HTTP_422_UNPROCESSABLE_CONTENT,
+            },
+        )
+```
+
+Adds an assertion to Task 15 Finding 2's
+`test_a_pydantic_validation_error_is_logged_at_warning` in
+`tests/api/test_errors.py`: `assert warning_record["http.response.status_code"] == 422`.
+
+### Finding 12 — the `/deep-validation` test route exercised a server defect, not client input
+
+Task 14 Finding 2's `/deep-validation` test route hard-coded
+`_StrictlyPositive(value=-1)` — a pure server defect with no client input
+involved at all — and asserted 422 for it, teaching the wrong lesson about
+what `_pydantic_validation_error` is for.
+
+This is one half of a review finding that was **considered and deferred,
+not implemented**: the reviewer separately argued the handler itself
+wrongly returns 422 for what may be a server defect, and that validation
+should instead be translated at the use-case boundary so an unrelated
+`ValidationError` reaches the 500 handler instead. That critique is
+architecturally correct, but the structural fix belongs to M1, when the
+use cases actually grow enough to have a boundary worth drawing — M0's
+`PlaceOrder`/`GetOrder` are too thin for it to earn its keep yet. The
+handler and its status code are unchanged; only the test route was
+reframed, and a comment records the gap for M1.
+
+Edits Task 14 Finding 2's `tests/api/test_errors.py` — `/deep-validation`
+takes `value` as a query parameter, so `-1` passes FastAPI's own edge
+validation (a well-formed int) and is rejected only by the deeper
+validator behind it, matching the case the handler actually exists for:
+
+```python
+    @app.get("/deep-validation")
+    async def deep_validation(value: int) -> None:
+        # `value` already passed FastAPI's own edge validation — it is a
+        # well-formed int, the only thing the edge schema checks. The
+        # deeper validator behind it enforces a rule the edge schema never
+        # captured, the way a use case validates a domain value object
+        # after its own request schema has already let the input through.
+        # This is deliberately NOT a hardcoded bad literal: a value that
+        # never came from the client is a server defect, not client input,
+        # and is exactly the case this handler was never meant to catch —
+        # see the comment on _pydantic_validation_error in api/errors.py.
+        _StrictlyPositive(value=value)
+```
+
+Both call sites that hit this route (`test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500`
+and `test_a_pydantic_validation_error_is_logged_at_warning`) now call
+`/deep-validation?value=-1` instead of `/deep-validation`.
+
+Edits Task 10 Step 3's `api/errors.py` — a comment on
+`_pydantic_validation_error` records the mislabeling this net cannot yet
+avoid, and points at the future work:
+
+```python
+        # Known, deliberate mislabeling — not fixed here: this handler
+        # catches EVERY PydanticValidationError, indiscriminately, wherever
+        # it is raised. A ValidationError with no connection to client
+        # input at all — say, a use case constructing a domain object from
+        # a value it computed itself, wrongly — is a pure server defect,
+        # not a client-fault 422, and this net currently mislabels it as
+        # one anyway, because nothing here can tell the two apart from the
+        # exception alone. The correct fix is translating validation at the
+        # use-case boundary, so a use case's own bugs surface as 500s and
+        # only genuinely bad client input reaches this handler; M0's use
+        # cases are too thin for that boundary to earn its keep yet, so
+        # this is left for M1 when they grow. See
+        # tests/api/test_errors.py's /deep-validation route for the case
+        # this handler DOES exist for: input that passed the edge schema
+        # and was rejected by a deeper validator.
+```
+
+Verified after all twelve findings: `uv run ruff check .`, `uv run ruff
+format --check .`, `uv run mypy`, `uv run lint-imports`, `uv run pytest`
+(102 passed) and `uvx --from rust-just just check` all green; `git status
+--porcelain` reports a clean tree.
+
+---
+
 ## Definition of done for M0
 
 All of the following must hold before M1 starts:
