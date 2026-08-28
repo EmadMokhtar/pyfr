@@ -4514,6 +4514,59 @@ Adds `test_lines_cannot_be_mutated_in_place` to Task 4's
 `tests/unit/test_order.py`, asserting `order.lines.append(...)` raises
 `AttributeError` — the invariant the docstring now actually claims.
 
+### Finding 12 — tests read the developer's `.env`
+
+`justfile` sets `dotenv-load := true`, so `.env` enters the environment of
+every recipe, including `just test`, and `_env_file=None` does not protect
+against that: it only stops `Settings` reading a `.env` FILE itself, not
+`APP_*` variables already sitting in `os.environ`.
+`test_defaults_are_usable_with_no_environment` only ever passed because
+the shipped `.env.example` happens to match every default. Confirmed:
+
+```
+APP_ENVIRONMENT=staging uv run pytest tests/unit/test_settings.py::test_defaults_are_usable_with_no_environment
+...
+AssertionError: assert 'staging' == 'local'
+```
+
+Edits Task 9 Step 1's `tests/conftest.py` — a session-scoped autouse
+fixture strips `APP_*` for the whole test session and restores it after:
+
+```python
+import os
+from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+
+from reference_service.main import create_app
+from reference_service.settings import Settings
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_developer_app_env_vars() -> Iterator[None]:
+    """Strip `APP_*` from the environment for the whole test session.
+
+    ... (see the checked-in module for the full rationale)
+    """
+    saved = {key: value for key, value in os.environ.items() if key.startswith("APP_")}
+    for key in saved:
+        del os.environ[key]
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
+
+
+@pytest.fixture
+def settings() -> Settings:
+    return Settings(_env_file=None, environment="production")
+```
+
+Verified: `APP_ENVIRONMENT=staging uv run pytest` — the entire suite,
+polluted — still passes (94/94), and the isolated regression test above
+now passes too.
+
 ---
 
 ## Definition of done for M0
