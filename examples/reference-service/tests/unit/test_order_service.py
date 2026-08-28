@@ -18,14 +18,14 @@ from tests.fakes import FakeOrderRepository
 def a_command(quantity: int = 2, amount: str = "10.00") -> PlaceOrderCommand:
     return PlaceOrderCommand(
         customer_id=uuid4(),
-        lines=[
+        lines=(
             PlaceOrderLine(
                 sku="sku-1",
                 quantity=quantity,
                 unit_amount=Decimal(amount),
                 currency="EUR",
-            )
-        ],
+            ),
+        ),
     )
 
 
@@ -58,7 +58,7 @@ async def test_each_order_gets_a_distinct_identity() -> None:
 
 async def test_a_command_with_no_lines_is_refused() -> None:
     with pytest.raises(ValueError):
-        PlaceOrderCommand(customer_id=uuid4(), lines=[])
+        PlaceOrderCommand(customer_id=uuid4(), lines=())
 
 
 def test_a_command_with_mixed_currency_lines_is_refused() -> None:
@@ -72,7 +72,7 @@ def test_a_command_with_mixed_currency_lines_is_refused() -> None:
     with pytest.raises(ValidationError, match="currency"):
         PlaceOrderCommand(
             customer_id=uuid4(),
-            lines=[
+            lines=(
                 PlaceOrderLine(
                     sku="sku-1",
                     quantity=1,
@@ -85,7 +85,7 @@ def test_a_command_with_mixed_currency_lines_is_refused() -> None:
                     unit_amount=Decimal("5.00"),
                     currency="USD",
                 ),
-            ],
+            ),
         )
 
 
@@ -94,14 +94,14 @@ async def test_returns_a_stored_order() -> None:
     placed = await PlaceOrder(orders)(
         PlaceOrderCommand(
             customer_id=uuid4(),
-            lines=[
+            lines=(
                 PlaceOrderLine(
                     sku="sku-1",
                     quantity=1,
                     unit_amount=Decimal("5.00"),
                     currency="EUR",
-                )
-            ],
+                ),
+            ),
         )
     )
 

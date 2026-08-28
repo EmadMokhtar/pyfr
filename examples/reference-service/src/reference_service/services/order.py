@@ -52,7 +52,14 @@ class PlaceOrderCommand(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     customer_id: UUID
-    lines: Annotated[list[PlaceOrderLine], Field(min_length=1)]
+    # `tuple`, not `list`: `frozen=True` is shallow, so a `list` field could
+    # still be appended to or cleared after validation — a non-HTTP caller
+    # could turn a valid command into an empty or mixed-currency one,
+    # bypassing both `min_length` and `lines_must_share_one_currency` below.
+    # Matches domain.order.Order.lines, which closes the identical gap the
+    # same way. Pydantic still coerces an incoming list at construction
+    # time, so call sites are unaffected.
+    lines: Annotated[tuple[PlaceOrderLine, ...], Field(min_length=1)]
 
     @model_validator(mode="after")
     def lines_must_share_one_currency(self) -> Self:

@@ -20,7 +20,7 @@ from reference_service.services.order import PlaceOrderCommand, PlaceOrderLine
 def to_command(request: PlaceOrderRequest) -> PlaceOrderCommand:
     return PlaceOrderCommand(
         customer_id=request.customer_id,
-        lines=[
+        lines=tuple(
             PlaceOrderLine(
                 sku=item.sku,
                 quantity=item.quantity,
@@ -28,7 +28,7 @@ def to_command(request: PlaceOrderRequest) -> PlaceOrderCommand:
                 currency=item.currency,
             )
             for item in request.lines
-        ],
+        ),
     )
 
 
