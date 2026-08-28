@@ -9,10 +9,10 @@ because someone added it to the entity.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 
 class MoneyOut(BaseModel):
@@ -41,6 +41,22 @@ class OrderLineOut(BaseModel):
 class PlaceOrderRequest(BaseModel):
     customer_id: UUID
     lines: Annotated[list[OrderLineIn], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def lines_must_share_one_currency(self) -> Self:
+        # A relationship BETWEEN lines, not a property of one, so no
+        # per-field constraint can express it. Without this, two
+        # individually valid lines in different currencies reach
+        # `domain.order.total_of`, whose `Money.__add__` raises a plain
+        # `ValueError` — neither a `DomainError` nor a pydantic
+        # `ValidationError` — and fall through to the catch-all 500
+        # handler for ordinary, schema-valid client input.
+        currencies = {line.currency for line in self.lines}
+        if len(currencies) > 1:
+            raise ValueError(
+                f"all lines must share one currency, got {sorted(currencies)}"
+            )
+        return self
 
 
 class OrderResponse(BaseModel):

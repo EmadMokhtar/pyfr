@@ -8,10 +8,10 @@ use case maps out of it into the domain.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 class PlaceOrderLine(BaseModel):
@@ -32,3 +32,16 @@ class PlaceOrderCommand(BaseModel):
 
     customer_id: UUID
     lines: Annotated[list[PlaceOrderLine], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def lines_must_share_one_currency(self) -> Self:
+        # Mirrors api/v1/schemas.py's PlaceOrderRequest validator, for the
+        # same reason the rest of this module's constraints mirror the api
+        # schema's: a command must stand on its own for a non-HTTP caller,
+        # not rely on the api layer having already filtered bad input.
+        currencies = {line.currency for line in self.lines}
+        if len(currencies) > 1:
+            raise ValueError(
+                f"all lines must share one currency, got {sorted(currencies)}"
+            )
+        return self

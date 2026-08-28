@@ -87,6 +87,43 @@ def test_an_order_with_no_lines_is_refused(client: TestClient) -> None:
     assert client.post("/api/v1/orders", json=payload).status_code == 422
 
 
+def test_mixed_currency_lines_are_refused_with_422(client: TestClient) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    Each line below is individually valid — a legal quantity, a legal
+    decimal amount, a legal ISO currency code — so no per-field constraint
+    catches this. Only the relationship BETWEEN the lines is wrong: they
+    disagree on currency. `domain.order.total_of` used to raise a plain
+    `ValueError` from `Money.__add__` while summing them — neither a
+    `DomainError` nor a pydantic `ValidationError` — so the catch-all
+    handler answered 500 for ordinary, schema-valid client input. Confirmed
+    pre-fix: POSTing this exact payload against the unpatched service
+    returned `{"status": 500, "title": "Internal server error", ...}`.
+    """
+    payload = {
+        "customer_id": str(uuid4()),
+        "lines": [
+            {
+                "sku": "sku-1",
+                "quantity": 1,
+                "unit_amount": "10.00",
+                "currency": "EUR",
+            },
+            {
+                "sku": "sku-2",
+                "quantity": 1,
+                "unit_amount": "5.00",
+                "currency": "USD",
+            },
+        ],
+    }
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
 def test_too_many_decimal_places_is_a_422_not_a_500(client: TestClient) -> None:
     """Regression test for a real defect, not a hypothetical one.
 
