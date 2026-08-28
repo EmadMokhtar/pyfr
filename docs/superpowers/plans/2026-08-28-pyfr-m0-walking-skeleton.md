@@ -3096,8 +3096,10 @@ git commit -m "feat: add correlation id and structured access log middleware"
 `tests/api/test_orders.py`:
 
 ```python
+import json
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -3171,6 +3173,34 @@ def test_an_order_with_no_lines_is_refused(client: TestClient) -> None:
     payload["lines"] = []
 
     assert client.post("/api/v1/orders", json=payload).status_code == 422
+
+
+def test_the_real_application_pins_its_middleware_order(
+    client: TestClient,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Pins the ordering in `create_app`, not in a test helper.
+
+    Task 11's equivalent test builds its own app locally, so reversing the
+    two `add_middleware` lines in `main.py` itself goes undetected there.
+    This is the earliest point the production ordering can be pinned at
+    all: until this task, every route the real application served was a
+    health endpoint, and those are excluded from the access log.
+
+    If this fails while Task 11's version passes, the two `add_middleware`
+    lines in `main.py` are the wrong way round — correlation must wrap the
+    access log, or the record is emitted outside the bound context.
+    """
+    client.post(
+        "/api/v1/orders",
+        json=a_payload(),
+        headers={"X-Request-ID": "real-app-1"},
+    )
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    access = next(record for record in records if record.get("event") == "http.access")
+    assert access["correlation_id"] == "real-app-1"
+    assert access["http.route"] == "/api/v1/orders"
 
 
 def test_the_openapi_document_describes_the_endpoints(client: TestClient) -> None:
