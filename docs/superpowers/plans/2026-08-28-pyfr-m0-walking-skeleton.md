@@ -2749,6 +2749,59 @@ def test_the_access_log_records_the_route_template_not_the_raw_path(
     assert "8f3a-not-a-real-id" not in json.dumps(access)
 
 
+@pytest.mark.parametrize(
+    ("raw", "inner", "params", "expected"),
+    [
+        # The ordinary case: a router mounted under a prefix.
+        (
+            "/api/v1/orders/abc",
+            "/orders/{order_id}",
+            {"order_id": "abc"},
+            "/api/v1/orders/{order_id}",
+        ),
+        # The parameter's value equals a literal segment. Substituting by
+        # text would give "/api/v1/{order_id}/{order_id}".
+        (
+            "/api/v1/orders/orders",
+            "/orders/{order_id}",
+            {"order_id": "orders"},
+            "/api/v1/orders/{order_id}",
+        ),
+        # A converter whose value spans segments. Substituting by text would
+        # match nothing and fall back to the raw, unbounded path.
+        (
+            "/static/assets/js/app.js",
+            "/static/{file_path:path}",
+            {"file_path": "assets/js/app.js"},
+            "/static/{file_path:path}",
+        ),
+        # A literal route with no parameters at all.
+        ("/api/v1/orders", "/orders", {}, "/api/v1/orders"),
+    ],
+)
+def test_route_template_reconstructs_the_full_template(
+    raw: str,
+    inner: str,
+    params: dict[str, object],
+    expected: str,
+) -> None:
+    """Each case here is one the obvious implementations get wrong."""
+    scope = {
+        "type": "http",
+        "path": raw,
+        "path_params": params,
+        "route": SimpleNamespace(path=inner),
+    }
+
+    assert _route_template(scope) == expected
+
+
+def test_route_template_returns_the_sentinel_when_nothing_matched() -> None:
+    scope = {"type": "http", "path": "/nope/8f3a", "path_params": {}, "route": None}
+
+    assert _route_template(scope) == "<unmatched>"
+
+
 def test_an_unmatched_path_is_not_logged_verbatim(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -2929,7 +2982,9 @@ streaming responses and background tasks; a plain callable does not.
 
 from __future__ import annotations
 
+import re
 import time
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -2948,42 +3003,59 @@ UNMATCHED_ROUTE = "<unmatched>"
 _logger = structlog.get_logger("reference_service.access")
 
 
-def _route_template(scope: Scope) -> str:
-    """The bounded route template for this request.
+_PATH_PARAM = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)(?::[^}]+)?\}")
 
-    Deliberately not `scope["route"].path`: FastAPI records an included
-    router's routes with their INNER path only, so a router mounted under
-    `/api/v1` reports `/orders/{order_id}`, and two API versions of the same
-    resource become indistinguishable in the logs.
 
-    Deliberately not `scope["path"]` either: that is the raw path, and every
-    distinct identifier would become a distinct value — the unbounded
-    cardinality this field exists to avoid.
+def _fill(template: str, params: Mapping[str, Any]) -> str:
+    """Substitute matched values back into a route template.
 
-    Instead, rebuild the template from the raw path by substituting each
-    matched path parameter back into place. That is exact, keeps the full
-    prefix, and does not depend on how the framework stores its routes.
+    Handles Starlette's converter syntax (`{file_path:path}`), which
+    `str.format` cannot: it would read `:path` as a format specification.
     """
-    if scope.get("route") is None:
-        # Nothing matched, so this is usually a bot probing nonexistent
-        # URLs. Logging the raw path would put one distinct value in the
-        # log per probe.
+    return _PATH_PARAM.sub(
+        lambda match: str(params.get(match.group(1), match.group(0))), template
+    )
+
+
+def _route_template(scope: Scope) -> str:
+    """The bounded route template for this request, including any prefix.
+
+    Three approaches are wrong, and it is worth recording why.
+
+    `scope["route"].path` alone: FastAPI 0.141 stores an included router
+    lazily, so a router mounted under `/api/v1` reports only its inner
+    `/orders/{order_id}`. Two API versions of one resource then look
+    identical in the logs.
+
+    `scope["path"]` alone: that is the raw path, so every identifier becomes
+    a distinct value — the unbounded cardinality this field exists to avoid.
+
+    Substituting parameter VALUES out of the raw path: subtly wrong, because
+    it matches by text. A request to `/api/v1/orders/orders` would rewrite
+    the literal `/orders` segment too, giving `/api/v1/{order_id}/{order_id}`.
+    It also silently fails for a parameter whose value spans segments, such
+    as a `:path` converter, falling back to the raw path.
+
+    So work the other way round. Fill the route's own template with the
+    matched values to get the concrete path it produced; whatever the raw
+    path carries in front of that is the mount prefix. Positional rather
+    than textual, and correct for multi-segment values.
+    """
+    inner: str | None = getattr(scope.get("route"), "path", None)
+    if inner is None:
+        # Nothing matched — usually a bot probing nonexistent URLs, where
+        # the raw path would be one distinct value per probe.
         return UNMATCHED_ROUTE
 
     raw: str = scope.get("path", "")
-    params: dict[str, Any] = scope.get("path_params") or {}
-    if not params:
-        # A literal route with no parameters: the raw path IS the template,
-        # and it is bounded because the route is registered.
-        return raw
+    concrete = _fill(inner, scope.get("path_params") or {})
+    if raw.endswith(concrete):
+        return raw[: len(raw) - len(concrete)] + inner
 
-    # Substitute whole segments only. Replacing by substring would corrupt a
-    # path where a parameter's value also appears as a literal segment.
-    name_by_value = {str(value): name for name, value in params.items()}
-    return "/".join(
-        "{" + name_by_value[segment] + "}" if segment in name_by_value else segment
-        for segment in raw.split("/")
-    )
+    # The template could not be located inside the raw path. Return the
+    # inner template anyway: it may be missing a prefix, but it is bounded,
+    # and bounded matters more than complete.
+    return inner
 
 
 class CorrelationIdMiddleware:
@@ -3196,11 +3268,33 @@ def test_fetching_an_unknown_order_is_problem_details_404(
 
 
 def test_internal_domain_fields_are_never_exposed(client: TestClient) -> None:
-    """This is why api schemas are separate from domain models."""
+    """The outcome: an internal field must not reach a client.
+
+    This asserts the result, not the mechanism. See
+    `test_the_response_schema_never_declares_internal_fields` for where the
+    guarantee actually comes from — it is NOT the mapper.
+    """
     created = client.post("/api/v1/orders", json=a_payload()).json()
 
     assert "internal_note" not in created
     assert "internal_note" not in client.get(f"/api/v1/orders/{created['id']}").text
+
+
+def test_the_response_schema_never_declares_internal_fields() -> None:
+    """Where the guarantee actually comes from, stated honestly.
+
+    Note what does NOT provide it: calling the mapper. FastAPI validates
+    every return value against `response_model=OrderResponse`, and that
+    drops any field the schema does not declare — so a route returning the
+    domain entity directly would also hide `internal_note`. The real
+    guarantee is that `OrderResponse` is a separate type which never
+    declares the field in the first place.
+
+    The mapper earns its place for a different reason: it lets the domain
+    model be renamed or restructured without touching the wire contract.
+    """
+    assert "internal_note" in Order.model_fields
+    assert "internal_note" not in OrderResponse.model_fields
 
 
 def test_a_negative_quantity_is_refused_with_problem_details(
