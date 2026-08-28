@@ -36,7 +36,7 @@ def test_settings_are_frozen() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     with pytest.raises(Exception):
-        settings.http_port = 9000  # type: ignore[misc]
+        settings.http_port = 9000  # type: ignore[misc, unused-ignore]
 
 
 def test_load_settings_exits_on_invalid_configuration(
