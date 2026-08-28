@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
+from reference_service.api.middleware import CORRELATION_HEADER
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -111,9 +112,22 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        # A handler registered for `Exception` becomes ServerErrorMiddleware's
+        # handler, which sits OUTSIDE CorrelationIdMiddleware — by the time
+        # it runs, that middleware's `finally` has already cleared the bound
+        # contextvars, so `_logger.exception` alone would log a traceback
+        # with no correlation id. Recover it from the scope instead: it
+        # survives, because ServerErrorMiddleware builds this Request from
+        # that same scope. See CorrelationIdMiddleware for the other half.
+        correlation_id = request.scope.get("correlation_id")
+
         # Log the full traceback; return nothing that describes our internals.
-        _logger.exception("request.unhandled_error", path=request.url.path)
-        return _problem_response(
+        _logger.exception(
+            "request.unhandled_error",
+            correlation_id=correlation_id,
+            path=request.url.path,
+        )
+        response = _problem_response(
             ProblemDetail(
                 type=f"{PROBLEM_TYPE_BASE}/internal_error",
                 title="Internal server error",
@@ -121,3 +135,6 @@ def register_error_handlers(app: FastAPI) -> None:
                 instance=request.url.path,
             )
         )
+        if correlation_id is not None:
+            response.headers[CORRELATION_HEADER] = correlation_id
+        return response

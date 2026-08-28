@@ -4013,6 +4013,83 @@ Adds `test_too_many_decimal_places_is_a_422_not_a_500` to Task 12's
 `/deep-validation` route on the test app) to Task 10's
 `tests/api/test_errors.py`.
 
+### Finding 3 — the correlation id was lost from both the response and the traceback log on a 500
+
+Starlette's stack is `ServerErrorMiddleware → CorrelationIdMiddleware →
+AccessLogMiddleware → ExceptionMiddleware → router`. A handler registered
+for `Exception` becomes `ServerErrorMiddleware`'s handler, which sits
+OUTSIDE all user middleware. So on an unhandled exception,
+`CorrelationIdMiddleware`'s `finally` had already cleared the bound
+contextvars by the time the catch-all handler logged the traceback — and
+the response went out through the raw `send`, bypassing the middleware's
+header-adding `send_wrapper` entirely. Confirmed pre-fix by reverting
+`middleware.py` and `errors.py` and rerunning the new test:
+
+```
+E       KeyError: 'X-Request-ID'
+```
+
+and the captured log line for `request.unhandled_error` carried no
+`correlation_id` key at all.
+
+Edits Task 11 Step 3 / Task 12 Step 4's `api/middleware.py` —
+`CorrelationIdMiddleware` also stashes the id on the ASGI scope, which
+survives past the point the contextvar is cleared:
+
+```python
+        incoming = Headers(scope=scope).get(CORRELATION_HEADER.lower())
+        correlation_id = incoming or uuid4().hex
+
+        # Also stashed on the scope, not just the contextvar: an unhandled
+        # exception is handled by ServerErrorMiddleware, which sits OUTSIDE
+        # this middleware and therefore outside the bound contextvars — by
+        # the time its handler runs, clear_contextvars() below has already
+        # fired. The scope survives that; ServerErrorMiddleware builds its
+        # Request from this same scope, so api/errors.py can still recover
+        # the id for the traceback log line and the response header.
+        scope["correlation_id"] = correlation_id
+
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+```
+
+Edits Task 10 Step 3's `api/errors.py` — `_unexpected_error` reads it back
+off the scope and both logs it and sets the response header:
+
+```python
+from reference_service.api.middleware import CORRELATION_HEADER
+
+    @app.exception_handler(Exception)
+    async def _unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        correlation_id = request.scope.get("correlation_id")
+
+        _logger.exception(
+            "request.unhandled_error",
+            correlation_id=correlation_id,
+            path=request.url.path,
+        )
+        response = _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/internal_error",
+                title="Internal server error",
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                instance=request.url.path,
+            )
+        )
+        if correlation_id is not None:
+            response.headers[CORRELATION_HEADER] = correlation_id
+        return response
+```
+
+Adds `test_an_unhandled_error_still_carries_the_correlation_id` to Task
+10's `tests/api/test_errors.py`, asserting both the `X-Request-ID`
+response header and that the logged `request.unhandled_error` record
+carries `correlation_id`.
+
+---
+
+## Definition of done for M0
+
 All of the following must hold before M1 starts:
 
 - [ ] `just check` exits 0 — lint, mypy, import-linter and the full test suite.

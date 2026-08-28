@@ -96,6 +96,15 @@ class CorrelationIdMiddleware:
         incoming = Headers(scope=scope).get(CORRELATION_HEADER.lower())
         correlation_id = incoming or uuid4().hex
 
+        # Also stashed on the scope, not just the contextvar: an unhandled
+        # exception is handled by ServerErrorMiddleware, which sits OUTSIDE
+        # this middleware and therefore outside the bound contextvars — by
+        # the time its handler runs, clear_contextvars() below has already
+        # fired. The scope survives that; ServerErrorMiddleware builds its
+        # Request from this same scope, so api/errors.py can still recover
+        # the id for the traceback log line and the response header.
+        scope["correlation_id"] = correlation_id
+
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 

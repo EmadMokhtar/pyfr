@@ -1,12 +1,24 @@
+import json
+from collections.abc import Iterator
 from uuid import uuid4
 
+import pytest
+import structlog
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
 from reference_service.api.errors import register_error_handlers, status_for
+from reference_service.api.middleware import CORRELATION_HEADER, CorrelationIdMiddleware
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 from reference_service.domain.order import OrderId
+from reference_service.observability.logging import configure_logging
+
+
+@pytest.fixture(autouse=True)
+def _reset_logging() -> Iterator[None]:
+    yield
+    structlog.reset_defaults()
 
 
 class UnmappedError(DomainError):
@@ -73,6 +85,38 @@ def test_an_unexpected_error_does_not_leak_internals() -> None:
     body = response.json()
     assert "a secret internal detail" not in response.text
     assert body["title"] == "Internal server error"
+
+
+def test_an_unhandled_error_still_carries_the_correlation_id(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The one scenario correlation ids exist for: joining a crash to its request.
+
+    A handler registered for `Exception` becomes ServerErrorMiddleware's
+    handler, which sits OUTSIDE CorrelationIdMiddleware. Without recovering
+    the id from the ASGI scope, the response would carry no X-Request-ID
+    and the traceback log line would carry no correlation_id — a customer
+    reporting a request id could never be joined to its stack trace.
+    """
+    configure_logging(environment="production", level="info", levels={})
+
+    app = FastAPI()
+    register_error_handlers(app)
+    app.add_middleware(CorrelationIdMiddleware)
+
+    @app.get("/exploding")
+    async def exploding() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(app, raise_server_exceptions=False)
+    response = client.get("/exploding", headers={CORRELATION_HEADER: "crash-1"})
+
+    assert response.status_code == 500
+    assert response.headers[CORRELATION_HEADER] == "crash-1"
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    error_record = next(r for r in records if r["event"] == "request.unhandled_error")
+    assert error_record["correlation_id"] == "crash-1"
 
 
 def test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500() -> None:
