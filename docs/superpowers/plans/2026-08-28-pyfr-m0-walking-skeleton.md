@@ -101,6 +101,7 @@ examples/reference-service/
 - Create: `examples/reference-service/.pre-commit-config.yaml`
 - Create: `examples/reference-service/src/reference_service/__init__.py`
 - Create: `examples/reference-service/tests/__init__.py`
+- Create: `examples/reference-service/README.md` — empty placeholder. `pyproject.toml` declares `readme = "README.md"`, so the build backend fails `uv sync` without it. Task 13 replaces it with real content.
 - Test: `examples/reference-service/tests/unit/test_version.py`
 - Delete: `project/src/.venv`, `.DS_Store`
 - Modify: `.gitignore` (repository root)
@@ -309,6 +310,9 @@ cd examples/reference-service
 touch tests/__init__.py tests/unit/__init__.py tests/api/__init__.py
 # Empty for now so `uv sync` can build the package; Step 9 fills it in.
 touch src/reference_service/__init__.py
+# pyproject.toml declares readme = "README.md"; the build fails without it.
+# Task 13 replaces this placeholder with real content.
+touch README.md
 touch src/reference_service/domain/__init__.py
 touch src/reference_service/application/__init__.py
 touch src/reference_service/infrastructure/__init__.py
