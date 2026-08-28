@@ -4300,6 +4300,23 @@ Adds `test_load_settings_exits_78_on_an_unknown_log_level` and
 `test_load_settings_exits_78_on_an_unknown_per_logger_level` to Task 2's
 `tests/unit/test_settings.py`.
 
+### Finding 7 — `test_layer_purity.py` used a non-recursive glob
+
+A module in a future subpackage such as `domain/orders/entities.py` was
+never scanned, so a stray third-party import there would pass silently —
+the exact blind spot this test exists to close. Both layers are flat
+today, so the file set is unchanged and nothing breaks.
+
+Edits Task 8 Step 6's `tests/unit/test_layer_purity.py`:
+
+```python
+    # rglob, not glob: both layers are flat today, but a module in a future
+    # subpackage (e.g. domain/orders/entities.py) must still be scanned, or
+    # a stray third-party import there passes silently — the exact blind
+    # spot this test exists to close.
+    modules = sorted(Path(package_file).parent.rglob("*.py"))
+```
+
 ---
 
 ## Definition of done for M0

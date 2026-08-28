@@ -42,7 +42,11 @@ def test_layer_imports_only_pydantic_and_the_standard_library(
 ) -> None:
     package_file = getattr(package, "__file__", None)
     assert package_file is not None, "package has no __file__"
-    modules = sorted(Path(package_file).parent.glob("*.py"))
+    # rglob, not glob: both layers are flat today, but a module in a future
+    # subpackage (e.g. domain/orders/entities.py) must still be scanned, or
+    # a stray third-party import there passes silently — the exact blind
+    # spot this test exists to close.
+    modules = sorted(Path(package_file).parent.rglob("*.py"))
     assert modules, "no modules found — the glob is wrong, so this test is blind"
 
     offenders: dict[str, set[str]] = {}
