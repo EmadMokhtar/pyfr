@@ -78,6 +78,16 @@ def test_request_validation_produces_problem_details() -> None:
     assert response.json()["title"] == "Request validation failed"
 
 
-def test_status_for_is_the_only_place_that_knows_http() -> None:
+def test_status_for_maps_known_errors_and_defaults_unknown_ones() -> None:
     assert status_for(OrderNotFoundError(OrderId(uuid4()))) == 404
     assert status_for(UnmappedError("x")) == 422
+
+
+def test_a_subclass_inherits_its_parent_status() -> None:
+    """A subclass must not silently fall through to the 422 default."""
+
+    class OrderAlreadyShippedError(OrderNotFoundError):
+        code = "order_already_shipped"
+        title = "Order already shipped"
+
+    assert status_for(OrderAlreadyShippedError(OrderId(uuid4()))) == 404

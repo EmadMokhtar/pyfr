@@ -22,7 +22,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     OrderNotFoundError: status.HTTP_404_NOT_FOUND,
 }
 
-_DEFAULT_DOMAIN_STATUS = status.HTTP_422_UNPROCESSABLE_ENTITY
+_DEFAULT_DOMAIN_STATUS = status.HTTP_422_UNPROCESSABLE_CONTENT
 
 _logger = structlog.get_logger(__name__)
 
@@ -36,7 +36,17 @@ class ProblemDetail(BaseModel):
 
 
 def status_for(error: DomainError) -> int:
-    return _STATUS_BY_ERROR.get(type(error), _DEFAULT_DOMAIN_STATUS)
+    """Map a domain error to a status code, honouring subclasses.
+
+    Walks the method resolution order rather than looking up `type(error)`
+    directly, so a subclass inherits its parent's status instead of silently
+    falling through to the default. A future `OrderAlreadyShippedError`
+    subclassing `OrderNotFoundError` should answer 404, not 422.
+    """
+    for error_class in type(error).__mro__:
+        if error_class in _STATUS_BY_ERROR:
+            return _STATUS_BY_ERROR[error_class]
+    return _DEFAULT_DOMAIN_STATUS
 
 
 def _problem_response(problem: ProblemDetail) -> JSONResponse:
@@ -74,7 +84,7 @@ def register_error_handlers(app: FastAPI) -> None:
             ProblemDetail(
                 type=f"{PROBLEM_TYPE_BASE}/validation_error",
                 title="Request validation failed",
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(exc.errors()),
                 instance=request.url.path,
             )
