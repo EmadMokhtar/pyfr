@@ -1,0 +1,46 @@
+# pre-commit only installs the git hook types it is told to. Without this,
+# `pre-commit install` (run with no arguments, as the README instructs)
+# wires up the `pre-commit` stage only - the commitizen hook below runs at
+# the `commit-msg` stage and would never fire even after installation.
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Pinned to match the ruff version uv.lock resolves, so `pre-commit run`
+    # and `just lint` format the same file the same way.
+    rev: v0.16.5
+    hooks:
+      # No args: ["--fix"] here. `just check`'s precommit recipe runs this
+      # hook, and "check" must never mutate the tree - it would rewrite
+      # source files, fail on the first CI run and pass on the second.
+      # `just lint` checks, `just fmt` fixes (via `ruff check --fix`); this
+      # hook mirrors `just lint`, not `just fmt`.
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # Pinned to match the installed uv, for the same reason as ruff above.
+    rev: 0.11.12
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.0
+    hooks:
+      - id: commitizen
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # sqlfluff waits for M1's migrations — there is no SQL to lint yet.
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict

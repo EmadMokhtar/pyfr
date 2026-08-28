@@ -1,0 +1,51 @@
+set dotenv-load := true
+
+default:
+    @just --list
+
+install:
+    uv sync
+
+dev:
+    uv run uvicorn reference_service.main:create_app --factory --reload --port ${APP_HTTP_PORT:-8000} --no-access-log
+
+lint:
+    uv run ruff check .
+    uv run ruff format --check .
+
+fmt:
+    uv run ruff check --fix .
+    uv run ruff format .
+
+typecheck:
+    uv run mypy
+
+test:
+    uv run pytest
+
+imports:
+    uv run lint-imports
+
+# `git ls-files` scopes this to the project's own files. `--all-files` walks
+# up to the enclosing repository when this project sits inside one, and
+# rewrites files outside it — during development that silently reformatted
+# Python snippets inside this plan's own Markdown. In a standalone generated
+# project the two are equivalent, so this is correct in both layouts.
+precommit:
+    uv run pre-commit run --files $(git ls-files)
+
+# Several pre-commit hooks mutate files (ruff-format, uv-lock,
+# end-of-file-fixer, trailing-whitespace), so `precommit` above can modify
+# the tree and still exit 0 — a `check` that only runs it would pass on a
+# second run without anyone noticing the tree changed. `git diff --exit-code`
+# after it turns any such mutation into a loud failure instead of a silent
+# one. Keep the hooks running here regardless: that is how we know the
+# config itself still works, not just that the tree was already clean.
+check: lint typecheck imports test precommit
+    git diff --exit-code
+
+up:
+    docker compose up --build
+
+down:
+    docker compose down -v
