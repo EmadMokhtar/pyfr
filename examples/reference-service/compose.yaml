@@ -6,6 +6,13 @@ services:
     environment:
       APP_ENVIRONMENT: production
       APP_LOG__LEVEL: info
+    # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
+    # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
+    # (and Docker's) own default kill deadline is 10s, so without raising
+    # it here the container is SIGKILLed at 10s regardless — a promise
+    # uvicorn cannot keep. Set comfortably above the app's own deadline so
+    # the app's timeout is always the one that governs shutdown.
+    stop_grace_period: 40s
     healthcheck:
       test:
         - CMD

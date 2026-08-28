@@ -75,6 +75,22 @@ Every variable is prefixed `APP_`; nested settings use `__`. Copy
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later.
 
+## Graceful shutdown and the orchestrator's kill deadline
+
+The container's `CMD` passes uvicorn `--timeout-graceful-shutdown 30`: on
+SIGTERM, uvicorn stops accepting new connections but lets in-flight
+requests finish for up to 30 seconds before it exits. That number is only
+a promise if the orchestrator's own kill deadline is set comfortably
+above it — otherwise requests still running when the deadline hits are
+killed, not drained, no matter what uvicorn was told. `compose.yaml` sets
+`stop_grace_period: 40s` for exactly this reason: Docker Compose's own
+default is 10 seconds, well under uvicorn's 30. A Kubernetes deployment
+has the identical mismatch and needs the identical fix —
+`terminationGracePeriodSeconds` on the pod spec, set the same way, above
+uvicorn's `--timeout-graceful-shutdown`. It is easy to miss because
+Kubernetes' own default (30s) happens to equal uvicorn's deadline here
+exactly, leaving no margin at all.
+
 ## Testing note: `caplog` does not work here
 
 `configure_logging` calls `logging.getLogger().handlers.clear()`, which
