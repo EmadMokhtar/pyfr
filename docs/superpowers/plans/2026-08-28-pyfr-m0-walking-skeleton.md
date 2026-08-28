@@ -3629,7 +3629,11 @@ tests
 
 ```dockerfile
 # Builder: uv resolves and installs into a virtual environment we copy out.
-FROM ghcr.io/astral-sh/uv:0.11-python3.13-bookworm-slim AS builder
+# Debian trixie, not bookworm: astral-sh no longer publishes a
+# bookworm-slim variant for the 0.11 line. The runtime stage below must
+# stay on the same Debian release — a virtual environment built against
+# one glibc is not safe to run on an older one.
+FROM ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
@@ -3647,7 +3651,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 # Runtime: no uv, no build tools, no shell utilities beyond the base image.
-FROM python:3.13-slim-bookworm AS runtime
+# Must match the builder's Debian release; see the note above.
+FROM python:3.13-slim-trixie AS runtime
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
