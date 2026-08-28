@@ -1733,7 +1733,7 @@ cd examples/reference-service
 uv run pytest tests/unit/test_memory_repository.py -v
 ```
 
-Expected: PASS — 5 passed.
+Expected: PASS — 6 passed.
 
 - [ ] **Step 5: Commit**
 
