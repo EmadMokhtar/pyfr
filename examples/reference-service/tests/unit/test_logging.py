@@ -124,6 +124,30 @@ def test_per_logger_level_silences_a_chatty_library(
     assert "this must appear" in out
 
 
+def test_a_uvicorn_record_gets_the_same_shape_as_everything_else(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """uvicorn installs its own non-propagating handlers before the app
+    factory runs, so clearing only the root logger's handlers is not
+    enough — its records would keep going through uvicorn's own text
+    handler instead of reaching this bridge. configure_logging must also
+    clear uvicorn's own loggers' handlers and re-enable propagation so
+    uvicorn's records pass through the same processor chain as every
+    other record, contradicting nothing in the module's "every log
+    record" claim.
+    """
+    configure_logging(environment="production", level="info", levels={})
+
+    logging.getLogger("uvicorn.error").warning("application shutdown complete")
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["event"] == "application shutdown complete"
+    assert payload["level"] == "warning"
+    assert payload["logger"] == "uvicorn.error"
+    assert payload["service.name"] == "reference-service"
+    assert "timestamp" in payload
+
+
 def test_local_environment_uses_the_console_renderer(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

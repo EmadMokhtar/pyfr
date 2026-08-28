@@ -123,5 +123,21 @@ def configure_logging(
     root.addHandler(handler)
     root.setLevel(level.upper())
 
+    # uvicorn installs its own handlers on these three loggers, and sets
+    # them non-propagating, before the app factory ever runs — so clearing
+    # only the root logger's handlers (above) is not enough; uvicorn's
+    # records would still reach uvicorn's own text handler instead of this
+    # one, and never propagate up to root at all. Clearing their handlers
+    # and turning propagation back on routes their records through this
+    # same formatter, so "every log record passes through one processor
+    # chain" (the module docstring's promise) also holds for uvicorn's own
+    # startup, access, and connection-level lines, not just third-party
+    # libraries that log through the standard logging module the ordinary
+    # way.
+    for uvicorn_logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(uvicorn_logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+
     for logger_name, logger_level in levels.items():
         logging.getLogger(logger_name).setLevel(logger_level.upper())
