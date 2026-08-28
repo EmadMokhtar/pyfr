@@ -1622,8 +1622,29 @@ def an_order() -> Order:
     )
 
 
-def test_it_satisfies_the_port() -> None:
+def test_it_satisfies_the_port_at_runtime() -> None:
+    """Catches a renamed or missing method — nothing more.
+
+    `runtime_checkable` makes isinstance check that attributes with these
+    NAMES exist. It does not check parameter types, return types, or
+    async-ness. See the next test for the guarantee that does.
+    """
     assert isinstance(InMemoryOrderRepository(), OrderRepository)
+
+
+def test_it_satisfies_the_port_statically() -> None:
+    """The real conformance check — enforced by mypy, not at runtime.
+
+    The annotation on this assignment is the point of the test. mypy
+    verifies the concrete adapter against the Protocol's full signatures:
+    parameter types, return types and async-ness, none of which the
+    isinstance check above can see. If `get` took the wrong argument type or
+    stopped being async, `just typecheck` would fail here even though every
+    runtime assertion still passed.
+    """
+    repository: OrderRepository = InMemoryOrderRepository()
+
+    assert isinstance(repository, InMemoryOrderRepository)
 
 
 async def test_saving_then_getting_returns_the_order() -> None:
