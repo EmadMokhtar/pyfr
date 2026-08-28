@@ -1,5 +1,8 @@
 [importlinter]
 root_package = reference_service
+# Load-bearing: required whenever a `forbidden` contract's forbidden_modules
+# list names a third-party package (fastapi, starlette below). Without this,
+# lint-imports refuses to run at all rather than silently skipping the check.
 include_external_packages = True
 
 [importlinter:contract:domain-independence]
