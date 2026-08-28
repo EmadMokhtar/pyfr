@@ -3629,7 +3629,7 @@ tests
 
 ```dockerfile
 # Builder: uv resolves and installs into a virtual environment we copy out.
-FROM ghcr.io/astral-sh/uv:0.5-python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:0.11-python3.13-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
