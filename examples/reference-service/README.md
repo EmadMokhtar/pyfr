@@ -70,6 +70,7 @@ Every variable is prefixed `APP_`; nested settings use `__`. Copy
 | `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
 | `APP_OTEL__ENABLED` | `false` | Reserved for M2's OpenTelemetry exporter |
 | `APP_OTEL__LOGS_ENABLED` | `false` | Reserved for M2; would double log ingest if enabled alongside a platform log agent |
+| `APP_OTEL__ENDPOINT` | unset | Reserved for M2; the OTLP collector endpoint the exporter would send to |
 
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later.
