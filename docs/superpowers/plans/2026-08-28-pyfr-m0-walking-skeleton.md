@@ -4615,6 +4615,293 @@ docstring records the `include_router` parameterised-prefix limitation:
 
 ---
 
+## Task 15: Second review fix wave
+
+The review that produced Task 14 fixed thirteen findings there and left two
+open, plus three smaller items noted alongside them. This task closes all
+five, applied as one more fix wave immediately before merge. As with Task
+14, each finding below edits a snippet an earlier task (or Task 14 itself)
+already wrote, rather than creating new files; read this task after the one
+that introduced the file it touches.
+
+### Finding 1 — mixed-currency lines returned 500 for schema-valid input (Critical)
+
+Two order lines that are individually valid but use different currencies
+(one `EUR`, one `USD`) produced a 500. `domain.order.Money.__add__` raises a
+plain `ValueError` on a currency mismatch, and `application/place_order.py`
+calls `total_of(lines)` eagerly as an argument to `Order(...)`, so the
+`ValueError` is neither a `DomainError` nor a pydantic `ValidationError` and
+falls through to the catch-all handler. Same defect class as Task 14 Finding
+2: ordinary, schema-valid client input answered with a 5xx — except here no
+per-field constraint can close it, because the rule is a relationship
+*between* lines, not a property of one.
+
+Fixing `Money.__add__` to raise a `DomainError` was considered and rejected:
+`domain/errors.py` already imports `OrderId` from `domain/order.py`, so
+importing the error type back into `order.py` creates a circular import.
+Closing that properly means extracting the id aliases into their own
+module — too much structural change for this stage. Instead, the currency
+check is validated where the other cross-layer constraints now live: at the
+edge and in the command, mirroring Task 14 Finding 2's pattern.
+
+Confirmed pre-fix, by POSTing two individually-valid lines (one EUR, one
+USD) against the unpatched service:
+
+```
+STATUS: 500
+BODY: {"type":"https://errors.example.com/internal_error","title":"Internal server error","status":500,"instance":"/api/v1/orders"}
+```
+
+and the access log's `request.unhandled_error` line carried
+`"exc_type":"ValueError","exc_value":"cannot add USD to EUR: currency mismatch"`.
+
+Edits Task 12 Step 3's `api/v1/schemas.py` — a `model_validator(mode="after")`
+on `PlaceOrderRequest` rejects a request whose lines do not all share one
+currency. It raises `ValueError`, which FastAPI turns into a
+`RequestValidationError`, so the client gets a proper 422 with a field
+location:
+
+```python
+from typing import Annotated, Self
+
+from pydantic import BaseModel, Field, StringConstraints, model_validator
+
+
+class PlaceOrderRequest(BaseModel):
+    customer_id: UUID
+    lines: Annotated[list[OrderLineIn], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def lines_must_share_one_currency(self) -> Self:
+        # A relationship BETWEEN lines, not a property of one, so no
+        # per-field constraint can express it. Without this, two
+        # individually valid lines in different currencies reach
+        # `domain.order.total_of`, whose `Money.__add__` raises a plain
+        # `ValueError` — neither a `DomainError` nor a pydantic
+        # `ValidationError` — and fall through to the catch-all 500
+        # handler for ordinary, schema-valid client input.
+        currencies = {line.currency for line in self.lines}
+        if len(currencies) > 1:
+            raise ValueError(
+                f"all lines must share one currency, got {sorted(currencies)}"
+            )
+        return self
+```
+
+Edits Task 6 Step 3's `application/dtos.py` — the equivalent validator on
+`PlaceOrderCommand`, so the command object is trustworthy for a non-HTTP
+caller such as a background job or a later milestone's consumer, not only
+for a request that already passed through `PlaceOrderRequest`:
+
+```python
+from typing import Annotated, Self
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+
+class PlaceOrderCommand(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    customer_id: UUID
+    lines: Annotated[list[PlaceOrderLine], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def lines_must_share_one_currency(self) -> Self:
+        # Mirrors api/v1/schemas.py's PlaceOrderRequest validator, for the
+        # same reason the rest of this module's constraints mirror the api
+        # schema's: a command must stand on its own for a non-HTTP caller,
+        # not rely on the api layer having already filtered bad input.
+        currencies = {line.currency for line in self.lines}
+        if len(currencies) > 1:
+            raise ValueError(
+                f"all lines must share one currency, got {sorted(currencies)}"
+            )
+        return self
+```
+
+`domain/order.py`'s `Money.__add__` is left exactly as it is — it remains
+the domain's own last-resort guard, and it is now unreachable from the HTTP
+path.
+
+Adds `test_mixed_currency_lines_are_refused_with_422` to Task 12's
+`tests/api/test_orders.py` (two lines, each individually valid — a legal
+quantity, a legal decimal amount, a legal currency code — that disagree
+only in currency; asserts 422 and `application/problem+json`), and
+`test_a_command_with_mixed_currency_lines_is_refused` to Task 6's
+`tests/unit/test_place_order.py`, constructing a `PlaceOrderCommand`
+directly to prove the non-HTTP path is covered too.
+
+### Finding 2 — the pydantic.ValidationError handler logged nothing
+
+Task 14 Finding 2's `_pydantic_validation_error` handler returns a 422 and
+emits no log record at all. Before that finding, the same input produced a
+500 and a full traceback via `_logger.exception`; the status change was
+correct, the silence was not. This handler exists to catch cross-layer
+constraint asymmetries — the exact defect class Finding 1 above is an
+instance of — and a silent net makes the next such occurrence invisible in
+the logs instead of loud. It was the only handler in `api/errors.py` that
+logged nothing at all.
+
+Edits Task 14 Finding 2's `api/errors.py` — a single `_logger.warning` call
+before returning, carrying `http.route` the way `_unexpected_error` does.
+`correlation_id` is not passed explicitly: unlike `_unexpected_error`, this
+handler runs inside `CorrelationIdMiddleware`, so
+`structlog.contextvars.merge_contextvars` already carries it, the same way
+`_domain_error`'s log line does:
+
+```python
+    @app.exception_handler(PydanticValidationError)
+    async def _pydantic_validation_error(
+        request: Request, exc: PydanticValidationError
+    ) -> JSONResponse:
+        # A net for the next place a raw pydantic model validates input
+        # a shallower layer already accepted: without this, such a error
+        # is neither a DomainError nor a RequestValidationError, so it falls
+        # through to the catch-all below and becomes an unearned 500.
+        #
+        # warning, not exception: this is a client-fault path (a 422), not
+        # a server fault. But this handler exists precisely to catch
+        # cross-layer validation asymmetries, so the next one must stay
+        # loud in the logs, not silent. correlation_id is not passed
+        # explicitly: this handler runs inside CorrelationIdMiddleware, so
+        # structlog.contextvars.merge_contextvars already carries it, the
+        # same way _domain_error's log line above does.
+        _logger.warning(
+            "request.validation_error",
+            **{"http.route": _route_template(request.scope)},
+        )
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/validation_error",
+                title="Request validation failed",
+                status=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc.errors()),
+                instance=request.url.path,
+            )
+        )
+```
+
+Adds `test_a_pydantic_validation_error_is_logged_at_warning` to Task 14
+Finding 2's `tests/api/test_errors.py`, asserting the `request.validation_error`
+record's `level`, `correlation_id` and `http.route` fields, built the same
+way `test_an_unhandled_error_still_carries_the_correlation_id` is (its own
+app with `CorrelationIdMiddleware` added, `capsys` for the JSON lines).
+
+### Finding 3 — the commitizen hook could never fire
+
+Task 14 Finding 1's `.pre-commit-config.yaml` registers commitizen's
+`commit-msg` hook, but set no `default_install_hook_types`, and nothing in
+the README, the justfile or this plan ever runs `pre-commit install` at
+all — let alone `--hook-type commit-msg`. `pre-commit install` with no
+arguments only wires up the `pre-commit` stage, so a developer of a
+generated project would never have this hook run. Same shape as the
+Critical Task 14 Finding 1 fixed: a configured gate that cannot execute.
+
+Edits Task 14 Finding 1's `.pre-commit-config.yaml` — a new top-level key,
+added before the existing `repos:` list, so a bare `pre-commit install`
+wires up both stages:
+
+```yaml
+# pre-commit only installs the git hook types it is told to. Without this,
+# `pre-commit install` (run with no arguments, as the README instructs)
+# wires up the `pre-commit` stage only - the commitizen hook below runs at
+# the `commit-msg` stage and would never fire even after installation.
+default_install_hook_types: [pre-commit, commit-msg]
+```
+
+Edits Task 13 Step 8's `README.md` — the one-time setup step is now
+documented in the five-minute start:
+
+```bash
+uv sync                    # or: just install
+uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
+just dev                   # http://localhost:8000/docs
+```
+
+### Finding 4 — `just check` ran an unlocked, mutating pre-commit
+
+Two problems in Task 14 Finding 1's `precommit` recipe. First, it called
+`uvx pre-commit`, fetching an ephemeral copy even though `pre-commit>=4.0`
+is already a locked dev dependency and every other recipe uses `uv run` —
+the same finding that pinned ruff and uv to match the locked toolchain left
+the tool driving those pins unpinned.
+
+Second, the `ruff-check` hook carried `args: ["--fix"]`, so a recipe named
+`check` rewrote source files — and in CI would fail on the first run and
+pass on the second. This project already separates the two: `just lint`
+checks, `just fmt` fixes. Auto-fixing at commit time is a surprise; `just
+fmt` is the deliberate path.
+
+Edits Task 1 Step 5's `justfile` (as extended by Task 14 Finding 1):
+
+```make
+precommit:
+    uv run pre-commit run --all-files
+```
+
+Edits Task 14 Finding 1's `.pre-commit-config.yaml` — no `args` on
+`ruff-check`, so nothing named `check` mutates the tree:
+
+```yaml
+    hooks:
+      # No args: ["--fix"] here. `just check`'s precommit recipe runs this
+      # hook, and "check" must never mutate the tree - it would rewrite
+      # source files, fail on the first CI run and pass on the second.
+      # `just lint` checks, `just fmt` fixes (via `ruff check --fix`); this
+      # hook mirrors `just lint`, not `just fmt`.
+      - id: ruff-check
+      - id: ruff-format
+```
+
+Verified: `uvx --from rust-just just check`, followed by `git status
+--porcelain -- examples/reference-service`, reports nothing — no file
+inside this project is modified by either hook, confirmed by running it
+twice in a row.
+
+Not fixed here, and worth recording: in this repository's own checkout,
+`examples/reference-service` has no `.git` of its own — it is nested inside
+the docs monorepo. `pre-commit run --all-files` discovers the *enclosing*
+git repository, so `precommit`'s hooks also run against every tracked file
+in the whole monorepo, not only this project's. Two consequences, neither
+caused by this finding's fix and neither reachable once this project is
+generated into its own repository (where its `.git` and its
+`.pre-commit-config.yaml` coincide): `end-of-file-fixer` and
+`trailing-whitespace` touch pre-existing whitespace issues in files like
+`.idea/*.xml`, the monorepo's own `.gitignore` and top-level `README.md`;
+and, separately, `ruff-format`'s pinned hook (`v0.16.5`) defaults
+`types_or` to `[python, pyi, jupyter, markdown]` — it also reformats fenced
+`python` code blocks inside `.md` files, and since this plan's snippets
+are illustrative fragments (a class body, not a standalone module), ruff
+parses a line like `frozen=True,` as a top-level tuple-assignment
+statement and "corrects" it to `frozen = (True,)`, silently changing its
+meaning. Both were confirmed by running `pre-commit run --all-files`
+directly and inspecting the resulting diff outside `examples/reference-service`.
+
+### Finding 5 — `APP_OTEL__ENDPOINT` was undocumented
+
+`OtelSettings.endpoint` (`APP_OTEL__ENDPOINT`) was the only one of the seven
+`APP_*` settings missing from both the README's configuration table and
+`.env.example`, though Task 14 Finding 4 added the other six.
+
+Edits Task 13 Step 8's `README.md`:
+
+```markdown
+| `APP_OTEL__ENDPOINT` | unset | Reserved for M2; the OTLP collector endpoint the exporter would send to |
+```
+
+Edits Task 2 Step 4's `.env.example` — commented out, since the actual
+default is unset (`None`), not a value worth setting before M2's exporter
+exists:
+
+```bash
+APP_OTEL__ENABLED=false
+APP_OTEL__LOGS_ENABLED=false
+# Unset by default. The OTLP collector endpoint the exporter would send to.
+# APP_OTEL__ENDPOINT=http://localhost:4317
+```
+
+---
+
 ## Definition of done for M0
 
 All of the following must hold before M1 starts:
