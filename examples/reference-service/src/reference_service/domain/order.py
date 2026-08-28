@@ -72,17 +72,26 @@ def total_of(lines: Sequence[OrderLine]) -> Money:
 class Order(BaseModel):
     """An entity: it has an identity and protects its own invariants.
 
-    `validate_assignment=True` is the part that matters. Without it an Order
-    could be made invalid after construction by reassigning a field; with it,
-    an invalid Order cannot exist at any point in its life — including via
-    `lines`: a mutable `list` would let `order.lines.append(bad_line)`
-    bypass `validate_assignment` entirely (append mutates the existing list
-    in place; it never reassigns the field, so no validator runs). `tuple`
-    closes that gap: it has no `append`, and Pydantic still coerces an
-    ordinary list at construction time, so call sites are unaffected.
+    `frozen=True` is the part that matters, not `validate_assignment=True`.
+    Pydantic's `validate_assignment` assigns the new value to the field
+    FIRST and only then runs the `after` model validator; when the
+    validator raises, the assignment has already happened, so the object is
+    left corrupt with the invalid value in place — the validator's
+    exception tells the caller "rejected" while `self.__dict__` says
+    otherwise. `frozen=True` sidesteps that ordering problem entirely: it
+    refuses the assignment itself, before any mutation, so there is no
+    window in which a bad value has landed. An invalid Order still cannot
+    be constructed — that guarantee comes from the constructor already
+    running every validator — and now an existing Order cannot be
+    corrupted after construction either. This also covers `lines`: a
+    mutable `list` would let `order.lines.append(bad_line)` corrupt the
+    entity without ever going through assignment at all (append mutates
+    the existing list in place). `tuple` closes that gap independently of
+    `frozen`: it has no `append`, and Pydantic still coerces an ordinary
+    list at construction time, so call sites are unaffected.
     """
 
-    model_config = ConfigDict(validate_assignment=True)
+    model_config = ConfigDict(frozen=True)
 
     id: OrderId
     customer_id: CustomerId

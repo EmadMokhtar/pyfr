@@ -93,20 +93,31 @@ def test_order_rejects_a_total_that_disagrees_with_its_lines() -> None:
 
 
 def test_invariant_is_rechecked_when_a_field_is_reassigned() -> None:
-    """validate_assignment is what stops an entity being corrupted later."""
+    """`frozen=True` is what stops an entity being corrupted later.
+
+    Asserting only that the assignment raises is not enough: Pydantic's
+    `validate_assignment` (the mechanism this used to rely on) assigns the
+    new value FIRST and runs the `after` validator second, so a raised
+    ValidationError does not mean the object was left alone — confirmed by
+    probing the unpatched code, where `order.total` read back as 99.00
+    after this exact assignment raised. `frozen=True` refuses the
+    assignment before any mutation happens, so the second assertion below
+    is the one that actually catches the corruption.
+    """
     order = build_order(line(price="10.00"))
 
     with pytest.raises(ValidationError):
         order.total = money("99.00")
+    assert order.total == money("10.00")
 
 
 def test_lines_cannot_be_mutated_in_place() -> None:
     """`lines` is a `tuple`, not a `list`, precisely so this cannot happen.
 
     A mutable list would let `order.lines.append(bad_line)` corrupt the
-    entity without ever reassigning the field — bypassing
-    `validate_assignment` entirely, since it only revalidates on
-    assignment, not on mutation of an already-assigned value.
+    entity without ever going through assignment at all — bypassing
+    `frozen` entirely, since `frozen` only refuses assignment, not mutation
+    of an already-assigned value's contents.
     """
     order = build_order(line(price="10.00"))
 
