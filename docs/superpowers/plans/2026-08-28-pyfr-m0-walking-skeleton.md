@@ -1159,14 +1159,34 @@ def test_domain_errors_carry_no_http_status() -> None:
 
     Checked on the runtime surface rather than the source text, so a
     docstring explaining the rule cannot fail the test that enforces it.
+
+    Checked on INSTANCES rather than classes, because `hasattr` on a class
+    cannot see an attribute assigned to `self` inside `__init__` — which is
+    exactly how `OrderNotFoundError` sets `order_id`. A class-level check
+    would miss the most natural way to break this rule. Checking instances
+    subsumes the class-level check, since attribute lookup falls back to
+    the class.
     """
-    for error_class in (DomainError, OrderNotFoundError):
-        assert not hasattr(error_class, "status")
-        assert not hasattr(error_class, "status_code")
-        assert not hasattr(error_class, "http_status")
+    for error in (DomainError("boom"), OrderNotFoundError(OrderId(uuid4()))):
+        assert not hasattr(error, "status")
+        assert not hasattr(error, "status_code")
+        assert not hasattr(error, "http_status")
 
 
 def test_repository_is_a_runtime_checkable_protocol() -> None:
+    """Guard the decorator and the method names — nothing more.
+
+    `runtime_checkable` makes `isinstance` check only that attributes with
+    these NAMES exist. It does not check parameter types, return types, or
+    even that the methods are async: `Fake.save` below takes `object` while
+    the Protocol declares `Order`, and this still passes. That is deliberate
+    here — the real signature conformance check is static, performed by mypy
+    when the in-memory adapter is assigned to an `OrderRepository`-typed
+    field on the container. What this test does catch is a missing
+    `@runtime_checkable` decorator (isinstance would raise TypeError) and a
+    renamed or misspelled method.
+    """
+
     class Fake:
         async def get(self, order_id: OrderId) -> None:
             return None
