@@ -4,7 +4,7 @@
 
 **Goal:** Build `examples/reference-service/` — a FastAPI service that runs, is tested, is linted, is type-checked, and serves a working API through `just up`, with no database, no cache and no object storage.
 
-**Architecture:** Four layers with dependencies pointing inward — `domain` (Pydantic entities and repository Protocols, importing nothing but Pydantic), `application` (one use case per business operation), `infrastructure` (adapters; in M0 only an in-memory repository), and `api` (FastAPI routers, request/response schemas, mappers). A composition root in `container.py` builds the adapters, and FastAPI's `lifespan` owns their life cycle. This is Phase A of the spec: plain Python, no Jinja anywhere.
+**Architecture:** Four layers with dependencies pointing inward — `domain` (Pydantic entities and repository Protocols, importing nothing but Pydantic), `service` (application services: one file per aggregate, orchestrating its use cases), `infrastructure` (adapters; in M0 only an in-memory repository), and `api` (FastAPI routers, request/response schemas, mappers). A composition root in `container.py` builds the adapters, and FastAPI's `lifespan` owns their life cycle. This is Phase A of the spec: plain Python, no Jinja anywhere.
 
 **Tech Stack:** Python 3.13, uv, FastAPI, Pydantic 2, pydantic-settings, structlog, uvicorn, pytest, Hypothesis, ruff, mypy, import-linter, pre-commit, Docker, just.
 
@@ -18,9 +18,9 @@ Every task's requirements implicitly include these.
 - **uv for everything Python.** `uv sync`, `uv run`, `uv lock`. No `pip`, no `requirements.txt`, no `pipx`, no manually activated virtual environment.
 - **Plain Python only.** M0 is Phase A. No Jinja, no cookiecutter variables, no `{{ }}` templating in any file. Templatisation is M7.
 - **Package name is `reference_service`;** distribution name is `reference-service`. All work happens under `examples/reference-service/`.
-- **The domain layer imports nothing but `pydantic`.** Not FastAPI, not the application layer, not infrastructure.
+- **The domain layer imports nothing but `pydantic`.** Not FastAPI, not the service layer, not infrastructure.
 - **The domain layer never knows an HTTP status code exists.** Mapping a domain error to a status code happens only in `api/errors.py`.
-- **mypy is strict on `domain/` and `application/`,** lenient elsewhere.
+- **mypy is strict on `domain/` and `service/`,** lenient elsewhere.
 - **All logging goes through structlog,** rendered to standard output. OTLP export is M2 and must not appear in M0.
 - **`/healthz` never checks a dependency.** Only `/readyz` does.
 - **The access log records route templates (`/orders/{order_id}`), never raw paths.**
@@ -56,11 +56,9 @@ examples/reference-service/
       errors.py             DomainError hierarchy
       order.py              Money, OrderLine, Order, ids, total_of()
       repositories.py       OrderRepository Protocol
-    application/
+    service/
       __init__.py
-      dtos.py               PlaceOrderCommand, PlaceOrderLine
-      place_order.py        PlaceOrder use case
-      get_order.py          GetOrder use case
+      order.py              PlaceOrderLine, PlaceOrderCommand, PlaceOrder, GetOrder
     infrastructure/
       __init__.py
       memory/
@@ -83,11 +81,11 @@ examples/reference-service/
   tests/
     __init__.py
     conftest.py             shared fixtures
-    unit/                   domain, application, settings, logging
+    unit/                   domain, service, settings, logging
     api/                    endpoint tests via TestClient
 ```
 
-**Why these boundaries:** `domain/` holds rules and can be tested with no I/O at all. `application/` orchestrates and holds no rules. `infrastructure/` is the only place that knows a storage technology. `api/` is the only place that knows HTTP. Each file has one responsibility, and `.importlinter` enforces the arrows mechanically in Task 8.
+**Why these boundaries:** `domain/` holds rules and can be tested with no I/O at all. `service/` orchestrates and holds no rules. `infrastructure/` is the only place that knows a storage technology. `api/` is the only place that knows HTTP. Each file has one responsibility, and `.importlinter` enforces the arrows mechanically in Task 8.
 
 ---
 
@@ -123,7 +121,7 @@ printf '\n# IDE\n.idea/\n\n# macOS\n.DS_Store\n' >> .gitignore
 
 ```bash
 cd /Users/emadmokhtar/Projects/pyfr.docs-pyfr-template-design
-mkdir -p examples/reference-service/src/reference_service/{domain,application,infrastructure/memory,api/v1,observability}
+mkdir -p examples/reference-service/src/reference_service/{domain,service,infrastructure/memory,api/v1,observability}
 mkdir -p examples/reference-service/tests/{unit,api}
 ```
 
@@ -181,7 +179,7 @@ ignore_missing_imports = true
 # where third-party type stubs are imperfect and strictness only produces
 # `# type: ignore` comments rather than safety.
 [[tool.mypy.overrides]]
-module = ["reference_service.domain.*", "reference_service.application.*"]
+module = ["reference_service.domain.*", "reference_service.service.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_calls = true
@@ -314,7 +312,7 @@ touch src/reference_service/__init__.py
 # Task 13 replaces this placeholder with real content.
 touch README.md
 touch src/reference_service/domain/__init__.py
-touch src/reference_service/application/__init__.py
+touch src/reference_service/service/__init__.py
 touch src/reference_service/infrastructure/__init__.py
 touch src/reference_service/infrastructure/memory/__init__.py
 touch src/reference_service/api/__init__.py
@@ -984,7 +982,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'reference_service.doma
 """The Order aggregate.
 
 This module imports nothing but Pydantic and the standard library. It knows
-nothing about HTTP, about SQL, or about the application layer. Pydantic is
+nothing about HTTP, about SQL, or about the service layer. Pydantic is
 used here as a validation library, not as a web framework: it is what makes
 the invariants declarative and impossible to bypass.
 """
@@ -1285,15 +1283,17 @@ git commit -m "feat: add domain errors and order repository port"
 
 ---
 
-## Task 6: Application use cases
+## Task 6: Order application services
+
+One file per aggregate: `service/order.py` holds every application service —
+and the commands they take — for the Order aggregate. It is written in three
+steps (commands, then `PlaceOrder`, then `GetOrder`), each appending to the
+same file rather than creating a new one.
 
 **Files:**
-- Create: `examples/reference-service/src/reference_service/application/dtos.py`
-- Create: `examples/reference-service/src/reference_service/application/place_order.py`
-- Create: `examples/reference-service/src/reference_service/application/get_order.py`
-- Create: `examples/reference-service/tests/fakes.py` — the shared `FakeOrderRepository`, so the two test files below do not each carry an identical copy
-- Test: `examples/reference-service/tests/unit/test_place_order.py`
-- Test: `examples/reference-service/tests/unit/test_get_order.py`
+- Create: `examples/reference-service/src/reference_service/service/order.py` — built across Steps 3–5 below: `PlaceOrderLine`, `PlaceOrderCommand`, `PlaceOrder`, `GetOrder`
+- Create: `examples/reference-service/tests/fakes.py` — the shared `FakeOrderRepository`
+- Test: `examples/reference-service/tests/unit/test_order_service.py` — both use cases, one file, since both exercise the same aggregate
 
 **Interfaces:**
 - Consumes: `Order`, `OrderLine`, `Money`, `OrderId`, `CustomerId`, `total_of`, `OrderRepository`, `OrderNotFoundError`.
@@ -1305,8 +1305,7 @@ git commit -m "feat: add domain errors and order repository port"
 
 - [ ] **Step 1: Write the shared fake, then the failing tests**
 
-`tests/fakes.py` — one copy, imported by both test files below. Defining it
-twice would be verbatim duplication of a logic block:
+`tests/fakes.py` — one copy, imported by the test file below:
 
 ```python
 """Test doubles shared across the suite."""
@@ -1319,7 +1318,7 @@ from reference_service.domain.order import Order, OrderId
 class FakeOrderRepository:
     """An in-memory stand-in satisfying the OrderRepository port.
 
-    Hand-written rather than reusing the real adapter, so the application
+    Hand-written rather than reusing the real adapter, so the service
     tests demonstrate that a use case needs no infrastructure whatsoever.
     """
 
@@ -1333,7 +1332,8 @@ class FakeOrderRepository:
         self.saved.append(order)
 ```
 
-`tests/unit/test_place_order.py`:
+`tests/unit/test_order_service.py` — `PlaceOrder`'s tests, then `GetOrder`'s,
+in one file because both exercise `service/order.py`'s one aggregate:
 
 ```python
 from decimal import Decimal
@@ -1341,8 +1341,14 @@ from uuid import uuid4
 
 import pytest
 
-from reference_service.application.dtos import PlaceOrderCommand, PlaceOrderLine
-from reference_service.application.place_order import PlaceOrder
+from reference_service.domain.errors import OrderNotFoundError
+from reference_service.domain.order import OrderId
+from reference_service.service.order import (
+    GetOrder,
+    PlaceOrder,
+    PlaceOrderCommand,
+    PlaceOrderLine,
+)
 from tests.fakes import FakeOrderRepository
 
 
@@ -1390,22 +1396,6 @@ async def test_each_order_gets_a_distinct_identity() -> None:
 async def test_a_command_with_no_lines_is_refused() -> None:
     with pytest.raises(ValueError):
         PlaceOrderCommand(customer_id=uuid4(), lines=[])
-```
-
-`tests/unit/test_get_order.py`:
-
-```python
-from decimal import Decimal
-from uuid import uuid4
-
-import pytest
-
-from reference_service.application.dtos import PlaceOrderCommand, PlaceOrderLine
-from reference_service.application.get_order import GetOrder
-from reference_service.application.place_order import PlaceOrder
-from reference_service.domain.errors import OrderNotFoundError
-from reference_service.domain.order import OrderId
-from tests.fakes import FakeOrderRepository
 
 
 async def test_returns_a_stored_order() -> None:
@@ -1443,19 +1433,33 @@ async def test_raises_a_domain_error_when_missing() -> None:
 
 ```bash
 cd examples/reference-service
-uv run pytest tests/unit/test_place_order.py tests/unit/test_get_order.py -v
+uv run pytest tests/unit/test_order_service.py -v
 ```
 
-Expected: FAIL — `ModuleNotFoundError: No module named 'reference_service.application.dtos'`.
+Expected: FAIL — `ModuleNotFoundError: No module named 'reference_service.service.order'`.
 
-- [ ] **Step 3: Write `application/dtos.py`**
+- [ ] **Step 3: Write `service/order.py` — the module docstring and the commands**
+
+The docstring is written once, here, and stays accurate as Steps 4 and 5
+append to the same file — it describes the whole module, not just the
+commands:
 
 ```python
-"""Command objects.
+"""Order application services: PlaceOrder and GetOrder.
 
-A command is the application layer's own input type. It is deliberately not
-an HTTP schema and not a domain entity: the api layer maps into it, and the
-use case maps out of it into the domain.
+An application service orchestrates a use case: it turns a command into
+domain objects, lets the Order aggregate enforce its own rules, and hands
+the result to a repository. It holds no business rules of its own — those
+live in the domain layer, in the Order aggregate. (This is not a domain
+service — a domain service holds business logic that belongs to no single
+entity and lives in the domain layer; these hold no business logic at all.)
+This single property, no business rules here, is exactly what the import
+contracts and `test_layer_purity.py` verify.
+
+This module also defines PlaceOrder's command objects, PlaceOrderCommand and
+PlaceOrderLine — the service layer's own input type. A command is
+deliberately not an HTTP schema and not a domain entity: the api layer maps
+into it, and PlaceOrder maps out of it into the domain.
 """
 
 from __future__ import annotations
@@ -1483,21 +1487,20 @@ class PlaceOrderCommand(BaseModel):
     lines: Annotated[list[PlaceOrderLine], Field(min_length=1)]
 ```
 
-- [ ] **Step 4: Write `application/place_order.py`**
+- [ ] **Step 4: Append `PlaceOrder` to `service/order.py`**
+
+Add `uuid4` and the domain imports to the top of the file, then append the
+class below `PlaceOrderCommand`:
 
 ```python
-"""The 'place an order' use case.
-
-A use case orchestrates: it turns a command into domain objects, asks the
-domain to enforce its rules, and hands the result to a repository. It holds
-no business rules of its own — those live in the Order aggregate.
-"""
-
 from __future__ import annotations
 
-from uuid import uuid4
+from decimal import Decimal
+from typing import Annotated
+from uuid import UUID, uuid4
 
-from reference_service.application.dtos import PlaceOrderCommand
+from pydantic import BaseModel, ConfigDict, Field
+
 from reference_service.domain.order import (
     CustomerId,
     Money,
@@ -1507,8 +1510,9 @@ from reference_service.domain.order import (
     total_of,
 )
 from reference_service.domain.repositories import OrderRepository
+```
 
-
+```python
 class PlaceOrder:
     def __init__(self, orders: OrderRepository) -> None:
         self._orders = orders
@@ -1532,18 +1536,16 @@ class PlaceOrder:
         return order
 ```
 
-- [ ] **Step 5: Write `application/get_order.py`**
+- [ ] **Step 5: Append `GetOrder` to `service/order.py`**
+
+Add `OrderNotFoundError` to the domain imports, then append the class at the
+end of the file:
 
 ```python
-"""The 'fetch an order' use case."""
-
-from __future__ import annotations
-
 from reference_service.domain.errors import OrderNotFoundError
-from reference_service.domain.order import Order, OrderId
-from reference_service.domain.repositories import OrderRepository
+```
 
-
+```python
 class GetOrder:
     def __init__(self, orders: OrderRepository) -> None:
         self._orders = orders
@@ -1569,7 +1571,7 @@ Expected: PASS — all unit tests green.
 ```bash
 cd /Users/emadmokhtar/Projects/pyfr.docs-pyfr-template-design
 git add examples/reference-service
-git commit -m "feat: add place order and get order use cases"
+git commit -m "feat: add place order and get order application services"
 ```
 
 ---
@@ -1776,18 +1778,18 @@ source_modules =
     reference_service.domain
 forbidden_modules =
     reference_service.api
-    reference_service.application
+    reference_service.service
     reference_service.infrastructure
     reference_service.container
     reference_service.main
     fastapi
     starlette
 
-[importlinter:contract:application-independence]
-name = Application imports neither api nor infrastructure
+[importlinter:contract:service-independence]
+name = Service imports neither api nor infrastructure
 type = forbidden
 source_modules =
-    reference_service.application
+    reference_service.service
 forbidden_modules =
     reference_service.api
     reference_service.infrastructure
@@ -1864,7 +1866,7 @@ Create `tests/unit/test_layer_purity.py`:
 
 import-linter's contracts are blocklists — they catch the packages they
 name. This is the allowlist half: it fails on ANY third-party import into
-domain or application, including one nobody thought to forbid.
+domain or service, including one nobody thought to forbid.
 """
 
 from __future__ import annotations
@@ -1875,8 +1877,8 @@ from pathlib import Path
 
 import pytest
 
-import reference_service.application
 import reference_service.domain
+import reference_service.service
 
 ALLOWED_THIRD_PARTY = frozenset({"pydantic"})
 
@@ -1896,8 +1898,8 @@ def _top_level_imports(source: Path) -> set[str]:
 
 @pytest.mark.parametrize(
     "package",
-    [reference_service.domain, reference_service.application],
-    ids=["domain", "application"],
+    [reference_service.domain, reference_service.service],
+    ids=["domain", "service"],
 )
 def test_layer_imports_only_pydantic_and_the_standard_library(
     package: object,
@@ -3421,7 +3423,7 @@ class OrderResponse(BaseModel):
 - [ ] **Step 4: Write `api/v1/mappers.py`**
 
 ```python
-"""Mapping between the wire contract and the application layer.
+"""Mapping between the wire contract and the service layer.
 
 Explicit functions, not automatic derivation. Deriving the schema from the
 domain model would remove the very decoupling the separation exists to
@@ -3436,8 +3438,8 @@ from reference_service.api.v1.schemas import (
     OrderResponse,
     PlaceOrderRequest,
 )
-from reference_service.application.dtos import PlaceOrderCommand, PlaceOrderLine
 from reference_service.domain.order import Money, Order
+from reference_service.service.order import PlaceOrderCommand, PlaceOrderLine
 
 
 def to_command(request: PlaceOrderRequest) -> PlaceOrderCommand:
@@ -3484,9 +3486,8 @@ Append to `src/reference_service/api/deps.py` (Task 9 created it with only
 `get_container` and `ContainerDep`):
 
 ```python
-from reference_service.application.get_order import GetOrder
-from reference_service.application.place_order import PlaceOrder
 from reference_service.domain.repositories import OrderRepository
+from reference_service.service.order import GetOrder, PlaceOrder
 
 
 def get_orders(container: ContainerDep) -> OrderRepository:
@@ -3787,7 +3788,7 @@ just dev           # http://localhost:8000/docs
 | `just test` | Run the test suite |
 | `just lint` | ruff check and format check |
 | `just fmt` | Fix lint issues and format |
-| `just typecheck` | mypy — strict on domain and application |
+| `just typecheck` | mypy — strict on domain and service |
 | `just imports` | Verify the layer dependency rule |
 | `just check` | All of the above; run this before pushing |
 | `just up` / `just down` | Start / stop the container stack |
@@ -3808,7 +3809,7 @@ just dev           # http://localhost:8000/docs
 ```
 src/reference_service/
   domain/          entities and repository ports; imports only pydantic
-  application/     one use case per business operation
+  service/         application services; one file per aggregate
   infrastructure/  adapters; the only code that knows a storage technology
   api/             the only code that knows HTTP
 ```
@@ -3964,7 +3965,7 @@ class OrderLineIn(BaseModel):
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 ```
 
-Edits Task 6 Step 3's `application/dtos.py` — `PlaceOrderLine` gains the
+Edits Task 6 Step 3's `service/order.py` — `PlaceOrderLine` gains the
 same bounds plus the `sku`/`currency` constraints it lacked, so the command
 is trustworthy for a non-HTTP caller too:
 
@@ -3976,7 +3977,7 @@ class PlaceOrderLine(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     # These mirror the api schema's and the domain's constraints. A command
-    # is the application layer's own input type — it must stand on its own
+    # is the service layer's own input type — it must stand on its own
     # for a non-HTTP caller, not rely on api/v1/schemas.py having already
     # filtered bad input.
     sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
@@ -4459,7 +4460,7 @@ It said "an invalid Order cannot exist at any point in its life", but
 `validate_assignment` entirely — append mutates the existing list in
 place; it never reassigns the field, so no validator runs. Tried
 `tuple[OrderLine, ...]` per the finding's suggestion, and it did not
-ripple far: 6 call sites across 3 files (`place_order.py`, and the list
+ripple far: 6 call sites across 3 files (`service/order.py`, and the list
 literals in `test_order.py` and `test_memory_repository.py`), all a
 mechanical `list` → `tuple` swap. Pydantic still coerces an ordinary list
 into the tuple at construction time, so no site changed its actual
@@ -4491,7 +4492,7 @@ class Order(BaseModel):
     total: Money
 ```
 
-Edits Task 6 Step 4's `application/place_order.py` — the list
+Edits Task 6 Step 4's `service/order.py` — the list
 comprehension becomes a generator passed to `tuple(...)`:
 
 ```python
@@ -4628,7 +4629,7 @@ that introduced the file it touches.
 
 Two order lines that are individually valid but use different currencies
 (one `EUR`, one `USD`) produced a 500. `domain.order.Money.__add__` raises a
-plain `ValueError` on a currency mismatch, and `application/place_order.py`
+plain `ValueError` on a currency mismatch, and `service/order.py`
 calls `total_of(lines)` eagerly as an argument to `Order(...)`, so the
 `ValueError` is neither a `DomainError` nor a pydantic `ValidationError` and
 falls through to the catch-all handler. Same defect class as Task 14 Finding
@@ -4688,7 +4689,7 @@ class PlaceOrderRequest(BaseModel):
         return self
 ```
 
-Edits Task 6 Step 3's `application/dtos.py` — the equivalent validator on
+Edits Task 6 Step 3's `service/order.py` — the equivalent validator on
 `PlaceOrderCommand`, so the command object is trustworthy for a non-HTTP
 caller such as a background job or a later milestone's consumer, not only
 for a request that already passed through `PlaceOrderRequest`:
@@ -4728,7 +4729,7 @@ Adds `test_mixed_currency_lines_are_refused_with_422` to Task 12's
 quantity, a legal decimal amount, a legal currency code — that disagree
 only in currency; asserts 422 and `application/problem+json`), and
 `test_a_command_with_mixed_currency_lines_is_refused` to Task 6's
-`tests/unit/test_place_order.py`, constructing a `PlaceOrderCommand`
+`tests/unit/test_order_service.py`, constructing a `PlaceOrderCommand`
 directly to prove the non-HTTP path is covered too.
 
 ### Finding 2 — the pydantic.ValidationError handler logged nothing

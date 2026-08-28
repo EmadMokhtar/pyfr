@@ -65,7 +65,7 @@ Each decision below is fixed. Changing one invalidates the sections that follow 
 | D2 | uv for everything Python | Locking, syncing, running, tool execution, Python version pinning, Docker builds. No pip, no `requirements.txt`, no pipx. The one pip-named tool, `pip-audit`, runs as `uvx pip-audit` and audits the uv-resolved environment |
 | D3 | Prompt and prune | Cookiecutter asks per category; only the chosen adapter is generated. Zero dead code and minimal images in generated services |
 | D4 | Full Grafana LGTM, OpenTelemetry-native, behind a compose profile | The only option delivering working SLI/SLO dashboards on first run; the profile keeps it off a laptop by default |
-| D5 | Light DDD, four layers | Domain, application, infrastructure, api. Business logic testable with no I/O |
+| D5 | Light DDD, four layers | Domain, service, infrastructure, api. Business logic testable with no I/O |
 | D6 | Domain models are Pydantic | Invariants enforced declaratively and re-checked on assignment |
 | D7 | API schemas separate from domain models, joined by mappers | The HTTP contract evolves independently of the business model |
 | D8 | Narrow backend matrix | PostgreSQL, Redis, S3-compatible — each optional. Fully built and tested rather than several half-finished |
@@ -179,9 +179,9 @@ src/<package_name>/
     repositories.py   # Protocol: OrderRepository
     errors.py         # DomainError hierarchy
 
-  application/
-    place_order.py    # one use case = one business operation
-    dtos.py           # command and result objects
+  service/
+    order.py          # PlaceOrderLine, PlaceOrderCommand, PlaceOrder, GetOrder
+                      # — application services and their commands, one file per aggregate
 
   infrastructure/
     db/               # SQLAlchemy 2.0 async: engine, models, repository adapter
@@ -206,8 +206,8 @@ src/<package_name>/
 HTTP request
   -> middleware: extract or create correlation id; bind to structlog + OTel span
   -> api/v1/router: FastAPI validates the body against the api schema
-  -> api/v1/mappers: schema -> application command
-  -> application/place_order: orchestrates; holds no business rules itself
+  -> api/v1/mappers: schema -> service command
+  -> service/order: orchestrates; holds no business rules itself
   -> domain/order: invariants enforced by Pydantic on construction
   -> domain/repositories.OrderRepository        [Protocol — the boundary]
   -> infrastructure/db/order_repository: the only code that knows SQL
@@ -548,7 +548,7 @@ follow the same OpenTelemetry semantic conventions as the traces and metrics
 | `timestamp` | processor | `2026-08-28T09:14:22.481Z` |
 | `level` | processor | `error` |
 | `event` | the call site | `order.placed` |
-| `logger` | standard library logger name | `my_service.application.place_order` |
+| `logger` | standard library logger name | `my_service.service.order` |
 | `service.name`, `service.version`, `deployment.environment` | resource attributes | |
 | `trace_id`, `span_id` | the active span | |
 | `correlation_id` | context variables, bound by middleware | |
@@ -594,7 +594,7 @@ not break when someone rewords a message.
 
 ```
 tests/
-  unit/          domain + application. No I/O, no containers. Milliseconds.
+  unit/          domain + service. No I/O, no containers. Milliseconds.
   integration/   Testcontainers: postgres, redis, minio. Real adapters.
   contract/      Schemathesis against the app over ASGI, no network.
   cassettes/     VCR recordings of outbound HTTP.
@@ -631,7 +631,7 @@ It measures whether tests *assert*, where coverage only measures whether lines
 *executed*.
 
 It is slow, so it is configured deliberately rather than naively: mutate only
-`domain/` and `application/` (mutating adapters produces noise about error paths
+`domain/` and `service/` (mutating adapters produces noise about error paths
 nobody cares about), run only over files changed in a pull request, and run the
 full suite nightly against a tracked survival threshold. Coverage remains, with
 the failing threshold set at 85%, and the documentation states plainly that
@@ -820,7 +820,7 @@ busiest.
 
 ```
 lint         ruff check + ruff format --check
-types        mypy: strict on domain/ and application/, lenient elsewhere
+types        mypy: strict on domain/ and service/, lenient elsewhere
 imports      import-linter: the dependency rule (section 4.3)
 unit         pytest tests/unit + hypothesis
 integration  testcontainers: postgres, redis, minio
@@ -832,7 +832,7 @@ build        multi-architecture image + migrations image
 ```
 
 Type-checking strictness is deliberately uneven: `mypy --strict` on domain and
-application, where the logic lives and types encode business rules; lenient in
+service, where the logic lives and types encode business rules; lenient in
 infrastructure, where third-party stubs are imperfect and strictness produces
 `# type: ignore` comments rather than safety.
 
@@ -965,7 +965,7 @@ schema.sql
 openapi.json             # an artifact of your code, not the template's
 docs/adr/                # your decisions
 src/*/domain/            # the example slice, then your business model
-src/*/application/
+src/*/service/
 src/*/api/v1/
 ```
 
