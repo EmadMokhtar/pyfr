@@ -72,3 +72,13 @@ Every variable is prefixed `APP_`; nested settings use `__`. Copy
 
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later.
+
+## Testing note: `caplog` does not work here
+
+`configure_logging` calls `logging.getLogger().handlers.clear()`, which
+also removes the handler pytest's own logging plugin installs. Any test
+that calls `create_app` (directly, or via the `client` fixture) therefore
+gets nothing in `caplog`, even with `caplog.at_level(...)`. Assert on
+captured stdout instead — `capsys.readouterr().out`, parsed with
+`json.loads` per line — as every test in `tests/api/` and
+`tests/unit/test_logging.py` already does.

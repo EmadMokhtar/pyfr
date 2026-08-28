@@ -4567,6 +4567,28 @@ Verified: `APP_ENVIRONMENT=staging uv run pytest` — the entire suite,
 polluted — still passes (94/94), and the isolated regression test above
 now passes too.
 
+### Finding 13 — a README note about `caplog`
+
+`configure_logging` calls `root.handlers.clear()`, which removes the
+handler pytest's logging plugin installed, so `caplog` does not work in a
+test that calls `create_app`. Confirmed independently: a test asserting on
+`caplog.records` after `create_app` fails with an empty list, while the
+same log line is visible on captured stdout.
+
+Edits Task 13 Step 8's `README.md` — one short section:
+
+```markdown
+## Testing note: `caplog` does not work here
+
+`configure_logging` calls `logging.getLogger().handlers.clear()`, which
+also removes the handler pytest's own logging plugin installs. Any test
+that calls `create_app` (directly, or via the `client` fixture) therefore
+gets nothing in `caplog`, even with `caplog.at_level(...)`. Assert on
+captured stdout instead — `capsys.readouterr().out`, parsed with
+`json.loads` per line — as every test in `tests/api/` and
+`tests/unit/test_logging.py` already does.
+```
+
 ---
 
 ## Definition of done for M0
