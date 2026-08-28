@@ -2202,9 +2202,12 @@ class ReadinessRegistry:
     def register(self, name: str, check: ReadinessCheck) -> None:
         self._checks[name] = check
 
-    async def run(  # noqa: ASYNC109 - see the docstring; the deadline is ours
+    async def run(
         self,
-        timeout: float = READINESS_TIMEOUT_SECONDS,
+        # The suppression must sit on the PARAMETER's line, not on `def`:
+        # ruff attributes ASYNC109 to the annotation. On the `def` line you
+        # get both an unsuppressed ASYNC109 and an unused-noqa RUF100.
+        timeout: float = READINESS_TIMEOUT_SECONDS,  # noqa: ASYNC109
     ) -> dict[str, str]:
         """Run every check CONCURRENTLY, each bounded by `timeout`.
 
