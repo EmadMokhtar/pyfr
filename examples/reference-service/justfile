@@ -26,8 +26,13 @@ test:
 imports:
     uv run lint-imports
 
+# `git ls-files` scopes this to the project's own files. `--all-files` walks
+# up to the enclosing repository when this project sits inside one, and
+# rewrites files outside it — during development that silently reformatted
+# Python snippets inside this plan's own Markdown. In a standalone generated
+# project the two are equivalent, so this is correct in both layouts.
 precommit:
-    uv run pre-commit run --all-files
+    uv run pre-commit run --files $(git ls-files)
 
 check: lint typecheck imports test precommit
 
