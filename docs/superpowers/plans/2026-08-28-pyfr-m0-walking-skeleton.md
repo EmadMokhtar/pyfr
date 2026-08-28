@@ -866,7 +866,11 @@ def test_money_rejects_a_malformed_currency() -> None:
 def test_money_is_immutable() -> None:
     amount = money("1.00")
     with pytest.raises(ValidationError):
-        amount.amount = Decimal("2.00")  # type: ignore[misc]
+        # `unused-ignore` is required because this project does not enable the
+        # pydantic.mypy plugin, so mypy does not know the model is frozen and
+        # reports `misc` as unused. Keeping `misc` means the line still works
+        # if the plugin is ever enabled. Same pattern as test_settings.py.
+        amount.amount = Decimal("2.00")  # type: ignore[misc, unused-ignore]
 
 
 def test_money_of_equal_value_is_equal() -> None:
@@ -916,22 +920,36 @@ def test_invariant_is_rechecked_when_a_field_is_reassigned() -> None:
 
 
 @given(
-    quantities=st.lists(st.integers(min_value=1, max_value=50), min_size=1, max_size=8),
-    unit=st.decimals(
-        min_value=Decimal("0.01"),
-        max_value=Decimal("999.99"),
-        places=2,
-        allow_nan=False,
-        allow_infinity=False,
-    ),
+    # One price PER LINE, not one price shared by every line. Drawing a single
+    # price and reusing it makes the assertion little more than a restatement
+    # of decimal distributivity; varying the price per line is what actually
+    # exercises aggregation across different Money values.
+    drawn_lines=st.lists(
+        st.tuples(
+            st.integers(min_value=1, max_value=50),
+            st.decimals(
+                min_value=Decimal("0.01"),
+                max_value=Decimal("999.99"),
+                places=2,
+                allow_nan=False,
+                allow_infinity=False,
+            ),
+        ),
+        min_size=1,
+        max_size=8,
+    )
 )
 def test_total_always_equals_the_sum_of_lines(
-    quantities: list[int], unit: Decimal
+    drawn_lines: list[tuple[int, Decimal]],
 ) -> None:
     """No combination of valid lines can produce a disagreeing total."""
     lines = [
-        OrderLine(sku=f"sku-{i}", quantity=q, unit_price=Money(amount=unit, currency="EUR"))
-        for i, q in enumerate(quantities)
+        OrderLine(
+            sku=f"sku-{index}",
+            quantity=quantity,
+            unit_price=Money(amount=unit, currency="EUR"),
+        )
+        for index, (quantity, unit) in enumerate(drawn_lines)
     ]
     order = Order(
         id=OrderId(uuid4()),
@@ -940,7 +958,7 @@ def test_total_always_equals_the_sum_of_lines(
         total=total_of(lines),
     )
 
-    expected = sum(q for q in quantities) * unit
+    expected = sum((quantity * unit for quantity, unit in drawn_lines), Decimal("0"))
     assert order.total.amount == expected
 
 
