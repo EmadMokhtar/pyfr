@@ -16,12 +16,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Exit code 78 is EX_CONFIG from sysexits.h: "configuration error".
 EXIT_CONFIG_ERROR = 78
 
+# A plain `str` here would let `APP_LOG__LEVEL=verbose` pass settings
+# validation and then raise `ValueError: Unknown level: 'VERBOSE'` inside
+# `configure_logging` instead — a crash instead of the readable exit-78
+# message `load_settings` already produces for every other bad value.
+LogLevel = Literal["debug", "info", "warning", "error", "critical"]
+
 
 class LogSettings(BaseModel):
-    level: str = "info"
+    level: LogLevel = "info"
     # Per-logger overrides, so silencing a chatty library is configuration
     # rather than a code change. Example: {"sqlalchemy.engine": "warning"}
-    levels: dict[str, str] = Field(default_factory=dict)
+    # Values are constrained the same way as `level`, for the same reason.
+    levels: dict[str, LogLevel] = Field(default_factory=dict)
 
 
 class OtelSettings(BaseModel):

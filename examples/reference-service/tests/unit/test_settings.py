@@ -48,3 +48,29 @@ def test_load_settings_exits_on_invalid_configuration(
         load_settings(env_file=None)
 
     assert exc_info.value.code == 78
+
+
+def test_load_settings_exits_78_on_an_unknown_log_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: an unknown level used to pass settings validation
+    entirely and only raise `ValueError: Unknown level: 'VERBOSE'` later,
+    deep inside `configure_logging` — contradicting the promised exit 78.
+    """
+    monkeypatch.setenv("APP_LOG__LEVEL", "verbose")
+
+    with pytest.raises(SystemExit) as exc_info:
+        load_settings(env_file=None)
+
+    assert exc_info.value.code == 78
+
+
+def test_load_settings_exits_78_on_an_unknown_per_logger_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_LOG__LEVELS", '{"botocore":"verbose"}')
+
+    with pytest.raises(SystemExit) as exc_info:
+        load_settings(env_file=None)
+
+    assert exc_info.value.code == 78

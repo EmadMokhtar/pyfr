@@ -4240,6 +4240,66 @@ Adds `test_records_carry_the_three_static_resource_attributes` and
 `test_a_standard_library_record_also_carries_resource_attributes` to
 Task 3's `tests/unit/test_logging.py`.
 
+### Finding 6 — an invalid log level crashed instead of exiting 78
+
+`LogSettings.level` was a plain `str`, so `APP_LOG__LEVEL=verbose` passed
+settings validation and only raised `ValueError: Unknown level: 'VERBOSE'`
+later, inside `configure_logging` — contradicting the README's and the
+module docstring's promise of exit 78 with a readable message. Confirmed
+pre-fix:
+
+```
+settings loaded fine: verbose
+Traceback (most recent call last):
+  ...
+  File ".../observability/logging.py", line 121, in configure_logging
+    root.setLevel(level.upper())
+  ...
+ValueError: Unknown level: 'VERBOSE'
+```
+
+Edits Task 2 Step 3's `settings.py` — `level` becomes a `Literal`, and the
+values of `levels` are constrained the same way, so the failure lands in
+`load_settings` where the exit-78 handler already is:
+
+```python
+# A plain `str` here would let `APP_LOG__LEVEL=verbose` pass settings
+# validation and then raise `ValueError: Unknown level: 'VERBOSE'` inside
+# `configure_logging` instead — a crash instead of the readable exit-78
+# message `load_settings` already produces for every other bad value.
+LogLevel = Literal["debug", "info", "warning", "error", "critical"]
+
+
+class LogSettings(BaseModel):
+    level: LogLevel = "info"
+    # Per-logger overrides, so silencing a chatty library is configuration
+    # rather than a code change. Example: {"sqlalchemy.engine": "warning"}
+    # Values are constrained the same way as `level`, for the same reason.
+    levels: dict[str, LogLevel] = Field(default_factory=dict)
+```
+
+Edits Task 3 Step 3's `observability/logging.py` — `configure_logging`'s
+`levels` parameter becomes `Mapping[str, str]` rather than `dict[str,
+str]`, since `dict` is invariant in its value type and would otherwise
+reject a caller passing `dict[str, LogLevel]`:
+
+```python
+from collections.abc import Mapping, MutableMapping
+
+def configure_logging(
+    *,
+    environment: str,
+    level: str,
+    levels: Mapping[str, str],
+    service_name: str = "reference-service",
+    service_version: str = "0.0.0",
+) -> None:
+```
+
+Adds `test_load_settings_exits_78_on_an_unknown_log_level` and
+`test_load_settings_exits_78_on_an_unknown_per_logger_level` to Task 2's
+`tests/unit/test_settings.py`.
+
 ---
 
 ## Definition of done for M0

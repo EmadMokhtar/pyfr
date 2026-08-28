@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from typing import Any
 
 import orjson
@@ -75,7 +75,10 @@ def configure_logging(
     *,
     environment: str,
     level: str,
-    levels: dict[str, str],
+    # `Mapping`, not `dict`: `dict` is invariant in its value type, so a
+    # caller passing `dict[str, LogLevel]` (settings.py's validated type)
+    # would fail mypy against a plain `dict[str, str]` parameter here.
+    levels: Mapping[str, str],
     service_name: str = "reference-service",
     service_version: str = "0.0.0",
 ) -> None:
