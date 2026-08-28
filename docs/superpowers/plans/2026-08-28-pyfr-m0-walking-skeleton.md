@@ -4317,6 +4317,48 @@ Edits Task 8 Step 6's `tests/unit/test_layer_purity.py`:
     modules = sorted(Path(package_file).parent.rglob("*.py"))
 ```
 
+### Finding 8 — no `filterwarnings` policy, and the suite was already not pristine
+
+"Test output must be pristine" was an eyeballed convention, and a live
+`StarletteDeprecationWarning` about `httpx` in `starlette.testclient` had
+already drifted in unnoticed.
+
+**Pushback on the exact recipe given:** the finding's suggested filter
+used category `DeprecationWarning`. Applied literally, this does not
+match — `StarletteDeprecationWarning` subclasses `UserWarning`, not the
+builtin `DeprecationWarning`:
+
+```
+>>> starlette.exceptions.StarletteDeprecationWarning.__mro__
+(StarletteDeprecationWarning, UserWarning, Warning, Exception, BaseException, object)
+```
+
+Confirmed by trying the literal recipe first: with
+`filterwarnings = ["error", "ignore:...:DeprecationWarning"]`, the suite
+failed at collection with the warning promoted to an error, unfiltered.
+The category needs to be the actual class:
+
+Edits Task 1 Step 3's `pyproject.toml`:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    # starlette.testclient still imports httpx directly; nothing in our
+    # control until Starlette itself moves. Narrow and specific on
+    # purpose — a blanket `ignore::DeprecationWarning` would hide the next
+    # one instead of surfacing it. Note the category: StarletteDeprecationWarning
+    # subclasses UserWarning, not the builtin DeprecationWarning.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
+```
+
+With the corrected category, the full suite passes with no warnings
+summary at all — confirming no other warning was silently firing.
+
 ---
 
 ## Definition of done for M0

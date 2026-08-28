@@ -36,6 +36,15 @@ packages = ["src/reference_service"]
 addopts = "-q --strict-markers --strict-config"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "error",
+    # starlette.testclient still imports httpx directly; nothing in our
+    # control until Starlette itself moves. Narrow and specific on
+    # purpose — a blanket `ignore::DeprecationWarning` would hide the next
+    # one instead of surfacing it. Note the category: StarletteDeprecationWarning
+    # subclasses UserWarning, not the builtin DeprecationWarning.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
 
 [tool.mypy]
 python_version = "3.13"
