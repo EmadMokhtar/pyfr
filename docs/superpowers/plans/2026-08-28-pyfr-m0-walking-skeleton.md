@@ -1761,6 +1761,12 @@ git commit -m "feat: add in-memory order repository adapter"
 ```ini
 [importlinter]
 root_package = reference_service
+# Required by import-linter 2.x whenever a contract names an external
+# package — `fastapi` and `starlette` below. Without it the tool hard-errors
+# ("must have include_external_packages=True when there are external
+# forbidden modules") before running a single contract. It only widens what
+# the grapher scans; it does not change what the contracts forbid.
+include_external_packages = True
 
 [importlinter:contract:domain-independence]
 name = Domain imports no other layer and no web or database framework
