@@ -29,7 +29,7 @@ just dev                   # http://localhost:8000/docs
 | `just fmt` | Fix lint issues and format |
 | `just typecheck` | mypy — strict on domain and services |
 | `just imports` | Verify the layer dependency rule |
-| `just check` | All of the above; run this before pushing |
+| `just check` | All of the above, then `git diff --exit-code` — fails loudly if any pre-commit hook (ruff-format, uv-lock, and others mutate files) changed the tree instead of silently passing on a second run; run this before pushing |
 | `just up` / `just down` | Start / stop the container stack |
 
 ## Endpoints

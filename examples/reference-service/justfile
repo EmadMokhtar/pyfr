@@ -34,7 +34,15 @@ imports:
 precommit:
     uv run pre-commit run --files $(git ls-files)
 
+# Several pre-commit hooks mutate files (ruff-format, uv-lock,
+# end-of-file-fixer, trailing-whitespace), so `precommit` above can modify
+# the tree and still exit 0 — a `check` that only runs it would pass on a
+# second run without anyone noticing the tree changed. `git diff --exit-code`
+# after it turns any such mutation into a loud failure instead of a silent
+# one. Keep the hooks running here regardless: that is how we know the
+# config itself still works, not just that the tree was already clean.
 check: lint typecheck imports test precommit
+    git diff --exit-code
 
 up:
     docker compose up --build
