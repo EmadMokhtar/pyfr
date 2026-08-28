@@ -2782,6 +2782,46 @@ def test_context_does_not_leak_between_requests(
     seen = {record.get("correlation_id") for record in records}
     assert "first" not in seen, "the previous request's correlation id leaked"
     assert "second" in seen, "the current request's correlation id is missing"
+
+
+def test_bound_context_does_not_leak_into_the_next_request(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """This is the test that makes `clear_contextvars` load-bearing.
+
+    The correlation id alone cannot prove the cleanup works: it is re-bound
+    on every request, so it overwrites rather than leaks, and the test above
+    passes even with the cleanup removed. The real risk is any OTHER key a
+    handler binds — a `user_id` surviving into the next request attributes
+    one person's activity to another in the logs.
+    """
+    configure_logging(environment="production", level="info", levels={})
+
+    app = FastAPI()
+    app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(CorrelationIdMiddleware)
+
+    @app.get("/binds")
+    async def binds() -> dict[str, str]:
+        structlog.contextvars.bind_contextvars(user_id="user-1")
+        structlog.get_logger().info("handler.bound")
+        return {"ok": "yes"}
+
+    @app.get("/quiet")
+    async def quiet() -> dict[str, str]:
+        structlog.get_logger().info("handler.quiet")
+        return {"ok": "yes"}
+
+    client = TestClient(app)
+    client.get("/binds")
+    capsys.readouterr()
+    client.get("/quiet")
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records, "no log records captured, so this test proves nothing"
+    assert all("user_id" not in record for record in records), (
+        "a context variable bound during the previous request leaked"
+    )
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
