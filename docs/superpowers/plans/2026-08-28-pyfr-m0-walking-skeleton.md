@@ -1844,6 +1844,10 @@ imports:
 check: lint typecheck imports test
 ```
 
+Later, once `.pre-commit-config.yaml` actually runs (the final fix wave below),
+`check` gains a `precommit` recipe too — see that section for the final
+`justfile`.
+
 - [ ] **Step 6: Add the allowlist test that import-linter cannot express**
 
 import-linter's `forbidden` contracts are **blocklists**: they catch exactly the
@@ -3847,7 +3851,82 @@ git commit -m "build: add container image, compose stack and readme"
 
 ---
 
-## Definition of done for M0
+## Task 14: Final review fix wave
+
+Tasks 1–13 were implemented and reviewed independently; this task is the
+whole-branch review that follows, applied as one fix wave immediately before
+merge. It edits files Tasks 1–13 already created rather than creating new
+ones, so each finding below is recorded as an edit to the snippet that task
+originally wrote. Read this task after the one that introduced the file it
+touches.
+
+### Finding 1 — `.pre-commit-config.yaml` could not execute at all
+
+The hook id `ruff-check` does not exist at `rev: v0.7.4` (that tag only
+defines `ruff` and `ruff-format`), so pre-commit aborted on config
+validation and no hook in the file — including the whitespace and YAML
+checks — had ever actually run. The pins were also years behind the locked
+toolchain: `uv.lock` resolves ruff 0.16.5, not v0.7.4; the installed uv is
+0.11.x, not 0.5.4.
+
+Replaces Task 1 Step 6's `.pre-commit-config.yaml` in full:
+
+```yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Pinned to match the ruff version uv.lock resolves, so `pre-commit run`
+    # and `just lint` format the same file the same way.
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # Pinned to match the installed uv, for the same reason as ruff above.
+    rev: 0.11.12
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.18.0
+    hooks:
+      - id: commitizen
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # sqlfluff waits for M1's migrations — there is no SQL to lint yet.
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+```
+
+The commitizen hook only runs at the `commit-msg` git stage, so
+`pre-commit run --all-files` does not exercise it; it was verified
+separately with `pre-commit run --hook-stage commit-msg --commit-msg-filename <file> commitizen`
+against a conventional and a non-conventional message.
+
+Adds a `precommit` recipe to the `justfile` and wires it into `check`
+(extends Task 8 Step 5's edit):
+
+```make
+imports:
+    uv run lint-imports
+
+precommit:
+    uvx pre-commit run --all-files
+
+check: lint typecheck imports test precommit
+```
 
 All of the following must hold before M1 starts:
 

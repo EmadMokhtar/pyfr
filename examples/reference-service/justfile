@@ -26,7 +26,10 @@ test:
 imports:
     uv run lint-imports
 
-check: lint typecheck imports test
+precommit:
+    uvx pre-commit run --all-files
+
+check: lint typecheck imports test precommit
 
 up:
     docker compose up --build
