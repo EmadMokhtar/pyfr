@@ -3749,7 +3749,8 @@ curl -s -X POST localhost:8000/api/v1/orders \
 docker compose down -v
 ```
 
-Expected: `docker compose ps` shows the service `healthy`; the POST returns 201 with a total of `30.00 EUR`.
+Expected: `docker compose ps` shows the service `healthy`; the POST returns 201
+with a total of `20.00 EUR` — the request is two units at `10.00`.
 
 - [ ] **Step 8: Write `README.md`**
 
