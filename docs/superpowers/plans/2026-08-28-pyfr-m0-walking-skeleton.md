@@ -1749,8 +1749,9 @@ git commit -m "feat: add in-memory order repository adapter"
 
 **Files:**
 - Create: `examples/reference-service/.importlinter`
+- Create: `examples/reference-service/tests/unit/test_layer_purity.py` — the allowlist half, which import-linter cannot express
 - Modify: `examples/reference-service/justfile` (add the `imports` recipe to `check`)
-- Test: the contract itself is the test; a deliberate violation proves it works.
+- Test: the contract itself is one test; a deliberate violation proves each half works.
 
 **Interfaces:**
 - Consumes: the package layout from Tasks 4–7.
@@ -1843,7 +1844,103 @@ imports:
 check: lint typecheck imports test
 ```
 
-- [ ] **Step 6: Run the full check**
+- [ ] **Step 6: Add the allowlist test that import-linter cannot express**
+
+import-linter's `forbidden` contracts are **blocklists**: they catch exactly the
+packages they name. `import sqlalchemy` or `import boto3` in the domain layer
+would pass both contracts silently, because nobody thought to ban them. That
+leaves the stated rule — "the domain imports nothing but Pydantic and the
+standard library" — only half mechanical.
+
+There is no allowlist contract type in import-linter, so this half is a test.
+Create `tests/unit/test_layer_purity.py`:
+
+```python
+"""The inner layers may import only Pydantic and the standard library.
+
+import-linter's contracts are blocklists — they catch the packages they
+name. This is the allowlist half: it fails on ANY third-party import into
+domain or application, including one nobody thought to forbid.
+"""
+
+from __future__ import annotations
+
+import ast
+import sys
+from pathlib import Path
+
+import pytest
+
+import reference_service.application
+import reference_service.domain
+
+ALLOWED_THIRD_PARTY = frozenset({"pydantic"})
+
+
+def _top_level_imports(source: Path) -> set[str]:
+    """Every distinct top-level package this module imports."""
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".")[0] for alias in node.names)
+        # level > 0 is a relative import, which is intra-package by definition.
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+@pytest.mark.parametrize(
+    "package",
+    [reference_service.domain, reference_service.application],
+    ids=["domain", "application"],
+)
+def test_layer_imports_only_pydantic_and_the_standard_library(
+    package: object,
+) -> None:
+    package_file = getattr(package, "__file__", None)
+    assert package_file is not None, "package has no __file__"
+    modules = sorted(Path(package_file).parent.glob("*.py"))
+    assert modules, "no modules found — the glob is wrong, so this test is blind"
+
+    offenders: dict[str, set[str]] = {}
+    for module in modules:
+        unexpected = {
+            name
+            for name in _top_level_imports(module)
+            if name not in sys.stdlib_module_names
+            and name not in ALLOWED_THIRD_PARTY
+            and name != "reference_service"
+        }
+        if unexpected:
+            offenders[module.name] = unexpected
+
+    assert not offenders, f"third-party imports found: {offenders}"
+```
+
+The `assert modules` line matters: without it, a wrong glob would find no files,
+find no offenders, and pass — a test that cannot fail.
+
+- [ ] **Step 7: Prove the allowlist test has teeth**
+
+Temporarily add `import sqlalchemy` to the top of `domain/order.py` — a package
+neither contract names — and run both checks:
+
+```bash
+cd examples/reference-service
+uv run lint-imports
+uv run pytest tests/unit/test_layer_purity.py -v
+```
+
+Expected: `lint-imports` PASSES (proving the blocklist gap is real), and the
+allowlist test FAILS naming `order.py` and `sqlalchemy`. Then remove the import
+and confirm both pass. Paste both outputs into your report — the passing
+`lint-imports` is the evidence this test earns its place.
+
+`sqlalchemy` is not an installed dependency, so `ast.parse` still reads the
+import fine while nothing actually imports it at runtime.
+
+- [ ] **Step 8: Run the full check**
 
 ```bash
 cd examples/reference-service
@@ -1852,7 +1949,7 @@ just check
 
 Expected: all four stages exit 0.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 cd /Users/emadmokhtar/Projects/pyfr.docs-pyfr-template-design
