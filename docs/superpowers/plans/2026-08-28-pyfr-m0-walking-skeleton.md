@@ -4392,6 +4392,66 @@ does cover, using `tmp_path`), and
 `_above_the_valid_range` / `test_http_port_accepts_the_boundary_values`
 for the `ge=1, le=65535` bounds.
 
+### Finding 10 — error-handler log fields used a second naming convention
+
+`api/errors.py` emitted `status=404` and `path=...` while
+`api/middleware.py` emits `http.response.status_code` and `http.route`. A
+dashboard querying the OpenTelemetry names would never see the
+domain-error lines. Worse, `errors.py` logged the raw `request.url.path`
+in the catch-all handler — the unbounded-cardinality field `middleware.py`
+works hard to avoid.
+
+Edits Task 10 Step 3's `api/errors.py` — both handlers align on
+`middleware.py`'s key names, and the catch-all reuses `_route_template`
+(the same bounded-cardinality mechanism `AccessLogMiddleware` uses)
+instead of the raw path:
+
+```python
+from reference_service.api.middleware import CORRELATION_HEADER, _route_template
+
+    @app.exception_handler(DomainError)
+    async def _domain_error(request: Request, exc: DomainError) -> JSONResponse:
+        http_status = status_for(exc)
+        # Same key names as api/middleware.py's AccessLogMiddleware, so a
+        # dashboard querying the OpenTelemetry HTTP semantic-convention
+        # names sees these lines too, instead of a second, incompatible
+        # naming scheme for the same kind of fact.
+        _logger.info(
+            "request.domain_error",
+            error_code=exc.code,
+            **{"http.response.status_code": http_status},
+        )
+        ...
+
+    @app.exception_handler(Exception)
+    async def _unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        correlation_id = request.scope.get("correlation_id")
+
+        # Log the full traceback; return nothing that describes our internals.
+        # http.route, not the raw path: same bounded-cardinality reasoning
+        # and the same field name as AccessLogMiddleware — logging
+        # request.url.path here would be exactly the unbounded-cardinality
+        # field that middleware works to avoid.
+        _logger.exception(
+            "request.unhandled_error",
+            correlation_id=correlation_id,
+            **{
+                "http.route": _route_template(request.scope),
+                "http.response.status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            },
+        )
+```
+
+`ProblemDetail.instance` still carries `request.url.path` — that is a
+per-response RFC 9457 field for the client, not an aggregated log
+dimension, so it is not part of this finding and is left unchanged.
+
+Adds `test_a_domain_error_log_line_uses_the_same_field_names_as_the_access_log`
+to Task 10's `tests/api/test_errors.py`, and extends
+`test_an_unhandled_error_still_carries_the_correlation_id` (added for
+Finding 3) to also assert `http.route`, `http.response.status_code`, and
+the absence of a raw `path` field.
+
 ---
 
 ## Definition of done for M0

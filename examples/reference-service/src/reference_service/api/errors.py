@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.api.middleware import CORRELATION_HEADER
+from reference_service.api.middleware import CORRELATION_HEADER, _route_template
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
@@ -63,10 +63,14 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain_error(request: Request, exc: DomainError) -> JSONResponse:
         http_status = status_for(exc)
+        # Same key names as api/middleware.py's AccessLogMiddleware, so a
+        # dashboard querying the OpenTelemetry HTTP semantic-convention
+        # names sees these lines too, instead of a second, incompatible
+        # naming scheme for the same kind of fact.
         _logger.info(
             "request.domain_error",
             error_code=exc.code,
-            status=http_status,
+            **{"http.response.status_code": http_status},
         )
         return _problem_response(
             ProblemDetail(
@@ -122,10 +126,17 @@ def register_error_handlers(app: FastAPI) -> None:
         correlation_id = request.scope.get("correlation_id")
 
         # Log the full traceback; return nothing that describes our internals.
+        # http.route, not the raw path: same bounded-cardinality reasoning
+        # and the same field name as AccessLogMiddleware — logging
+        # request.url.path here would be exactly the unbounded-cardinality
+        # field that middleware works to avoid.
         _logger.exception(
             "request.unhandled_error",
             correlation_id=correlation_id,
-            path=request.url.path,
+            **{
+                "http.route": _route_template(request.scope),
+                "http.response.status_code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            },
         )
         response = _problem_response(
             ProblemDetail(

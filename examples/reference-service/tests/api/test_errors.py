@@ -117,6 +117,32 @@ def test_an_unhandled_error_still_carries_the_correlation_id(
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     error_record = next(r for r in records if r["event"] == "request.unhandled_error")
     assert error_record["correlation_id"] == "crash-1"
+    # Same key names as AccessLogMiddleware, and no raw path: "/exploding"
+    # itself would be a bounded route here, but the point is that this
+    # field is the ROUTE TEMPLATE, not request.url.path.
+    assert error_record["http.route"] == "/exploding"
+    assert error_record["http.response.status_code"] == 500
+    assert "path" not in error_record
+
+
+def test_a_domain_error_log_line_uses_the_same_field_names_as_the_access_log(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`errors.py` and `middleware.py` must agree on field names.
+
+    Otherwise a dashboard querying the OpenTelemetry HTTP semantic
+    convention names (`http.response.status_code`) never sees a domain
+    error's log line, which used to say `status` instead.
+    """
+    configure_logging(environment="production", level="info", levels={})
+    client = TestClient(build_app())
+
+    client.get("/missing")
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    domain_record = next(r for r in records if r["event"] == "request.domain_error")
+    assert domain_record["http.response.status_code"] == 404
+    assert "status" not in domain_record
 
 
 def test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500() -> None:
