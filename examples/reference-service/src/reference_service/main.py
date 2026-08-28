@@ -14,6 +14,7 @@ from reference_service.api.middleware import (
     AccessLogMiddleware,
     CorrelationIdMiddleware,
 )
+from reference_service.api.v1.router import router as v1_router
 from reference_service.container import build_container, close_container
 from reference_service.observability.logging import configure_logging
 from reference_service.settings import Settings, load_settings
@@ -48,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     register_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(v1_router, prefix="/api/v1")
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
     return app

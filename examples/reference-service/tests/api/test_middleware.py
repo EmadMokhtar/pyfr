@@ -117,6 +117,12 @@ def test_the_access_record_itself_carries_the_correlation_id(
     outermost. Correlation must wrap the access log, or the access record is
     emitted outside the bound context and silently loses its id. Reverse the
     two `add_middleware` lines and only this test fails.
+
+    This test builds its own app locally, so it cannot catch the two
+    `add_middleware` lines in `main.py` itself being reversed. See
+    `test_the_real_application_pins_its_middleware_order` in
+    `tests/api/test_orders.py` for the companion test that pins the real
+    application's wiring.
     """
     configure_logging(environment="production", level="info", levels={})
     client = TestClient(build_app())

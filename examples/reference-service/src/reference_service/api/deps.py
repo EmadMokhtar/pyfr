@@ -10,7 +10,10 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
+from reference_service.application.get_order import GetOrder
+from reference_service.application.place_order import PlaceOrder
 from reference_service.container import Container
+from reference_service.domain.repositories import OrderRepository
 
 
 def get_container(request: Request) -> Container:
@@ -19,3 +22,22 @@ def get_container(request: Request) -> Container:
 
 
 ContainerDep = Annotated[Container, Depends(get_container)]
+
+
+def get_orders(container: ContainerDep) -> OrderRepository:
+    return container.orders
+
+
+OrdersDep = Annotated[OrderRepository, Depends(get_orders)]
+
+
+def get_place_order(orders: OrdersDep) -> PlaceOrder:
+    return PlaceOrder(orders)
+
+
+def get_get_order(orders: OrdersDep) -> GetOrder:
+    return GetOrder(orders)
+
+
+PlaceOrderDep = Annotated[PlaceOrder, Depends(get_place_order)]
+GetOrderDep = Annotated[GetOrder, Depends(get_get_order)]
