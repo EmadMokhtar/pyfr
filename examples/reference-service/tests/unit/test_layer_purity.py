@@ -2,7 +2,7 @@
 
 import-linter's contracts are blocklists — they catch the packages they
 name. This is the allowlist half: it fails on ANY third-party import into
-domain or application, including one nobody thought to forbid.
+domain or service, including one nobody thought to forbid.
 """
 
 from __future__ import annotations
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-import reference_service.application
 import reference_service.domain
+import reference_service.service
 
 ALLOWED_THIRD_PARTY = frozenset({"pydantic"})
 
@@ -34,8 +34,8 @@ def _top_level_imports(source: Path) -> set[str]:
 
 @pytest.mark.parametrize(
     "package",
-    [reference_service.domain, reference_service.application],
-    ids=["domain", "application"],
+    [reference_service.domain, reference_service.service],
+    ids=["domain", "service"],
 )
 def test_layer_imports_only_pydantic_and_the_standard_library(
     package: object,

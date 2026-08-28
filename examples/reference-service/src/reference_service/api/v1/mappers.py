@@ -1,4 +1,4 @@
-"""Mapping between the wire contract and the application layer.
+"""Mapping between the wire contract and the service layer.
 
 Explicit functions, not automatic derivation. Deriving the schema from the
 domain model would remove the very decoupling the separation exists to
@@ -13,8 +13,8 @@ from reference_service.api.v1.schemas import (
     OrderResponse,
     PlaceOrderRequest,
 )
-from reference_service.application.dtos import PlaceOrderCommand, PlaceOrderLine
 from reference_service.domain.order import Money, Order
+from reference_service.service.order import PlaceOrderCommand, PlaceOrderLine
 
 
 def to_command(request: PlaceOrderRequest) -> PlaceOrderCommand:

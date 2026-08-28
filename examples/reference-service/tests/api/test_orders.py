@@ -129,7 +129,7 @@ def test_too_many_decimal_places_is_a_422_not_a_500(client: TestClient) -> None:
 
     `OrderLineIn.unit_amount` used to accept any non-negative `Decimal`,
     while `domain.order.Money.amount` caps it at two decimal places. A
-    value like "10.123" used to pass the HTTP schema and the application
+    value like "10.123" used to pass the HTTP schema and the service
     command, then blow up inside `PlaceOrder` as a raw pydantic
     `ValidationError` — neither a `DomainError` nor a
     `RequestValidationError`, so the catch-all handler answered 500 for

@@ -1,7 +1,7 @@
 """The Order aggregate.
 
 This module imports nothing but Pydantic and the standard library. It knows
-nothing about HTTP, about SQL, or about the application layer. Pydantic is
+nothing about HTTP, about SQL, or about the service layer. Pydantic is
 used here as a validation library, not as a web framework: it is what makes
 the invariants declarative and impossible to bypass.
 """

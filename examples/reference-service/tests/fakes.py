@@ -8,7 +8,7 @@ from reference_service.domain.order import Order, OrderId
 class FakeOrderRepository:
     """An in-memory stand-in satisfying the OrderRepository port.
 
-    Hand-written rather than reusing the real adapter, so the application
+    Hand-written rather than reusing the real adapter, so the service
     tests demonstrate that a use case needs no infrastructure whatsoever.
     """
 

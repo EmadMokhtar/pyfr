@@ -10,10 +10,9 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from reference_service.application.get_order import GetOrder
-from reference_service.application.place_order import PlaceOrder
 from reference_service.container import Container
 from reference_service.domain.repositories import OrderRepository
+from reference_service.service.order import GetOrder, PlaceOrder
 
 
 def get_container(request: Request) -> Container:
