@@ -2773,12 +2773,20 @@ def test_an_unmatched_path_is_not_logged_verbatim(
 def test_the_access_record_itself_carries_the_correlation_id(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """This is what pins the middleware registration order.
+    """Pins the ordering in this file's own `build_app`, and only there.
 
     `add_middleware` inserts at the front, so the last registered ends up
     outermost. Correlation must wrap the access log, or the access record is
-    emitted outside the bound context and silently loses its id. Reverse the
-    two `add_middleware` lines and only this test fails.
+    emitted after the correlation middleware's `finally` has already cleared
+    the context, and silently loses its id.
+
+    Scope matters here: reversing `build_app`'s two `add_middleware` lines
+    fails this test, but reversing `main.py`'s does not — this file never
+    calls `create_app`. Task 12's
+    `test_the_real_application_pins_its_middleware_order` covers the
+    shipping wiring, which cannot be tested before then because every route
+    the real app serves until Task 12 is a health endpoint, and those are
+    excluded from the access log.
     """
     configure_logging(environment="production", level="info", levels={})
     client = TestClient(build_app())
@@ -3078,6 +3086,7 @@ git commit -m "feat: add correlation id and structured access log middleware"
 - Create: `examples/reference-service/src/reference_service/api/v1/router.py`
 - Modify: `examples/reference-service/src/reference_service/api/deps.py` (add the repository and use-case dependencies)
 - Modify: `examples/reference-service/src/reference_service/main.py` (include the router)
+- Modify: `examples/reference-service/tests/api/test_middleware.py` — docstring only: Task 11's `test_the_access_record_itself_carries_the_correlation_id` now has a companion here, so its docstring should point at it. No behaviour change.
 - Test: `examples/reference-service/tests/api/test_orders.py`
 
 **Interfaces:**
