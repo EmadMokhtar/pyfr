@@ -147,7 +147,7 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request, exc: PydanticValidationError
     ) -> JSONResponse:
         # A net for the next place a raw pydantic model validates input
-        # a shallower layer already accepted: without this, such a error
+        # a shallower layer already accepted: without this, such an error
         # is neither a DomainError nor a RequestValidationError, so it falls
         # through to the catch-all below and becomes an unearned 500.
         #
@@ -160,7 +160,14 @@ def register_error_handlers(app: FastAPI) -> None:
         # same way _domain_error's log line above does.
         _logger.warning(
             "request.validation_error",
-            **{"http.route": _route_template(request.scope)},
+            # Same key names as AccessLogMiddleware, _domain_error above,
+            # and _unexpected_error below, so every request-outcome event
+            # can be aggregated on the same fields — this one used to omit
+            # http.response.status_code while the other three carried it.
+            **{
+                "http.route": _route_template(request.scope),
+                "http.response.status_code": status.HTTP_422_UNPROCESSABLE_CONTENT,
+            },
         )
         return _problem_response(
             ProblemDetail(

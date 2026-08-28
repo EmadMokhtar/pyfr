@@ -198,6 +198,10 @@ def test_a_pydantic_validation_error_is_logged_at_warning(
     # the catch-all Exception handler.
     assert warning_record["correlation_id"] == "warn-1"
     assert warning_record["http.route"] == "/deep-validation"
+    # Regression: this field used to be missing here while the access log,
+    # request.domain_error and request.unhandled_error all carried it,
+    # making this one event unable to join the others on status code.
+    assert warning_record["http.response.status_code"] == 422
 
 
 def test_request_validation_produces_problem_details() -> None:
