@@ -2761,9 +2761,16 @@ def test_health_endpoints_are_not_access_logged(
     assert "http.access" not in out
 
 
-def test_context_does_not_leak_between_requests(
+def test_each_request_is_tagged_with_its_own_correlation_id(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Named for what it proves.
+
+    It does NOT prove context is cleared between requests: the correlation
+    id is re-bound every request, so it overwrites rather than leaks, and
+    `TestClient` gives each request a fresh context anyway. See
+    `test_bound_context_is_cleared_within_a_shared_context` for the cleanup.
+    """
     configure_logging(environment="production", level="info", levels={})
     client = TestClient(build_app())
 
@@ -2784,42 +2791,47 @@ def test_context_does_not_leak_between_requests(
     assert "second" in seen, "the current request's correlation id is missing"
 
 
-def test_bound_context_does_not_leak_into_the_next_request(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """This is the test that makes `clear_contextvars` load-bearing.
+async def test_bound_context_is_cleared_within_a_shared_context() -> None:
+    """The only test here that makes `clear_contextvars` load-bearing.
 
-    The correlation id alone cannot prove the cleanup works: it is re-bound
-    on every request, so it overwrites rather than leaks, and the test above
-    passes even with the cleanup removed. The real risk is any OTHER key a
-    handler binds — a `user_id` surviving into the next request attributes
-    one person's activity to another in the logs.
+    Two things had to be understood to write it. First, the correlation id
+    cannot prove the cleanup works: it is re-bound on every request, so it
+    overwrites rather than leaks. Second, `TestClient` runs each request in
+    a fresh `contextvars.Context`, so NO test built on it can exercise this
+    cleanup at all — a TestClient-based version of this test passes with
+    `clear_contextvars` deleted entirely.
+
+    Driving the ASGI callable directly puts both requests in one task, and
+    therefore one context, which is the situation the cleanup exists for.
+    The risk it guards is real: a `user_id` bound by one handler and
+    surviving into the next request attributes one person's activity to
+    another in the logs.
     """
-    configure_logging(environment="production", level="info", levels={})
+    seen_on_second_request: dict[str, Any] = {}
 
-    app = FastAPI()
-    app.add_middleware(AccessLogMiddleware)
-    app.add_middleware(CorrelationIdMiddleware)
+    async def inner(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["path"] == "/binds":
+            structlog.contextvars.bind_contextvars(user_id="user-1")
+        else:
+            seen_on_second_request.update(structlog.contextvars.get_contextvars())
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
 
-    @app.get("/binds")
-    async def binds() -> dict[str, str]:
-        structlog.contextvars.bind_contextvars(user_id="user-1")
-        structlog.get_logger().info("handler.bound")
-        return {"ok": "yes"}
+    app = CorrelationIdMiddleware(inner)
 
-    @app.get("/quiet")
-    async def quiet() -> dict[str, str]:
-        structlog.get_logger().info("handler.quiet")
-        return {"ok": "yes"}
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
 
-    client = TestClient(app)
-    client.get("/binds")
-    capsys.readouterr()
-    client.get("/quiet")
+    async def send(message: Message) -> None:
+        return None
 
-    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert records, "no log records captured, so this test proves nothing"
-    assert all("user_id" not in record for record in records), (
+    def scope_for(path: str) -> Scope:
+        return {"type": "http", "method": "GET", "path": path, "headers": []}
+
+    await app(scope_for("/binds"), receive, send)
+    await app(scope_for("/quiet"), receive, send)
+
+    assert "user_id" not in seen_on_second_request, (
         "a context variable bound during the previous request leaked"
     )
 ```
