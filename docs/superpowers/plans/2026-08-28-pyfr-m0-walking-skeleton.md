@@ -1967,6 +1967,7 @@ git commit -m "build: enforce the layer dependency rule with import-linter"
 - Create: `examples/reference-service/src/reference_service/api/deps.py`
 - Create: `examples/reference-service/src/reference_service/main.py`
 - Test: `examples/reference-service/tests/api/test_health.py`
+- Test: `examples/reference-service/tests/unit/test_readiness_registry.py` — proves the checks run concurrently
 - Create: `examples/reference-service/tests/conftest.py`
 
 **Interfaces:**
@@ -2201,19 +2202,40 @@ class ReadinessRegistry:
     def register(self, name: str, check: ReadinessCheck) -> None:
         self._checks[name] = check
 
-    async def run(self, timeout: float = READINESS_TIMEOUT_SECONDS) -> dict[str, str]:
-        results: dict[str, str] = {}
-        for name, check in self._checks.items():
+    async def run(  # noqa: ASYNC109 - see the docstring; the deadline is ours
+        self,
+        timeout: float = READINESS_TIMEOUT_SECONDS,
+    ) -> dict[str, str]:
+        """Run every check CONCURRENTLY, each bounded by `timeout`.
+
+        Concurrency is the point. Run sequentially, the endpoint's worst
+        case would be N x timeout — three dependency checks at two seconds
+        each is a six-second readiness response, which an orchestrator's own
+        probe timeout kills long before it arrives, marking the pod unready
+        for entirely the wrong reason. Concurrent, the worst case is one
+        timeout no matter how many dependencies register.
+
+        ASYNC109 is suppressed deliberately: the rule prefers callers to own
+        deadlines, but this registry owns the readiness policy, and its
+        callers are HTTP handlers with no better deadline to offer.
+        """
+        if not self._checks:
+            return {}
+
+        async def run_one(name: str, check: ReadinessCheck) -> tuple[str, str]:
             try:
                 await asyncio.wait_for(check(), timeout=timeout)
             except TimeoutError:
-                results[name] = f"error: timeout after {timeout}s"
+                return name, f"error: timeout after {timeout}s"
             except Exception as exc:
                 # A failing check reports; it never takes the endpoint down.
-                results[name] = f"error: {exc}"
-            else:
-                results[name] = "ok"
-        return results
+                return name, f"error: {exc}"
+            return name, "ok"
+
+        results = await asyncio.gather(
+            *(run_one(name, check) for name, check in self._checks.items())
+        )
+        return dict(results)
 
 
 @dataclass
