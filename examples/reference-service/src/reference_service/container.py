@@ -13,6 +13,8 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+import structlog
+
 from reference_service.domain.repositories import OrderRepository
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
@@ -22,6 +24,8 @@ from reference_service.settings import Settings
 ReadinessCheck = Callable[[], Awaitable[None]]
 
 READINESS_TIMEOUT_SECONDS = 2.0
+
+_logger = structlog.get_logger(__name__)
 
 
 class ReadinessRegistry:
@@ -61,10 +65,21 @@ class ReadinessRegistry:
             try:
                 await asyncio.wait_for(check(), timeout=timeout)
             except TimeoutError:
+                # No untrusted content in this branch's message: keep it as is.
                 return name, f"error: timeout after {timeout}s"
             except Exception as exc:
                 # A failing check reports; it never takes the endpoint down.
-                return name, f"error: {exc}"
+                #
+                # The exception's own message is deliberately NOT put into the
+                # response: /readyz is reachable inside a cluster, and an
+                # exception message from a database driver or an HTTP client
+                # routinely carries hostnames, connection strings, or
+                # credentials. The response gets only the bounded exception
+                # type name; the full exception — with its message and
+                # traceback — goes to the log instead, where an operator can
+                # still see it.
+                _logger.exception("readiness_check.failed", check=name)
+                return name, f"error: {type(exc).__name__}"
             return name, "ok"
 
         results = await asyncio.gather(

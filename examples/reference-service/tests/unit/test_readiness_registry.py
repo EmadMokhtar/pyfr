@@ -50,5 +50,28 @@ async def test_a_failing_check_does_not_prevent_others_from_reporting() -> None:
     assert results["database"].startswith("error")
 
 
+async def test_a_failing_check_reports_the_exception_type_not_its_message() -> None:
+    """The response must not leak internal detail.
+
+    /readyz is often reachable inside a cluster. An exception's own
+    message routinely carries a hostname, a connection string, or
+    credentials — a database driver's error commonly includes all three.
+    The response gets a bounded value (the exception's type name); the
+    operator-facing detail goes to the log instead, not the HTTP response.
+    """
+    registry = ReadinessRegistry()
+
+    async def fails() -> None:
+        raise RuntimeError("postgres://user:hunter2@db.internal:5432/orders")
+
+    registry.register("database", fails)
+
+    results = await registry.run(timeout=1.0)
+
+    assert results["database"] == "error: RuntimeError"
+    assert "hunter2" not in results["database"]
+    assert "db.internal" not in results["database"]
+
+
 async def test_no_checks_returns_an_empty_mapping() -> None:
     assert await ReadinessRegistry().run(timeout=1.0) == {}
