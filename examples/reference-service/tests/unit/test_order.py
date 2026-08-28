@@ -25,7 +25,7 @@ def line(sku: str = "sku-1", quantity: int = 1, price: str = "10.00") -> OrderLi
 
 
 def build_order(*lines: OrderLine) -> Order:
-    items = list(lines) or [line()]
+    items = lines or (line(),)
     return Order(
         id=OrderId(uuid4()),
         customer_id=CustomerId(uuid4()),
@@ -77,7 +77,7 @@ def test_order_requires_at_least_one_line() -> None:
         Order(
             id=OrderId(uuid4()),
             customer_id=CustomerId(uuid4()),
-            lines=[],
+            lines=(),
             total=money("0.00"),
         )
 
@@ -87,7 +87,7 @@ def test_order_rejects_a_total_that_disagrees_with_its_lines() -> None:
         Order(
             id=OrderId(uuid4()),
             customer_id=CustomerId(uuid4()),
-            lines=[line(price="10.00")],
+            lines=(line(price="10.00"),),
             total=money("99.00"),
         )
 
@@ -98,6 +98,20 @@ def test_invariant_is_rechecked_when_a_field_is_reassigned() -> None:
 
     with pytest.raises(ValidationError):
         order.total = money("99.00")
+
+
+def test_lines_cannot_be_mutated_in_place() -> None:
+    """`lines` is a `tuple`, not a `list`, precisely so this cannot happen.
+
+    A mutable list would let `order.lines.append(bad_line)` corrupt the
+    entity without ever reassigning the field — bypassing
+    `validate_assignment` entirely, since it only revalidates on
+    assignment, not on mutation of an already-assigned value.
+    """
+    order = build_order(line(price="10.00"))
+
+    with pytest.raises(AttributeError):
+        order.lines.append(line(price="5.00"))  # type: ignore[attr-defined]
 
 
 @given(
@@ -124,14 +138,14 @@ def test_total_always_equals_the_sum_of_lines(
     drawn_lines: list[tuple[int, Decimal]],
 ) -> None:
     """No combination of valid lines can produce a disagreeing total."""
-    lines = [
+    lines = tuple(
         OrderLine(
             sku=f"sku-{index}",
             quantity=quantity,
             unit_price=Money(amount=unit, currency="EUR"),
         )
         for index, (quantity, unit) in enumerate(drawn_lines)
-    ]
+    )
     order = Order(
         id=OrderId(uuid4()),
         customer_id=CustomerId(uuid4()),

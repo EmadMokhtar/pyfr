@@ -74,14 +74,19 @@ class Order(BaseModel):
 
     `validate_assignment=True` is the part that matters. Without it an Order
     could be made invalid after construction by reassigning a field; with it,
-    an invalid Order cannot exist at any point in its life.
+    an invalid Order cannot exist at any point in its life — including via
+    `lines`: a mutable `list` would let `order.lines.append(bad_line)`
+    bypass `validate_assignment` entirely (append mutates the existing list
+    in place; it never reassigns the field, so no validator runs). `tuple`
+    closes that gap: it has no `append`, and Pydantic still coerces an
+    ordinary list at construction time, so call sites are unaffected.
     """
 
     model_config = ConfigDict(validate_assignment=True)
 
     id: OrderId
     customer_id: CustomerId
-    lines: Annotated[list[OrderLine], Field(min_length=1)]
+    lines: Annotated[tuple[OrderLine, ...], Field(min_length=1)]
     total: Money
     # Deliberately never exposed over HTTP. Task 12 asserts that the API
     # response omits it — the demonstration of why api schemas are separate.

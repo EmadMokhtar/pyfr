@@ -4452,6 +4452,68 @@ to Task 10's `tests/api/test_errors.py`, and extends
 Finding 3) to also assert `http.route`, `http.response.status_code`, and
 the absence of a raw `path` field.
 
+### Finding 11 — the `Order` docstring overclaimed
+
+It said "an invalid Order cannot exist at any point in its life", but
+`lines` was a mutable `list`, so `order.lines.append(bad_line)` bypassed
+`validate_assignment` entirely — append mutates the existing list in
+place; it never reassigns the field, so no validator runs. Tried
+`tuple[OrderLine, ...]` per the finding's suggestion, and it did not
+ripple far: 6 call sites across 3 files (`place_order.py`, and the list
+literals in `test_order.py` and `test_memory_repository.py`), all a
+mechanical `list` → `tuple` swap. Pydantic still coerces an ordinary list
+into the tuple at construction time, so no site changed its actual
+values, only its literal syntax. Full gate (94 tests, mypy, ruff,
+import-linter) stayed green throughout.
+
+Edits Task 4 Step 3's `domain/order.py` — the docstring is now honest
+about the mechanism, and the field is a tuple:
+
+```python
+class Order(BaseModel):
+    """An entity: it has an identity and protects its own invariants.
+
+    `validate_assignment=True` is the part that matters. Without it an Order
+    could be made invalid after construction by reassigning a field; with it,
+    an invalid Order cannot exist at any point in its life — including via
+    `lines`: a mutable `list` would let `order.lines.append(bad_line)`
+    bypass `validate_assignment` entirely (append mutates the existing list
+    in place; it never reassigns the field, so no validator runs). `tuple`
+    closes that gap: it has no `append`, and Pydantic still coerces an
+    ordinary list at construction time, so call sites are unaffected.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    id: OrderId
+    customer_id: CustomerId
+    lines: Annotated[tuple[OrderLine, ...], Field(min_length=1)]
+    total: Money
+```
+
+Edits Task 6 Step 4's `application/place_order.py` — the list
+comprehension becomes a generator passed to `tuple(...)`:
+
+```python
+        lines = tuple(
+            OrderLine(
+                sku=item.sku,
+                quantity=item.quantity,
+                unit_price=Money(amount=item.unit_amount, currency=item.currency),
+            )
+            for item in command.lines
+        )
+```
+
+Edits Task 4 Step 2's `tests/unit/test_order.py` and Task 7's
+`tests/unit/test_memory_repository.py` — each list literal building an
+`Order` becomes a tuple literal (`[]` → `()`, `[x]` → `(x,)`, or a
+`tuple(...)` generator in place of a list comprehension); no other change.
+
+Adds `test_lines_cannot_be_mutated_in_place` to Task 4's
+`tests/unit/test_order.py`, asserting `order.lines.append(...)` raises
+`AttributeError` — the invariant the docstring now actually claims.
+
 ---
 
 ## Definition of done for M0

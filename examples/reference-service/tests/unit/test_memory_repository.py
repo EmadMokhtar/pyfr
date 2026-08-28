@@ -16,13 +16,13 @@ from reference_service.infrastructure.memory.order_repository import (
 
 
 def an_order() -> Order:
-    lines = [
+    lines = (
         OrderLine(
             sku="sku-1",
             quantity=1,
             unit_price=Money(amount=Decimal("7.00"), currency="EUR"),
-        )
-    ]
+        ),
+    )
     return Order(
         id=OrderId(uuid4()),
         customer_id=CustomerId(uuid4()),

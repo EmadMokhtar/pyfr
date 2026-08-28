@@ -26,14 +26,14 @@ class PlaceOrder:
         self._orders = orders
 
     async def __call__(self, command: PlaceOrderCommand) -> Order:
-        lines = [
+        lines = tuple(
             OrderLine(
                 sku=item.sku,
                 quantity=item.quantity,
                 unit_price=Money(amount=item.unit_amount, currency=item.currency),
             )
             for item in command.lines
-        ]
+        )
         order = Order(
             id=OrderId(uuid4()),
             customer_id=CustomerId(command.customer_id),
