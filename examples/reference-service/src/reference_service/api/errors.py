@@ -7,6 +7,8 @@ statement about a transport protocol and belongs here.
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -35,6 +37,50 @@ class ProblemDetail(BaseModel):
     status: int
     detail: str | None = None
     instance: str | None = None
+
+
+def _problem_content() -> dict[str, Any]:
+    """The `content` dict FastAPI needs to document a response at its real
+    media type.
+
+    NOT `{"model": ProblemDetail}` at the top level of a `responses` entry:
+    FastAPI always attaches a `model` entry's schema under the ROUTE's own
+    response media type (`application/json` by default) no matter what
+    `content` key is also present — verified against a minimal app: giving
+    both produced an empty `application/problem+json` entry AND a
+    duplicate `application/json` entry carrying the schema, which is
+    exactly the drift this exists to remove. Embedding the JSON schema
+    directly under the real media type is the only way to get one correct
+    entry instead of two, one of them wrong.
+    """
+    return {PROBLEM_MEDIA_TYPE: {"schema": ProblemDetail.model_json_schema()}}
+
+
+def problem_response(description: str) -> dict[str, Any]:
+    """One reusable OpenAPI `responses` entry describing a Problem Details
+    response, for use in a route decorator's or `FastAPI()`'s `responses=`.
+
+    Registering the runtime exception handlers below does not, by itself,
+    change what FastAPI generates for `/docs` or `/openapi.json` — a
+    generated client built from the undocumented schema would disagree
+    with what the service actually returns. This is what makes the two
+    agree.
+    """
+    return {"description": description, "content": _problem_content()}
+
+
+# Every route can hit request validation (422, via RequestValidationError)
+# or an unexpected failure (500, via the catch-all Exception handler), so
+# these are applied globally, in main.py's `FastAPI(responses=...)`. The
+# 404 for OrderNotFoundError is NOT included here: unlike 422 and 500, only
+# some routes can actually produce it, so it is applied per-route instead,
+# where it is true — see api/v1/router.py's `get_order`.
+DEFAULT_PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
+    status.HTTP_422_UNPROCESSABLE_CONTENT: problem_response(
+        "Request validation failed"
+    ),
+    status.HTTP_500_INTERNAL_SERVER_ERROR: problem_response("Internal server error"),
+}
 
 
 def status_for(error: DomainError) -> int:

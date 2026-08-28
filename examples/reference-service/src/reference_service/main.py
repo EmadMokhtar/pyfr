@@ -9,7 +9,10 @@ from fastapi import FastAPI
 
 from reference_service import __version__
 from reference_service.api import health
-from reference_service.api.errors import register_error_handlers
+from reference_service.api.errors import (
+    DEFAULT_PROBLEM_RESPONSES,
+    register_error_handlers,
+)
 from reference_service.api.middleware import (
     AccessLogMiddleware,
     CorrelationIdMiddleware,
@@ -48,6 +51,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title=resolved.service_name,
         version=__version__,
         lifespan=lifespan,
+        # Every route can hit request validation (422) or an unexpected
+        # failure (500); see api/errors.py's DEFAULT_PROBLEM_RESPONSES for
+        # why this, and not the model=/handler registration below, is what
+        # makes the OpenAPI document describe those responses correctly.
+        responses=DEFAULT_PROBLEM_RESPONSES,
     )
     register_error_handlers(app)
     app.include_router(health.router)

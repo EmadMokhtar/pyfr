@@ -183,6 +183,28 @@ def test_the_openapi_document_describes_the_endpoints(client: TestClient) -> Non
     assert "/api/v1/orders/{order_id}" in schema["paths"]
 
 
+def test_the_openapi_document_advertises_problem_details_for_errors(
+    client: TestClient,
+) -> None:
+    """Registering exception handlers does not change the generated schema.
+
+    Without api/errors.py's DEFAULT_PROBLEM_RESPONSES and the per-route
+    404 in api/v1/router.py, `/openapi.json` would advertise FastAPI's
+    default validation-error shape at `application/json` for 422 and say
+    nothing at all about 404 or 500 — disagreeing with what the service
+    actually returns. A generated client built from that document would
+    not recognise the real error responses.
+    """
+    schema = client.get("/openapi.json").json()
+
+    place_order = schema["paths"]["/api/v1/orders"]["post"]["responses"]
+    assert "application/problem+json" in place_order["422"]["content"]
+    assert "application/problem+json" in place_order["500"]["content"]
+
+    get_order = schema["paths"]["/api/v1/orders/{order_id}"]["get"]["responses"]
+    assert "application/problem+json" in get_order["404"]["content"]
+
+
 def test_the_response_schema_never_declares_internal_fields() -> None:
     """Where the guarantee actually comes from, stated honestly.
 
