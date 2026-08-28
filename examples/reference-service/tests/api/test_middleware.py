@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,6 +13,7 @@ from reference_service.api.middleware import (
     CORRELATION_HEADER,
     AccessLogMiddleware,
     CorrelationIdMiddleware,
+    _route_template,
 )
 from reference_service.observability.logging import configure_logging
 
@@ -85,6 +87,64 @@ def test_the_access_log_records_the_route_template_not_the_raw_path(
     assert access["http.response.status_code"] == 200
     assert isinstance(access["duration_ms"], float)
     assert "8f3a-not-a-real-id" not in json.dumps(access)
+
+
+@pytest.mark.parametrize(
+    ("raw", "inner", "params", "expected"),
+    [
+        # The ordinary case: a router mounted under a prefix.
+        (
+            "/api/v1/orders/abc",
+            "/orders/{order_id}",
+            {"order_id": "abc"},
+            "/api/v1/orders/{order_id}",
+        ),
+        # The parameter's value equals a literal segment. Substituting by
+        # text would give "/api/v1/{order_id}/{order_id}".
+        (
+            "/api/v1/orders/orders",
+            "/orders/{order_id}",
+            {"order_id": "orders"},
+            "/api/v1/orders/{order_id}",
+        ),
+        # A converter whose value spans segments. Substituting by text would
+        # match nothing and fall back to the raw, unbounded path.
+        (
+            "/static/assets/js/app.js",
+            "/static/{file_path:path}",
+            {"file_path": "assets/js/app.js"},
+            "/static/{file_path:path}",
+        ),
+        # A literal route with no parameters at all.
+        ("/api/v1/orders", "/orders", {}, "/api/v1/orders"),
+    ],
+)
+def test_route_template_reconstructs_the_full_template(
+    raw: str,
+    inner: str,
+    params: dict[str, object],
+    expected: str,
+) -> None:
+    """Each case here is one the obvious implementations get wrong."""
+    scope = {
+        "type": "http",
+        "path": raw,
+        "path_params": params,
+        "route": SimpleNamespace(path=inner),
+    }
+
+    assert _route_template(scope) == expected
+
+
+def test_route_template_returns_the_sentinel_when_nothing_matched() -> None:
+    scope: dict[str, Any] = {
+        "type": "http",
+        "path": "/nope/8f3a",
+        "path_params": {},
+        "route": None,
+    }
+
+    assert _route_template(scope) == "<unmatched>"
 
 
 def test_an_unmatched_path_is_not_logged_verbatim(

@@ -7,7 +7,9 @@ streaming responses and background tasks; a plain callable does not.
 
 from __future__ import annotations
 
+import re
 import time
+from collections.abc import Mapping
 from typing import Any
 from uuid import uuid4
 
@@ -25,43 +27,59 @@ UNMATCHED_ROUTE = "<unmatched>"
 
 _logger = structlog.get_logger("reference_service.access")
 
+_PATH_PARAM = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)(?::[^}]+)?\}")
+
+
+def _fill(template: str, params: Mapping[str, Any]) -> str:
+    """Substitute matched values back into a route template.
+
+    Handles Starlette's converter syntax (`{file_path:path}`), which
+    `str.format` cannot: it would read `:path` as a format specification.
+    """
+    return _PATH_PARAM.sub(
+        lambda match: str(params.get(match.group(1), match.group(0))), template
+    )
+
 
 def _route_template(scope: Scope) -> str:
-    """The bounded route template for this request.
+    """The bounded route template for this request, including any prefix.
 
-    Deliberately not `scope["route"].path`: FastAPI records an included
-    router's routes with their INNER path only, so a router mounted under
-    `/api/v1` reports `/orders/{order_id}`, and two API versions of the same
-    resource become indistinguishable in the logs.
+    Three approaches are wrong, and it is worth recording why.
 
-    Deliberately not `scope["path"]` either: that is the raw path, and every
-    distinct identifier would become a distinct value — the unbounded
-    cardinality this field exists to avoid.
+    `scope["route"].path` alone: FastAPI 0.141 stores an included router
+    lazily, so a router mounted under `/api/v1` reports only its inner
+    `/orders/{order_id}`. Two API versions of one resource then look
+    identical in the logs.
 
-    Instead, rebuild the template from the raw path by substituting each
-    matched path parameter back into place. That is exact, keeps the full
-    prefix, and does not depend on how the framework stores its routes.
+    `scope["path"]` alone: that is the raw path, so every identifier becomes
+    a distinct value — the unbounded cardinality this field exists to avoid.
+
+    Substituting parameter VALUES out of the raw path: subtly wrong, because
+    it matches by text. A request to `/api/v1/orders/orders` would rewrite
+    the literal `/orders` segment too, giving `/api/v1/{order_id}/{order_id}`.
+    It also silently fails for a parameter whose value spans segments, such
+    as a `:path` converter, falling back to the raw path.
+
+    So work the other way round. Fill the route's own template with the
+    matched values to get the concrete path it produced; whatever the raw
+    path carries in front of that is the mount prefix. Positional rather
+    than textual, and correct for multi-segment values.
     """
-    if scope.get("route") is None:
-        # Nothing matched, so this is usually a bot probing nonexistent
-        # URLs. Logging the raw path would put one distinct value in the
-        # log per probe.
+    inner: str | None = getattr(scope.get("route"), "path", None)
+    if inner is None:
+        # Nothing matched — usually a bot probing nonexistent URLs, where
+        # the raw path would be one distinct value per probe.
         return UNMATCHED_ROUTE
 
     raw: str = scope.get("path", "")
-    params: dict[str, Any] = scope.get("path_params") or {}
-    if not params:
-        # A literal route with no parameters: the raw path IS the template,
-        # and it is bounded because the route is registered.
-        return raw
+    concrete = _fill(inner, scope.get("path_params") or {})
+    if raw.endswith(concrete):
+        return raw[: len(raw) - len(concrete)] + inner
 
-    # Substitute whole segments only. Replacing by substring would corrupt a
-    # path where a parameter's value also appears as a literal segment.
-    name_by_value = {str(value): name for name, value in params.items()}
-    return "/".join(
-        "{" + name_by_value[segment] + "}" if segment in name_by_value else segment
-        for segment in raw.split("/")
-    )
+    # The template could not be located inside the raw path. Return the
+    # inner template anyway: it may be missing a prefix, but it is bounded,
+    # and bounded matters more than complete.
+    return inner
 
 
 class CorrelationIdMiddleware:

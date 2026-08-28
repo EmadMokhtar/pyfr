@@ -4,6 +4,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from reference_service.api.v1.schemas import OrderResponse
+from reference_service.domain.order import Order
 from reference_service.main import create_app
 from reference_service.settings import Settings
 
@@ -57,7 +59,12 @@ def test_fetching_an_unknown_order_is_problem_details_404(
 
 
 def test_internal_domain_fields_are_never_exposed(client: TestClient) -> None:
-    """This is why api schemas are separate from domain models."""
+    """The outcome: an internal field must not reach a client.
+
+    This asserts the result, not the mechanism. See
+    `test_the_response_schema_never_declares_internal_fields` for where the
+    guarantee actually comes from — it is NOT the mapper.
+    """
     created = client.post("/api/v1/orders", json=a_payload()).json()
 
     assert "internal_note" not in created
@@ -119,3 +126,20 @@ def test_the_openapi_document_describes_the_endpoints(client: TestClient) -> Non
 
     assert "/api/v1/orders" in schema["paths"]
     assert "/api/v1/orders/{order_id}" in schema["paths"]
+
+
+def test_the_response_schema_never_declares_internal_fields() -> None:
+    """Where the guarantee actually comes from, stated honestly.
+
+    Note what does NOT provide it: calling the mapper. FastAPI validates
+    every return value against `response_model=OrderResponse`, and that
+    drops any field the schema does not declare — so a route returning the
+    domain entity directly would also hide `internal_note`. The real
+    guarantee is that `OrderResponse` is a separate type which never
+    declares the field in the first place.
+
+    The mapper earns its place for a different reason: it lets the domain
+    model be renamed or restructured without touching the wire contract.
+    """
+    assert "internal_note" in Order.model_fields
+    assert "internal_note" not in OrderResponse.model_fields
