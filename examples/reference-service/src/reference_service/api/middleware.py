@@ -64,6 +64,12 @@ def _route_template(scope: Scope) -> str:
     matched values to get the concrete path it produced; whatever the raw
     path carries in front of that is the mount prefix. Positional rather
     than textual, and correct for multi-segment values.
+
+    Known limitation, not fixed here: if `include_router` is ever called
+    with a PARAMETERISED prefix (e.g. `prefix="/tenants/{tenant_id}"`),
+    the mount prefix itself is returned verbatim rather than templated, so
+    that segment is not cardinality-bounded. Every prefix in this service
+    is a literal today.
     """
     inner: str | None = getattr(scope.get("route"), "path", None)
     if inner is None:

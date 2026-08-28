@@ -4589,6 +4589,26 @@ captured stdout instead — `capsys.readouterr().out`, parsed with
 `tests/unit/test_logging.py` already does.
 ```
 
+### Out-of-scope item with a docstring note
+
+The review recorded a handful of items as later-milestone work with no
+code change here: a CI workflow (M5), coverage measurement (M3, with
+mutation testing), `/startupz`'s unreachable 503 branch (M1, when there is
+slow startup to report), and RFC 9457 extension members for validation
+error detail (M3). One of them asked for a one-line docstring note instead
+of a code change:
+
+Edits Task 12 Step 4's `api/middleware.py` — `_route_template`'s
+docstring records the `include_router` parameterised-prefix limitation:
+
+```python
+    Known limitation, not fixed here: if `include_router` is ever called
+    with a PARAMETERISED prefix (e.g. `prefix="/tenants/{tenant_id}"`),
+    the mount prefix itself is returned verbatim rather than templated, so
+    that segment is not cardinality-bounded. Every prefix in this service
+    is a literal today.
+```
+
 ---
 
 ## Definition of done for M0
