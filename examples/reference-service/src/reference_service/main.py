@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from reference_service import __version__
 from reference_service.api import health
+from reference_service.api.errors import register_error_handlers
 from reference_service.container import build_container, close_container
 from reference_service.observability.logging import configure_logging
 from reference_service.settings import Settings, load_settings
@@ -41,5 +42,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         lifespan=lifespan,
     )
+    register_error_handlers(app)
     app.include_router(health.router)
     return app
