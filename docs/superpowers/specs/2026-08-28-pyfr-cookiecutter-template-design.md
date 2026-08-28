@@ -6,7 +6,7 @@
 |---|---|
 | Date | 2026-08-28 |
 | Status | Approved, ready for implementation planning |
-| Scope | Milestones M0–M7 |
+| Scope | Milestones M0–M8 |
 | Supersedes | The framework positioning in the repository `README.md` |
 
 ---
@@ -32,8 +32,12 @@ parts worth extracting. Guessing those boundaries now would mean maintaining
 backward-compatibility promises for abstractions that have never met a real
 requirement.
 
-The consequence is accepted openly: a fix in the adapter layer must be re-applied
-by hand in each generated service until that extraction happens.
+The usual cost of this decision is that a fix in the adapter layer must be
+re-applied by hand in each generated service. Section 11 removes that cost: a
+generated project can pull later template versions into itself through a git
+three-way merge. Teams therefore keep full ownership of their code *and* receive
+template fixes — which is what makes D1 affordable rather than merely cheap to
+start.
 
 ### 1.2 Relationship to the existing README
 
@@ -45,7 +49,8 @@ carried forward; its responsibilities are met by the composition root
 
 The README must be rewritten during M5 to describe a template. Claims it makes
 that this design does honour — Backstage integration, Kubernetes manifests,
-multi-database support — are addressed in sections 11, 13 and 4.6 respectively.
+multi-database support — are addressed in sections 11.7 and 12, section 14, and
+section 4.6 respectively.
 
 ---
 
@@ -68,6 +73,7 @@ Each decision below is fixed. Changing one invalidates the sections that follow 
 | D11 | Reference service first, then templatise | Never debug Jinja and Python simultaneously |
 | D12 | golang-migrate owns the schema | Language-agnostic, runs without the application, plain SQL |
 | D13 | SQLAlchemy 2.0 async retained, with a model/schema drift gate | Typed querying plus an automated link between SQL and Python models |
+| D14 | Generated projects update from newer template versions via a git vendor branch | Keeps cookiecutter and its first-party Backstage action; adds no third-party update dependency; git supplies a real merge base, so deleted example code stays deleted |
 
 ---
 
@@ -587,9 +593,12 @@ slo_latency_ms           300
 license                  Apache-2.0 | MIT | Proprietary
 ```
 
-No `include_k8s_manifests` prompt exists in M0–M7. Kubernetes manifests are an M8
-feature (section 12), and a prompt must never offer something the template cannot
+No `include_k8s_manifests` prompt exists in M0–M8. Kubernetes manifests are an M9
+feature (section 13), and a prompt must never offer something the template cannot
 yet generate.
+
+The answers given here are recorded in `.pyfr-answers.yml` so the project can be
+updated from a later template version (section 11.1).
 
 `project_slug` and `package_name` are derived by default
 (`My Service` -> `my-service` -> `my_service`) and rarely typed by hand.
@@ -673,7 +682,8 @@ docs/
   index.md              what this service is, five-minute start
   tutorial/             add your first endpoint, end to end
   how-to/               add-a-backend, run-migrations, record-cassettes,
-                        add-a-dashboard-panel, handle-a-dirty-migration
+                        add-a-dashboard-panel, handle-a-dirty-migration,
+                        update-from-template
   reference/            configuration (generated), api (from openapi.json),
                         architecture
   explanation/          why four layers, why golang-migrate, why the gates
@@ -744,7 +754,196 @@ in `just check`, the one command a developer runs before pushing.
 
 ---
 
-## 11. Additional features included
+## 11. Updating a generated project
+
+A generated project must be able to pull in a newer template version. This is what
+makes D1 affordable: teams own their code outright and still receive template
+fixes.
+
+### 11.1 What creation records
+
+The post-generation hook writes one file, and only that file is required for
+updates to work later:
+
+```yaml
+# .pyfr-answers.yml
+_template: https://github.com/<org>/pyfr
+_template_version: v2.3.0
+project_name: My Service
+package_name: my_service
+python_version: "3.13"
+database: postgres
+cache: redis
+object_storage: s3
+http_port: 8000
+slo_availability_target: "99.9"
+slo_latency_ms: 300
+license: Apache-2.0
+```
+
+`_template_version` is a git tag rather than a commit hash, because Commitizen
+already tags every template release (section 10.1) and a tag can be looked up in a
+changelog. The value is baked into `cookiecutter.json` and bumped by the template's
+own release workflow, so the hook never has to inspect the checkout it was
+rendered from — a detail that matters for Backstage (section 11.7).
+
+### 11.2 The template branch
+
+An update is a three-way merge, which needs a **merge base**: a commit both sides
+descend from, representing the last state they agreed on. The generated repository
+supplies one by keeping a `template` branch that holds pristine generated output
+and nothing else.
+
+The branch does not have to exist at creation time. It can always be
+reconstructed, because **a generated repository's first commit is by definition
+unmodified template output**:
+
+```
+git branch template $(git rev-list --max-parents=0 HEAD)
+```
+
+`just update` creates it this way on first run. Nothing but `.pyfr-answers.yml`
+therefore has to survive project creation, which is what lets the mechanism work
+identically from the command line and from a developer portal.
+
+### 11.3 The update flow
+
+```
+just update [--to v2.5.0]
+
+  1. read .pyfr-answers.yml          -> answers, current version
+  2. resolve the target version       (newest template tag, or --to)
+  3. ensure the template branch exists (section 11.2)
+  4. check out template into a temporary git worktree
+  5. re-render the template at the target version with the recorded
+     answers, into a temporary directory
+  6. copy the result over the template worktree, deleting files the
+     template no longer produces, skipping paths in .pyfr-update-ignore
+  7. commit on template: "chore: template v2.3.0 -> v2.5.0"
+  8. run migration scripts for versions in (current, target]
+  9. git merge template
+ 10. on a clean merge, record the new version in .pyfr-answers.yml
+```
+
+Step 5 re-renders with hooks **enabled but in regeneration mode**. The
+post-generation hook does two kinds of work, and only the first may run during an
+update:
+
+| Kind | Examples | Runs during an update? |
+|---|---|---|
+| Structural, deterministic | prune unchosen backends, write `.pyfr-answers.yml` | yes |
+| Environmental, side-effectful | `git init`, `uv sync`, install pre-commit, generate the OpenAPI baseline, print next steps | no |
+
+The hook tells them apart by the `PYFR_REGENERATE` environment variable, which
+`just update` sets. Disabling hooks altogether is not an option: pruning happens
+there, and an unpruned regeneration would try to re-add every backend the project
+does not use.
+
+**Why deletions behave correctly.** Every team deletes the example `Order` slice in
+its first week. On update, git compares three states: the merge base has `Order`,
+the template side has not touched it, your side deleted it. Only one side changed,
+so git keeps it deleted — no conflict, no prompt. A patch-based updater instead
+tries to apply the template's later edits to files that are no longer there and
+fails on every one. This difference shows up in every single update, and is the
+main reason for choosing this mechanism.
+
+### 11.4 What is never updated
+
+`.pyfr-update-ignore` lists paths the update leaves exactly as the project has
+them. They are skipped in step 6, so the template side never changes them and git
+never forms an opinion about them. The generated default:
+
+```
+.pyfr-answers.yml        # written directly by just update, in step 10
+README.md                # yours from the first day
+CHANGELOG.md
+migrations/              # your schema; never template-owned
+schema.sql
+openapi.json             # an artifact of your code, not the template's
+docs/adr/                # your decisions
+src/*/domain/            # the example slice, then your business model
+src/*/application/
+src/*/api/v1/
+```
+
+Everything else is template-owned and updates by default: the CI workflows, both
+Dockerfiles, `compose.yaml`, the `justfile`, the ruff and mypy configuration, the
+pre-commit configuration, `ops/**` (dashboards and alert rules), `scripts/**`, the
+observability wiring, and `api/health.py`, `api/errors.py` and `api/middleware.py`.
+
+One rule decides the split: **template-owned files are infrastructure a team
+rarely edits and benefits from receiving fixes to; project-owned files are the ones
+a team rewrites immediately.** Teams add their own paths as they diverge.
+
+### 11.5 Migration scripts
+
+Some template changes cannot be expressed as a merge. If v3.0 moves `settings.py`
+to `config/settings.py`, the merge sees an unrelated deletion and addition, and a
+team loses its edits.
+
+The template therefore ships versioned scripts, run in order at step 8 for every
+version greater than the project's current one and not greater than the target:
+
+```
+updates/
+  v3.0.0/
+    before.py   # runs on your working tree before the merge
+    after.py    # runs after the merge
+```
+
+`before.py` typically performs `git mv` so the merge lines up; `after.py` rewrites
+file contents. Both are ordinary Python run with `uv run`, and both must be
+idempotent, because a failed update is re-run.
+
+### 11.6 Knowing that an update exists
+
+`just update-check` compares the recorded version against the newest template tag
+and exits non-zero when the project is behind.
+
+A scheduled workflow in every generated service runs it weekly, then does one of
+two things — because a pull request cannot carry conflict markers:
+
+- **Clean merge** — open a pull request titled
+  `chore: update template v2.3.0 -> v2.5.0` with the template's changelog entries
+  in the body. CI runs the full suite on it, so a template update is reviewed and
+  verified exactly like any other change.
+- **Conflicting merge** — open an issue instead, naming the conflicting paths and
+  linking the changelog, telling the team to run `just update` locally.
+
+This is the automation Renovate provides for libraries, applied to the template
+itself.
+
+### 11.7 Backstage compatibility
+
+Backstage handles creation only. Its maintainers closed the request to update
+components generated from software templates as *not planned*, so updates were
+never going to live in the portal whichever engine PyFr used.
+
+That matters here in one specific way. The Backstage scaffolder's cookiecutter
+action runs `cookiecutter`, and a publish action then creates the repository with a
+single initial commit — anything the hook did to local git history is discarded.
+The mechanism above survives that untouched, because it needs only two things,
+both of which hold:
+
+1. `.pyfr-answers.yml` exists in the repository — the hook writes it as an ordinary
+   file, not as git state.
+2. The first commit is unmodified template output — exactly what the publish action
+   creates.
+
+A service created through Backstage is therefore updatable on the same terms as
+one created from the command line, with no portal plugin work at all.
+
+### 11.8 Engines considered and rejected
+
+| Option | Why not |
+|---|---|
+| **cruft** | Purpose-built for this, and the least code to write. Rejected because its last release was 2024-12-25, roughly twenty months before this design — too dormant to carry a long-lived capability. It also applies patches rather than merging, so it fails on precisely the deleted example files every project has. |
+| **Copier** | The healthiest of the three engines, with updates and cross-version migrations built in. Rejected because Backstage's only Copier action is an unpublished third-party plugin last touched in February 2024, so portal self-service would mean owning forked TypeScript, whereas cookiecutter's Backstage module is first-party and actively released. |
+| **Manual diff procedure** | Documented regeneration and hand-application does not scale past a few services, and teams skip it in practice. |
+
+---
+
+## 12. Additional features included
 
 **Runtime correctness — small code, prevents real incidents.**
 
@@ -785,7 +984,7 @@ seed-data command giving a working local environment on first `just up`.
 
 ---
 
-## 12. Explicitly out of scope
+## 13. Explicitly out of scope
 
 | Excluded | Reason |
 |---|---|
@@ -796,14 +995,16 @@ seed-data command giving a working local environment on first `just up`.
 | Message queues (Kafka, RabbitMQ, NATS) | A large subsystem deserving its own design round after v1 |
 | Authentication and authorisation | Too organisation-specific to guess; a documented extension point instead |
 | Multi-tenancy | Same reason |
-| Kubernetes manifests / Helm, devcontainer, idempotency keys, rate limiting, k6 load tests | Deferred to M8 |
+| Kubernetes manifests / Helm, devcontainer, idempotency keys, rate limiting, k6 load tests | Deferred to M9 |
+| cruft and Copier as update engines | Section 11.8 — dormancy and Backstage support respectively |
 
 ---
 
-## 13. Milestones
+## 14. Milestones
 
 Each milestone ends with something that runs and is tested. M0–M6 build the
-reference service in plain Python; M7 converts it into the template.
+reference service in plain Python, M7 converts it into the template, and M8 makes
+generated projects updatable.
 
 | # | Milestone | What exists at the end |
 |---|---|---|
@@ -814,8 +1015,9 @@ reference service in plain Python; M7 converts it into the template.
 | **M4** | Cache and object storage | Redis adapter, S3 adapter over aioboto3, MinIO in compose, integration tests for both. |
 | **M5** | Docs and release | MkDocs Material with the Diátaxis structure, the generated configuration reference, ADRs, runbook, all four hygiene checks, Commitizen and the release workflow, GitHub Pages, `catalog-info.yaml`, README rewritten (section 1.2). |
 | **M6** | Supply chain | pip-audit, Trivy, SBOM, Renovate, multi-architecture builds, `uv sync --locked`, log redaction, `just config-check`, seed data. |
-| **M7** | Templatise (Phase B) | Everything moves under `{{cookiecutter.project_slug}}/`; `cookiecutter.json` and both hooks; the `{% raw %}` and `_copy_without_render` passes; pytest-cookies generation tests across all 8 combinations; full-suite tests on 3; the golden diff; the template repository's own CI and release. **PyFr becomes a usable template here.** |
-| **M8** | Extras — out of scope for the first plan | Kubernetes manifests or Helm behind a flag, devcontainer, idempotency keys, rate limiting, k6 load tests. |
+| **M7** | Templatise (Phase B) | Everything moves under `{{cookiecutter.project_slug}}/`; `cookiecutter.json` and both hooks; the `{% raw %}` and `_copy_without_render` passes; pytest-cookies generation tests across all 8 combinations; full-suite tests on 3; the golden diff; the template repository's own CI and release. Also `.pyfr-answers.yml`, written by the post-generation hook, and `_template_version` baked into `cookiecutter.json` — so no service is ever generated without the means to update itself later, even before M8 exists. **PyFr becomes a usable template here.** |
+| **M8** | Template updates | The vendor branch and its reconstruction rule, `just update` and `just update-check`, `.pyfr-update-ignore` with the default split, the migration script runner, the weekly update workflow that opens a pull request or an issue, `docs/how-to/update-from-template.md`, and template-repository tests that generate at one version, edit the project the way a real team would, update to the next version, and assert the merge behaves — including that a deleted example slice stays deleted. |
+| **M9** | Extras — out of scope for the first plan | Kubernetes manifests or Helm behind a flag, devcontainer, idempotency keys, rate limiting, k6 load tests. |
 
 **M0 is deliberately usable on its own.** A service with no database, cache or
 storage is a real thing people generate — an API gateway, an aggregator — so the
@@ -823,7 +1025,7 @@ walking skeleton is a shipping product, not scaffolding.
 
 ---
 
-## 14. Risks and mitigations
+## 15. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
@@ -836,10 +1038,14 @@ walking skeleton is a shipping product, not scaffolding.
 | A migration numbered below the current version is silently skipped | Sequential numbering plus a CI collision check (section 6.4) |
 | Alembic present but unused for migrations confuses readers | Prominent comments in `pyproject.toml` and the drift test explaining its single purpose (section 6.5) |
 | The 14-feature scope stalls before anything ships | M0 is independently useful; each milestone ends runnable and tested |
+| Someone hand-edits the `template` branch and breaks future merges | `just update` refuses to advance a branch carrying commits it did not create; the branch can always be rebuilt from the repository's first commit (section 11.2) |
+| A squashed or rewritten history destroys the pristine first commit, so the branch cannot be reconstructed | `just update-check` detects it and points to a documented manual re-point procedure in `docs/how-to/update-from-template.md` |
+| Teams that diverged heavily hit conflicts on every update and stop updating | The `.pyfr-update-ignore` default (section 11.4) keeps the frequently-rewritten paths out of the merge entirely; the weekly job opens an issue rather than an unmergeable pull request |
+| Non-deterministic regeneration produces spurious diffs on the template branch | Regeneration mode suppresses the side-effectful half of the post-generation hook (section 11.3); the golden diff test already pins template output byte-for-byte |
 
 ---
 
-## 15. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 |---|---|
@@ -848,12 +1054,15 @@ walking skeleton is a shipping product, not scaffolding.
 | Burn rate | How fast an error budget is consumed relative to the rate that would exactly exhaust it |
 | Composition root | The single place where an application constructs and wires its dependencies |
 | Conventional Commits | A commit message format (`feat:`, `fix:`, `feat!:`) machines can read to decide version bumps |
+| Copier | A template engine with project updates built in; considered and rejected in section 11.8 |
+| cruft | A tool adding update support to cookiecutter templates; considered and rejected in section 11.8 |
 | Diátaxis | A documentation framework separating tutorials, how-to guides, reference and explanation |
 | Drift gate | A CI check that fails when a generated artifact no longer matches the code that produces it |
 | Entity | An object with an identity that persists through change |
 | Error budget | The amount of failure an SLO permits, for example 0.1% of requests over 30 days |
 | gitleaks | A scanner that blocks commits containing secrets |
 | Init container | A container that runs to completion before the main application container starts |
+| Merge base | The most recent commit two branches share; the "before" state a three-way merge compares both sides against |
 | Mutation testing | Introducing small deliberate bugs to check whether tests actually catch them |
 | oasdiff | A tool comparing two OpenAPI specifications, classifying changes as breaking or not |
 | OTLP | OpenTelemetry Protocol — the wire format for traces, metrics and logs |
@@ -870,9 +1079,11 @@ walking skeleton is a shipping product, not scaffolding.
 | SLO | Service Level Objective — the target for an SLI over a window |
 | sqlfluff | A linter and formatter for SQL files |
 | Testcontainers | A library that starts real dependencies in Docker for the duration of a test run |
+| Three-way merge | A merge using three inputs — the merge base, their version and yours — so a tool can tell "they changed it" apart from "you changed it" |
 | Trivy | A scanner finding known vulnerabilities in container images |
 | Use case | One business operation; orchestrates domain objects and holds no business rules itself |
 | uv | A fast Python package and project manager written in Rust |
 | Value object | An object defined only by its values, with no identity |
+| Vendor branch | A branch holding pristine upstream (here, template) output and nothing else, merged in to receive upstream changes |
 | VCR / cassette | Recording real HTTP responses to a file and replaying them in later test runs |
 | Walking skeleton | A thin but complete end-to-end implementation, proving the architecture before adding features |
