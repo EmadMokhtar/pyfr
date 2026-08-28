@@ -19,6 +19,10 @@ CORRELATION_HEADER = "X-Request-ID"
 
 EXCLUDED_FROM_ACCESS_LOG = frozenset({"/healthz", "/readyz", "/startupz"})
 
+# Logged in place of a route template when nothing matched. See the comment
+# at the fallback below for why this is not the raw path.
+UNMATCHED_ROUTE = "<unmatched>"
+
 _logger = structlog.get_logger("reference_service.access")
 
 
@@ -47,6 +51,15 @@ class CorrelationIdMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
+            # Deliberately redundant with the clear above, and NOT reachable
+            # by any test in this suite — do not delete it as dead code.
+            # It narrows the window in which a finished request's context
+            # stays visible to whatever runs next in the same task, before
+            # the next request re-enters here. uvicorn does not reset
+            # contextvars per request by default, and this service routes
+            # uvicorn's own records through structlog, so a connection-level
+            # line emitted in that gap would otherwise inherit a completed
+            # request's correlation id.
             structlog.contextvars.clear_contextvars()
 
 
@@ -85,7 +98,13 @@ class AccessLogMiddleware:
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 3)
             route: Any = scope.get("route")
-            template = getattr(route, "path", scope.get("path", ""))
+            # `scope["route"]` is only set when a route matched. Falling back
+            # to the raw path would defeat the point of this field: an
+            # unmatched request is usually a bot probing nonexistent URLs,
+            # and every distinct probe would become a distinct value. One
+            # bounded sentinel instead — the raw path of a 404 is not worth
+            # unbounded cardinality.
+            template = getattr(route, "path", None) or UNMATCHED_ROUTE
             if template not in self.excluded_paths:
                 _logger.info(
                     "http.access",
