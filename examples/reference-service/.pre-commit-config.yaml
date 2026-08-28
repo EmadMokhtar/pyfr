@@ -10,8 +10,12 @@ repos:
     # and `just lint` format the same file the same way.
     rev: v0.16.5
     hooks:
+      # No args: ["--fix"] here. `just check`'s precommit recipe runs this
+      # hook, and "check" must never mutate the tree - it would rewrite
+      # source files, fail on the first CI run and pass on the second.
+      # `just lint` checks, `just fmt` fixes (via `ruff check --fix`); this
+      # hook mirrors `just lint`, not `just fmt`.
       - id: ruff-check
-        args: ["--fix"]
       - id: ruff-format
 
   - repo: https://github.com/astral-sh/uv-pre-commit

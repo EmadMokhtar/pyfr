@@ -27,7 +27,7 @@ imports:
     uv run lint-imports
 
 precommit:
-    uvx pre-commit run --all-files
+    uv run pre-commit run --all-files
 
 check: lint typecheck imports test precommit
 
