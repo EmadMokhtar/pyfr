@@ -4548,14 +4548,18 @@ def _no_developer_app_env_vars() -> Iterator[None]:
     """Strip `APP_*` from the environment for the whole test session.
 
     ... (see the checked-in module for the full rationale)
+
+    The `monkeypatch` fixture itself is function-scoped only, so a
+    session-scoped fixture instantiates `MonkeyPatch` directly instead —
+    the documented pattern for using it beyond function scope. `.undo()`
+    restores exactly the prior state, whether a given key existed before
+    or not.
     """
-    saved = {key: value for key, value in os.environ.items() if key.startswith("APP_")}
-    for key in saved:
-        del os.environ[key]
-    try:
-        yield
-    finally:
-        os.environ.update(saved)
+    mp = pytest.MonkeyPatch()
+    for key in [key for key in os.environ if key.startswith("APP_")]:
+        mp.delenv(key)
+    yield
+    mp.undo()
 
 
 @pytest.fixture
