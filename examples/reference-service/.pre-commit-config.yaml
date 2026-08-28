@@ -1,3 +1,9 @@
+# pre-commit only installs the git hook types it is told to. Without this,
+# `pre-commit install` (run with no arguments, as the README instructs)
+# wires up the `pre-commit` stage only - the commitizen hook below runs at
+# the `commit-msg` stage and would never fire even after installation.
+default_install_hook_types: [pre-commit, commit-msg]
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     # Pinned to match the ruff version uv.lock resolves, so `pre-commit run`

@@ -13,8 +13,9 @@ storage — those arrive in later milestones.
 ## Five-minute start
 
 ```bash
-uv sync            # or: just install
-just dev           # http://localhost:8000/docs
+uv sync                    # or: just install
+uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
+just dev                   # http://localhost:8000/docs
 ```
 
 ## Commands
