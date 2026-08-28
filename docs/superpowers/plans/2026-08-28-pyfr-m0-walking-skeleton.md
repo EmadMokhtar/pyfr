@@ -4086,6 +4086,76 @@ Adds `test_an_unhandled_error_still_carries_the_correlation_id` to Task
 response header and that the logged `request.unhandled_error` record
 carries `correlation_id`.
 
+### Finding 4 — `APP_HTTP_PORT` was dead configuration
+
+It was defined with bounds, tested, listed in `.env.example` and documented
+in the README — and nothing read it. `just dev` and the Dockerfile's `CMD`
+both hardcoded `--port 8000`.
+
+Edits Task 1 Step 5's `justfile` — `dev` reads it via shell parameter
+expansion (`set dotenv-load := true` puts `.env` in the recipe's
+environment already):
+
+```make
+dev:
+    uv run uvicorn reference_service.main:create_app --factory --reload --port ${APP_HTTP_PORT:-8000}
+```
+
+Edits Task 13 Step 2's `Dockerfile` — the `CMD` moves from exec-form with a
+literal `--port` to shell-form with an explicit `exec`, so `APP_HTTP_PORT`
+can be expanded at container start while uvicorn still ends up as PID 1
+(so `docker stop`'s SIGTERM still reaches it directly, preserving the
+graceful-shutdown behaviour). The `HEALTHCHECK` reads the same variable, so
+it cannot drift out of sync with the port the app is actually listening on:
+
+```dockerfile
+# No curl in this image, so the health check uses the interpreter we have.
+# Reads APP_HTTP_PORT the same way the CMD below does, so the two cannot
+# drift out of sync if the port is overridden at runtime.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["python", "-c", "import os,urllib.request,sys; port = os.environ.get('APP_HTTP_PORT', '8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz', timeout=2).status == 200 else 1)"]
+
+# Shell form with an explicit `exec`, not exec-form CMD with a literal
+# --port: APP_HTTP_PORT is a runtime setting (see settings.py), so it is
+# not known at build time and must be expanded by a shell. `exec` replaces
+# that shell with uvicorn rather than running it as a child, so uvicorn
+# stays PID 1 and still receives SIGTERM directly — the graceful-shutdown
+# behaviour below is unchanged.
+#
+# --no-access-log: our own middleware emits the structured access record.
+# --timeout-graceful-shutdown: finish in-flight requests on SIGTERM, then stop.
+CMD ["sh", "-c", "exec uvicorn reference_service.main:create_app --factory --host 0.0.0.0 --port \"${APP_HTTP_PORT:-8000}\" --no-access-log --timeout-graceful-shutdown 30"]
+```
+
+`compose.yaml`'s `ports:` mapping and its own `healthcheck:` override still
+hardcode 8000 — left as-is, since compose does not set `APP_HTTP_PORT`
+either, so nothing there is inconsistent today. If a future change makes
+compose set `APP_HTTP_PORT`, its `ports:` mapping and `healthcheck:` need
+to move together with it.
+
+Verified by building the image and running it twice: once with
+`-e APP_HTTP_PORT=9123 -p 9123:9123`, confirming `curl` against `:9123`
+returns 200 and `docker ps` reports the container `healthy`; once with no
+override, confirming the port-8000 default still works. `docker stop`
+returned in well under a second in both cases, confirming SIGTERM still
+reaches uvicorn directly through the shell-form `exec`.
+
+Edits Task 13 Step 8's `README.md` — the configuration table gains the
+three settings it omitted, and the `APP_HTTP_PORT` row's meaning is now
+actually true:
+
+```markdown
+| Variable | Default | Meaning |
+|---|---|---|
+| `APP_ENVIRONMENT` | `local` | `local` gives colourised console logs; anything else gives JSON |
+| `APP_SERVICE_NAME` | `reference-service` | Used as the OpenAPI title and the `service.name` log field |
+| `APP_HTTP_PORT` | `8000` | Port to serve on — read by `just dev` and the container's `CMD` |
+| `APP_LOG__LEVEL` | `info` | Root log level |
+| `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
+| `APP_OTEL__ENABLED` | `false` | Reserved for M2's OpenTelemetry exporter |
+| `APP_OTEL__LOGS_ENABLED` | `false` | Reserved for M2; would double log ingest if enabled alongside a platform log agent |
+```
+
 ---
 
 ## Definition of done for M0

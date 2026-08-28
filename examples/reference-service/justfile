@@ -7,7 +7,7 @@ install:
     uv sync
 
 dev:
-    uv run uvicorn reference_service.main:create_app --factory --reload --port 8000
+    uv run uvicorn reference_service.main:create_app --factory --reload --port ${APP_HTTP_PORT:-8000}
 
 lint:
     uv run ruff check .

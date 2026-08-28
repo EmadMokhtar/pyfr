@@ -63,9 +63,12 @@ Every variable is prefixed `APP_`; nested settings use `__`. Copy
 | Variable | Default | Meaning |
 |---|---|---|
 | `APP_ENVIRONMENT` | `local` | `local` gives colourised console logs; anything else gives JSON |
-| `APP_HTTP_PORT` | `8000` | Port to serve on |
+| `APP_SERVICE_NAME` | `reference-service` | Used as the OpenAPI title and the `service.name` log field |
+| `APP_HTTP_PORT` | `8000` | Port to serve on — read by `just dev` and the container's `CMD` |
 | `APP_LOG__LEVEL` | `info` | Root log level |
 | `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
+| `APP_OTEL__ENABLED` | `false` | Reserved for M2's OpenTelemetry exporter |
+| `APP_OTEL__LOGS_ENABLED` | `false` | Reserved for M2; would double log ingest if enabled alongside a platform log agent |
 
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later.
