@@ -1,0 +1,45 @@
+"""Application factory and life cycle."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from reference_service import __version__
+from reference_service.api import health
+from reference_service.container import build_container, close_container
+from reference_service.observability.logging import configure_logging
+from reference_service.settings import Settings, load_settings
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    resolved = settings or load_settings()
+
+    configure_logging(
+        environment=resolved.environment,
+        level=resolved.log.level,
+        levels=resolved.log.levels,
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        container = build_container(resolved)
+        app.state.container = container
+        container.started = True
+        try:
+            yield
+        finally:
+            # Runs on SIGTERM, after in-flight requests finish. uvicorn's
+            # --timeout-graceful-shutdown bounds how long that may take.
+            container.started = False
+            await close_container(container)
+
+    app = FastAPI(
+        title=resolved.service_name,
+        version=__version__,
+        lifespan=lifespan,
+    )
+    app.include_router(health.router)
+    return app
