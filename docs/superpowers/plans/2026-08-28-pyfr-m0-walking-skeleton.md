@@ -1785,7 +1785,7 @@ forbidden_modules =
     fastapi
     starlette
 
-[importlinter:contract:service-independence]
+[importlinter:contract:services-independence]
 name = Services import neither api nor infrastructure
 type = forbidden
 source_modules =
