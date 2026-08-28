@@ -4359,6 +4359,39 @@ filterwarnings = [
 With the corrected category, the full suite passes with no warnings
 summary at all — confirming no other warning was silently firing.
 
+### Finding 9 — tests for `extra="forbid"` and the `http_port` bounds
+
+Written in advance to be honest about a surprise: `extra="forbid"` does
+**not** reject an unknown `APP_SOMETHING_UNKNOWN` set directly in the
+process environment — it only constrains keys present in a `.env` FILE.
+Verified independently: `monkeypatch.setenv("APP_SOMETHING_UNKNOWN", "x")`
+then `Settings(_env_file=None)` raises nothing, while the same key inside
+a temp `.env` file raises `ValidationError` (`extra_forbidden`). The test
+below asserts the actual behaviour rather than the intuitive one.
+
+Edits Task 2 Step 3's `settings.py` — a comment records the gap:
+
+```python
+        frozen=True,
+        # This governs keys present in the `.env` FILE only — an unknown
+        # `APP_SOMETHING_UNKNOWN` set directly in the process environment
+        # is silently accepted and ignored, not rejected. Verified: passing
+        # it via monkeypatch.setenv raises nothing; the same key inside a
+        # `.env` file raises `extra_forbidden`. pydantic-settings treats
+        # the two sources differently, and there is no setting that closes
+        # the environment-variable half of this gap.
+        extra="forbid",
+```
+
+Adds four tests to Task 2's `tests/unit/test_settings.py`:
+`test_extra_forbid_does_not_reject_an_unknown_environment_variable`
+(asserts no error — the surprising half),
+`test_extra_forbid_rejects_an_unknown_key_in_the_env_file` (the half it
+does cover, using `tmp_path`), and
+`test_http_port_rejects_a_value_below_the_valid_range` /
+`_above_the_valid_range` / `test_http_port_accepts_the_boundary_values`
+for the `ge=1, le=65535` bounds.
+
 ---
 
 ## Definition of done for M0

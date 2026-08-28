@@ -47,6 +47,13 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         frozen=True,
+        # This governs keys present in the `.env` FILE only — an unknown
+        # `APP_SOMETHING_UNKNOWN` set directly in the process environment
+        # is silently accepted and ignored, not rejected. Verified: passing
+        # it via monkeypatch.setenv raises nothing; the same key inside a
+        # `.env` file raises `extra_forbidden`. pydantic-settings treats
+        # the two sources differently, and there is no setting that closes
+        # the environment-variable half of this gap.
         extra="forbid",
     )
 
