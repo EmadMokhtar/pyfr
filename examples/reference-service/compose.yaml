@@ -13,13 +13,9 @@ services:
     # uvicorn cannot keep. Set comfortably above the app's own deadline so
     # the app's timeout is always the one that governs shutdown.
     stop_grace_period: 40s
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).status == 200 else 1)"
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+    # No healthcheck: block here. The image already declares one (see the
+    # Dockerfile's HEALTHCHECK), and it reads APP_HTTP_PORT the same way
+    # the CMD does. A hardcoded port here would drift from that the moment
+    # APP_HTTP_PORT is overridden — Compose applies the image's own
+    # healthcheck automatically, so duplicating it just to hardcode the
+    # port both drifts and repeats the same instruction twice.
