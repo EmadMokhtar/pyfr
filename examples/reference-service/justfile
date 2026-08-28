@@ -1,0 +1,32 @@
+set dotenv-load := true
+
+default:
+    @just --list
+
+install:
+    uv sync
+
+dev:
+    uv run uvicorn reference_service.main:create_app --factory --reload --port 8000
+
+lint:
+    uv run ruff check .
+    uv run ruff format --check .
+
+fmt:
+    uv run ruff check --fix .
+    uv run ruff format .
+
+typecheck:
+    uv run mypy
+
+test:
+    uv run pytest
+
+check: lint typecheck test
+
+up:
+    docker compose up --build
+
+down:
+    docker compose down -v

@@ -1,0 +1,21 @@
+line-length = 88
+target-version = "py313"
+src = ["src", "tests"]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # flake8-bugbear
+    "S",        # bandit security
+    "UP",       # pyupgrade
+    "ASYNC",    # flake8-async
+    "RUF",      # ruff-specific
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101"]  # assert is how tests assert
+
+[lint.isort]
+known-first-party = ["reference_service"]
