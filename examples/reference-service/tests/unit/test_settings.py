@@ -42,6 +42,38 @@ def test_settings_are_frozen() -> None:
         settings.http_port = 9000  # type: ignore[misc, unused-ignore]
 
 
+def test_nested_settings_are_frozen_too() -> None:
+    """`SettingsConfigDict(frozen=True)` on `Settings` is not recursive.
+
+    Without their own `model_config`, `settings.log` and `settings.otel`
+    would silently accept reassignment even though `Settings` itself
+    claims to be frozen.
+    """
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    with pytest.raises(Exception):
+        settings.log.level = "debug"  # type: ignore[misc, unused-ignore]
+
+    with pytest.raises(Exception):
+        settings.otel.enabled = True  # type: ignore[misc, unused-ignore]
+
+
+def test_log_levels_dict_contents_remain_mutable_despite_frozen() -> None:
+    """The one documented gap: `frozen` protects the field, not the dict.
+
+    `frozen=True` on `LogSettings` refuses REASSIGNING `levels`, but the
+    plain `dict` object it already holds is still an ordinary mutable
+    dict. This test pins that known, documented limitation so a future
+    change either fixes it deliberately or updates the docstring that
+    describes it — not both silently drifting apart.
+    """
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    settings.log.levels["botocore"] = "warning"
+
+    assert settings.log.levels == {"botocore": "warning"}
+
+
 def test_load_settings_exits_on_invalid_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

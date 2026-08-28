@@ -3,6 +3,21 @@
 Settings are read once at startup and are frozen. A missing or malformed
 variable stops the process immediately with a readable message, rather than
 producing a 500 response an hour later.
+
+"Frozen" is precise, not a slogan: `SettingsConfigDict(frozen=True)` on
+`Settings` is NOT recursive — it only refuses reassigning `Settings`'s own
+top-level fields (`settings.http_port = 9000` raises). Without their own
+`model_config`, `settings.log` and `settings.otel` would still allow
+`settings.log.level = "debug"` to succeed silently. `LogSettings` and
+`OtelSettings` below each carry `frozen=True` for exactly this reason.
+
+One gap remains even with both frozen: `LogSettings.levels` is a plain
+`dict`. `frozen=True` refuses REASSIGNING the `levels` field itself
+(`settings.log.levels = {...}` raises), but the dict object it already
+holds stays an ordinary mutable dict — `settings.log.levels["x"] = "debug"`
+succeeds. Nothing in this codebase mutates it, so this is not a live bug,
+but a docstring claiming settings are simply "frozen" without this caveat
+would be claiming more than the code delivers.
 """
 
 from __future__ import annotations
@@ -10,7 +25,7 @@ from __future__ import annotations
 import sys
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Exit code 78 is EX_CONFIG from sysexits.h: "configuration error".
@@ -24,14 +39,30 @@ LogLevel = Literal["debug", "info", "warning", "error", "critical"]
 
 
 class LogSettings(BaseModel):
+    # frozen=True here, not inherited: Settings.model_config's frozen=True
+    # applies only to Settings's own fields, not to the sub-models nested
+    # inside it. Without this, `settings.log.level = "debug"` would succeed
+    # silently despite Settings claiming to be frozen. See the module
+    # docstring for the one gap that remains even so (`levels`, below).
+    model_config = ConfigDict(frozen=True)
+
     level: LogLevel = "info"
     # Per-logger overrides, so silencing a chatty library is configuration
     # rather than a code change. Example: {"sqlalchemy.engine": "warning"}
     # Values are constrained the same way as `level`, for the same reason.
+    #
+    # Still a genuinely mutable dict despite `frozen=True` above: frozen
+    # refuses reassigning the `levels` field itself, but not mutating the
+    # dict object already held there (`settings.log.levels["x"] = ...`
+    # succeeds). See the module docstring.
     levels: dict[str, LogLevel] = Field(default_factory=dict)
 
 
 class OtelSettings(BaseModel):
+    # See LogSettings.model_config for why this is needed independently of
+    # Settings's own frozen=True.
+    model_config = ConfigDict(frozen=True)
+
     enabled: bool = False
     # Standard output is the source of truth for logs. Enabling this in
     # production alongside a platform log agent doubles ingest volume and
