@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from reference_service.domain.errors import OrderNotFoundError
 from reference_service.domain.order import OrderId
-from reference_service.service.order import (
+from reference_service.services.order import (
     GetOrder,
     PlaceOrder,
     PlaceOrderCommand,

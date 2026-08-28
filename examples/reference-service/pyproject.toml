@@ -58,7 +58,7 @@ ignore_missing_imports = true
 # where third-party type stubs are imperfect and strictness only produces
 # `# type: ignore` comments rather than safety.
 [[tool.mypy.overrides]]
-module = ["reference_service.domain.*", "reference_service.service.*"]
+module = ["reference_service.domain.*", "reference_service.services.*"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_calls = true

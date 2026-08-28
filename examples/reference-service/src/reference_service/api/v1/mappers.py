@@ -14,7 +14,7 @@ from reference_service.api.v1.schemas import (
     PlaceOrderRequest,
 )
 from reference_service.domain.order import Money, Order
-from reference_service.service.order import PlaceOrderCommand, PlaceOrderLine
+from reference_service.services.order import PlaceOrderCommand, PlaceOrderLine
 
 
 def to_command(request: PlaceOrderRequest) -> PlaceOrderCommand:

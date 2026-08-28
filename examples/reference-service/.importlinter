@@ -12,7 +12,7 @@ source_modules =
     reference_service.domain
 forbidden_modules =
     reference_service.api
-    reference_service.service
+    reference_service.services
     reference_service.infrastructure
     reference_service.container
     reference_service.main
@@ -20,10 +20,10 @@ forbidden_modules =
     starlette
 
 [importlinter:contract:service-independence]
-name = Service imports neither api nor infrastructure
+name = Services import neither api nor infrastructure
 type = forbidden
 source_modules =
-    reference_service.service
+    reference_service.services
 forbidden_modules =
     reference_service.api
     reference_service.infrastructure

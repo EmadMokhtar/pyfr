@@ -27,7 +27,7 @@ just dev                   # http://localhost:8000/docs
 | `just test` | Run the test suite |
 | `just lint` | ruff check and format check |
 | `just fmt` | Fix lint issues and format |
-| `just typecheck` | mypy — strict on domain and service |
+| `just typecheck` | mypy — strict on domain and services |
 | `just imports` | Verify the layer dependency rule |
 | `just check` | All of the above; run this before pushing |
 | `just up` / `just down` | Start / stop the container stack |
@@ -48,7 +48,7 @@ just dev                   # http://localhost:8000/docs
 ```
 src/reference_service/
   domain/          entities and repository ports; imports only pydantic
-  service/         application services; one file per aggregate
+  services/        application services; one file per aggregate
   infrastructure/  adapters; the only code that knows a storage technology
   api/             the only code that knows HTTP
 ```
