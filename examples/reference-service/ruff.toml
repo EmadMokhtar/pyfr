@@ -15,7 +15,7 @@ select = [
 ]
 
 [lint.per-file-ignores]
-"tests/*" = ["S101"]  # assert is how tests assert
+"tests/*" = ["S101", "B017"]  # assert is how tests assert; B017 is deliberately broad exception
 
 [lint.isort]
 known-first-party = ["reference_service"]

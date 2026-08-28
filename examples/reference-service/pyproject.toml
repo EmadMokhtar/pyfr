@@ -57,3 +57,9 @@ disallow_any_generics = true
 check_untyped_defs = true
 no_implicit_reexport = true
 warn_return_any = true
+
+# Test files use type: ignore comments that may be unused due to pydantic
+# runtime behavior not being visible to the type checker.
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+warn_unused_ignores = false
