@@ -47,11 +47,17 @@ def build_app() -> FastAPI:
         raise RuntimeError("a secret internal detail")
 
     @app.get("/deep-validation")
-    async def deep_validation() -> None:
-        # A raw pydantic model validated somewhere deep in a call stack,
-        # the way a use case validates a domain value object — not the
-        # request body FastAPI already validated on the way in.
-        _StrictlyPositive(value=-1)
+    async def deep_validation(value: int) -> None:
+        # `value` already passed FastAPI's own edge validation — it is a
+        # well-formed int, the only thing the edge schema checks. The
+        # deeper validator behind it enforces a rule the edge schema never
+        # captured, the way a use case validates a domain value object
+        # after its own request schema has already let the input through.
+        # This is deliberately NOT a hardcoded bad literal: a value that
+        # never came from the client is a server defect, not client input,
+        # and is exactly the case this handler was never meant to catch —
+        # see the comment on _pydantic_validation_error in api/errors.py.
+        _StrictlyPositive(value=value)
 
     return app
 
@@ -148,13 +154,17 @@ def test_a_domain_error_log_line_uses_the_same_field_names_as_the_access_log(
 def test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500() -> None:
     """The net: a raw pydantic ValidationError raised below the api layer.
 
-    Without a handler for it, this is neither a DomainError nor a
-    RequestValidationError, so it falls through to the catch-all and
-    answers 500 for input FastAPI's own request validation never saw.
+    `value=-1` passes FastAPI's own edge validation (it is a well-formed
+    int) and is rejected by `_StrictlyPositive`, the deeper validator
+    behind it — real client input reaching a cross-layer validation gap,
+    not a hardcoded server defect. Without a handler for this, it is
+    neither a DomainError nor a RequestValidationError, so it falls
+    through to the catch-all and answers 500 for input that was, from the
+    client's point of view, perfectly ordinary.
     """
     client = TestClient(build_app())
 
-    response = client.get("/deep-validation")
+    response = client.get("/deep-validation?value=-1")
 
     assert response.status_code == 422
     assert response.headers["content-type"].startswith("application/problem+json")
@@ -180,11 +190,13 @@ def test_a_pydantic_validation_error_is_logged_at_warning(
     app.add_middleware(CorrelationIdMiddleware)
 
     @app.get("/deep-validation")
-    async def deep_validation() -> None:
-        _StrictlyPositive(value=-1)
+    async def deep_validation(value: int) -> None:
+        _StrictlyPositive(value=value)
 
     client = TestClient(app)
-    response = client.get("/deep-validation", headers={CORRELATION_HEADER: "warn-1"})
+    response = client.get(
+        "/deep-validation?value=-1", headers={CORRELATION_HEADER: "warn-1"}
+    )
 
     assert response.status_code == 422
 

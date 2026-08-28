@@ -158,6 +158,22 @@ def register_error_handlers(app: FastAPI) -> None:
         # explicitly: this handler runs inside CorrelationIdMiddleware, so
         # structlog.contextvars.merge_contextvars already carries it, the
         # same way _domain_error's log line above does.
+        #
+        # Known, deliberate mislabeling — not fixed here: this handler
+        # catches EVERY PydanticValidationError, indiscriminately, wherever
+        # it is raised. A ValidationError with no connection to client
+        # input at all — say, a use case constructing a domain object from
+        # a value it computed itself, wrongly — is a pure server defect,
+        # not a client-fault 422, and this net currently mislabels it as
+        # one anyway, because nothing here can tell the two apart from the
+        # exception alone. The correct fix is translating validation at the
+        # use-case boundary, so a use case's own bugs surface as 500s and
+        # only genuinely bad client input reaches this handler; M0's use
+        # cases are too thin for that boundary to earn its keep yet, so
+        # this is left for M1 when they grow. See
+        # tests/api/test_errors.py's /deep-validation route for the case
+        # this handler DOES exist for: input that passed the edge schema
+        # and was rejected by a deeper validator.
         _logger.warning(
             "request.validation_error",
             # Same key names as AccessLogMiddleware, _domain_error above,
