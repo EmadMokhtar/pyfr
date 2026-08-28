@@ -1113,10 +1113,8 @@ git commit -m "feat: add order aggregate with pydantic invariants"
 `tests/unit/test_domain_errors.py`:
 
 ```python
-import inspect
 from uuid import uuid4
 
-from reference_service.domain import errors
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 from reference_service.domain.order import OrderId
 from reference_service.domain.repositories import OrderRepository
@@ -1134,13 +1132,16 @@ def test_order_not_found_carries_the_id_and_a_stable_code() -> None:
     assert str(order_id) in str(error)
 
 
-def test_domain_errors_do_not_know_about_http() -> None:
-    """Mapping an error to a status code belongs in api/errors.py only."""
-    source = inspect.getsource(errors)
+def test_domain_errors_carry_no_http_status() -> None:
+    """Mapping an error to a status code belongs in api/errors.py only.
 
-    assert "status" not in source
-    assert "404" not in source
-    assert "http" not in source.lower()
+    Checked on the runtime surface rather than the source text, so a
+    docstring explaining the rule cannot fail the test that enforces it.
+    """
+    for error_class in (DomainError, OrderNotFoundError):
+        assert not hasattr(error_class, "status")
+        assert not hasattr(error_class, "status_code")
+        assert not hasattr(error_class, "http_status")
 
 
 def test_repository_is_a_runtime_checkable_protocol() -> None:
@@ -1798,14 +1799,22 @@ git commit -m "build: enforce the layer dependency rule with import-linter"
 
 **Interfaces:**
 - Consumes: `Settings`, `load_settings`, `configure_logging`, `InMemoryOrderRepository`, `OrderRepository`.
-- Produces:
+- Produces, in `container.py`:
   - `ReadinessCheck = Callable[[], Awaitable[None]]`
   - `ReadinessRegistry` with `register(name, check)` and `async run(timeout: float) -> dict[str, str]`
   - `Container` dataclass: `settings`, `orders`, `readiness`, `started: bool`
   - `build_container(settings) -> Container`, `async close_container(container) -> None`
-  - `get_container(request) -> Container`, `get_orders(...) -> OrderRepository` (FastAPI dependencies)
-  - `create_app(settings: Settings | None = None) -> FastAPI`
-  - Router at `health.router` serving `/healthz`, `/readyz`, `/startupz`
+- Produces, in `api/deps.py`:
+  - `get_container(request) -> Container`, `ContainerDep`
+  - `get_orders(container) -> OrderRepository`, `OrdersDep`
+- Produces, in `api/health.py`: `router` serving `/healthz`, `/readyz`, `/startupz`
+- Produces, in `main.py`: `create_app(settings: Settings | None = None) -> FastAPI`
+
+**Import direction, which matters here.** `ReadinessRegistry` lives in
+`container.py`, not in `health.py`. If it lived in `health.py`, the imports
+would run `container -> api.health -> api.deps -> container` and cycle. As
+written the chain is `api.health -> api.deps -> container -> infrastructure`,
+with no cycle, and `deps.py` has a consumer from the moment it is created.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1932,40 +1941,11 @@ Three endpoints, three different questions:
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Callable
-
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 
 from reference_service import __version__
-
-ReadinessCheck = Callable[[], Awaitable[None]]
-
-READINESS_TIMEOUT_SECONDS = 2.0
-
-
-class ReadinessRegistry:
-    """Dependencies register themselves here; /readyz runs them all."""
-
-    def __init__(self) -> None:
-        self._checks: dict[str, ReadinessCheck] = {}
-
-    def register(self, name: str, check: ReadinessCheck) -> None:
-        self._checks[name] = check
-
-    async def run(self, timeout: float = READINESS_TIMEOUT_SECONDS) -> dict[str, str]:
-        results: dict[str, str] = {}
-        for name, check in self._checks.items():
-            try:
-                await asyncio.wait_for(check(), timeout=timeout)
-            except TimeoutError:
-                results[name] = f"error: timeout after {timeout}s"
-            except Exception as exc:  # noqa: BLE001 - report, never crash
-                results[name] = f"error: {exc}"
-            else:
-                results[name] = "ok"
-        return results
+from reference_service.api.deps import ContainerDep
 
 
 class LivenessResponse(BaseModel):
@@ -1983,13 +1963,15 @@ router = APIRouter(tags=["health"])
 
 @router.get("/healthz", response_model=LivenessResponse)
 async def liveness() -> LivenessResponse:
+    """Liveness takes no dependency, by design. See the module docstring."""
     return LivenessResponse(status="ok", version=__version__)
 
 
 @router.get("/readyz", response_model=ReadinessResponse)
-async def readiness(request: Request, response: Response) -> ReadinessResponse:
-    registry: ReadinessRegistry = request.app.state.container.readiness
-    checks = await registry.run()
+async def readiness(
+    container: ContainerDep, response: Response
+) -> ReadinessResponse:
+    checks = await container.readiness.run()
     healthy = all(result == "ok" for result in checks.values())
     if not healthy:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -1997,12 +1979,11 @@ async def readiness(request: Request, response: Response) -> ReadinessResponse:
 
 
 @router.get("/startupz", response_model=LivenessResponse)
-async def startup(request: Request, response: Response) -> LivenessResponse:
-    started: bool = request.app.state.container.started
-    if not started:
+async def startup(container: ContainerDep, response: Response) -> LivenessResponse:
+    if not container.started:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return LivenessResponse(
-        status="ok" if started else "starting", version=__version__
+        status="ok" if container.started else "starting", version=__version__
     )
 ```
 
@@ -2020,14 +2001,47 @@ learn for no gain at this size.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from reference_service.api.health import ReadinessRegistry
 from reference_service.domain.repositories import OrderRepository
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
 from reference_service.settings import Settings
+
+ReadinessCheck = Callable[[], Awaitable[None]]
+
+READINESS_TIMEOUT_SECONDS = 2.0
+
+
+class ReadinessRegistry:
+    """Dependencies register themselves here; /readyz runs them all.
+
+    Lives beside the container rather than in the api layer so the import
+    chain stays acyclic: api.health -> api.deps -> container.
+    """
+
+    def __init__(self) -> None:
+        self._checks: dict[str, ReadinessCheck] = {}
+
+    def register(self, name: str, check: ReadinessCheck) -> None:
+        self._checks[name] = check
+
+    async def run(self, timeout: float = READINESS_TIMEOUT_SECONDS) -> dict[str, str]:
+        results: dict[str, str] = {}
+        for name, check in self._checks.items():
+            try:
+                await asyncio.wait_for(check(), timeout=timeout)
+            except TimeoutError:
+                results[name] = f"error: timeout after {timeout}s"
+            except Exception as exc:
+                # A failing check reports; it never takes the endpoint down.
+                results[name] = f"error: {exc}"
+            else:
+                results[name] = "ok"
+        return results
 
 
 @dataclass
@@ -2062,10 +2076,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from reference_service.application.get_order import GetOrder
-from reference_service.application.place_order import PlaceOrder
 from reference_service.container import Container
-from reference_service.domain.repositories import OrderRepository
 
 
 def get_container(request: Request) -> Container:
@@ -2074,26 +2085,11 @@ def get_container(request: Request) -> Container:
 
 
 ContainerDep = Annotated[Container, Depends(get_container)]
-
-
-def get_orders(container: ContainerDep) -> OrderRepository:
-    return container.orders
-
-
-OrdersDep = Annotated[OrderRepository, Depends(get_orders)]
-
-
-def get_place_order(orders: OrdersDep) -> PlaceOrder:
-    return PlaceOrder(orders)
-
-
-def get_get_order(orders: OrdersDep) -> GetOrder:
-    return GetOrder(orders)
-
-
-PlaceOrderDep = Annotated[PlaceOrder, Depends(get_place_order)]
-GetOrderDep = Annotated[GetOrder, Depends(get_get_order)]
 ```
+
+Only the container dependency exists at this point, because only the health
+endpoints consume it. Task 12 adds the repository and use-case dependencies
+when the orders router needs them.
 
 - [ ] **Step 6: Write `main.py`**
 
@@ -2720,11 +2716,13 @@ git commit -m "feat: add correlation id and structured access log middleware"
 - Create: `examples/reference-service/src/reference_service/api/v1/schemas.py`
 - Create: `examples/reference-service/src/reference_service/api/v1/mappers.py`
 - Create: `examples/reference-service/src/reference_service/api/v1/router.py`
+- Modify: `examples/reference-service/src/reference_service/api/deps.py` (add the repository and use-case dependencies)
 - Modify: `examples/reference-service/src/reference_service/main.py` (include the router)
 - Test: `examples/reference-service/tests/api/test_orders.py`
 
 **Interfaces:**
-- Consumes: `PlaceOrderDep`, `GetOrderDep`, `Order`, `OrderId`, `PlaceOrderCommand`, `PlaceOrderLine`.
+- Consumes: `ContainerDep` from `api/deps.py` (Task 9), `PlaceOrder`, `GetOrder`, `Order`, `OrderId`, `Money`, `PlaceOrderCommand`, `PlaceOrderLine`, and the `client` fixture from `tests/conftest.py` (Task 9).
+- Produces, in `api/deps.py`: `get_orders`/`OrdersDep`, `get_place_order`/`PlaceOrderDep`, `get_get_order`/`GetOrderDep`.
 - Produces:
   - `MoneyOut(amount: Decimal, currency: str)`
   - `OrderLineIn(sku, quantity, unit_amount, currency)`, `OrderLineOut(sku, quantity, unit_price: MoneyOut, subtotal: MoneyOut)`
@@ -2942,7 +2940,40 @@ def to_response(order: Order) -> OrderResponse:
     )
 ```
 
-- [ ] **Step 5: Write `api/v1/router.py`**
+- [ ] **Step 5: Extend `api/deps.py`, then write `api/v1/router.py`**
+
+Append to `src/reference_service/api/deps.py` (Task 9 created it with only
+`get_container` and `ContainerDep`):
+
+```python
+from reference_service.application.get_order import GetOrder
+from reference_service.application.place_order import PlaceOrder
+from reference_service.domain.repositories import OrderRepository
+
+
+def get_orders(container: ContainerDep) -> OrderRepository:
+    return container.orders
+
+
+OrdersDep = Annotated[OrderRepository, Depends(get_orders)]
+
+
+def get_place_order(orders: OrdersDep) -> PlaceOrder:
+    return PlaceOrder(orders)
+
+
+def get_get_order(orders: OrdersDep) -> GetOrder:
+    return GetOrder(orders)
+
+
+PlaceOrderDep = Annotated[PlaceOrder, Depends(get_place_order)]
+GetOrderDep = Annotated[GetOrder, Depends(get_get_order)]
+```
+
+Keep the imports at the top of the file with the existing ones rather than
+mid-module; the block above is grouped only to show what is new.
+
+Then create `src/reference_service/api/v1/router.py`:
 
 ```python
 """Version 1 of the orders API."""
@@ -3055,6 +3086,8 @@ git commit -m "feat: add orders api slice with separate schemas and mappers"
 __pycache__
 tests
 *.md
+# pyproject.toml declares readme = "README.md", so the build needs this one.
+!README.md
 .env
 ```
 
