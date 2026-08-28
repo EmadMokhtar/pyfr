@@ -161,6 +161,45 @@ def test_a_raw_pydantic_validation_error_becomes_a_422_not_a_500() -> None:
     assert response.json()["title"] == "Request validation failed"
 
 
+def test_a_pydantic_validation_error_is_logged_at_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The safety net for cross-layer validation gaps must stay loud.
+
+    Before this handler existed, the same input crashed with a 500 and a
+    full traceback via `_logger.exception`. The status change to 422 was
+    correct; going from a full traceback to no log record at all was not
+    - it made the next cross-layer validation asymmetry invisible instead
+    of loud. `warning`, not `exception`: this is a client-fault 422, not a
+    server fault, but it must still be visible.
+    """
+    configure_logging(environment="production", level="info", levels={})
+
+    app = FastAPI()
+    register_error_handlers(app)
+    app.add_middleware(CorrelationIdMiddleware)
+
+    @app.get("/deep-validation")
+    async def deep_validation() -> None:
+        _StrictlyPositive(value=-1)
+
+    client = TestClient(app)
+    response = client.get("/deep-validation", headers={CORRELATION_HEADER: "warn-1"})
+
+    assert response.status_code == 422
+
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    warning_record = next(
+        r for r in records if r["event"] == "request.validation_error"
+    )
+    assert warning_record["level"] == "warning"
+    # Carried via structlog.contextvars.merge_contextvars, not passed
+    # explicitly - this handler runs inside CorrelationIdMiddleware, unlike
+    # the catch-all Exception handler.
+    assert warning_record["correlation_id"] == "warn-1"
+    assert warning_record["http.route"] == "/deep-validation"
+
+
 def test_request_validation_produces_problem_details() -> None:
     app = FastAPI()
     register_error_handlers(app)

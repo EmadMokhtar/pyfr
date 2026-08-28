@@ -104,6 +104,18 @@ def register_error_handlers(app: FastAPI) -> None:
         # a shallower layer already accepted: without this, such a error
         # is neither a DomainError nor a RequestValidationError, so it falls
         # through to the catch-all below and becomes an unearned 500.
+        #
+        # warning, not exception: this is a client-fault path (a 422), not
+        # a server fault. But this handler exists precisely to catch
+        # cross-layer validation asymmetries, so the next one must stay
+        # loud in the logs, not silent. correlation_id is not passed
+        # explicitly: this handler runs inside CorrelationIdMiddleware, so
+        # structlog.contextvars.merge_contextvars already carries it, the
+        # same way _domain_error's log line above does.
+        _logger.warning(
+            "request.validation_error",
+            **{"http.route": _route_template(request.scope)},
+        )
         return _problem_response(
             ProblemDetail(
                 type=f"{PROBLEM_TYPE_BASE}/validation_error",
