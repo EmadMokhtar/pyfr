@@ -1,0 +1,10 @@
+[sqlfluff]
+dialect = postgres
+# The migration files are plain SQL with no Jinja or dbt templating in them.
+# The default templater would try to interpret {{ }} and {% %}; `raw` does not,
+# which also keeps M7's templatisation pass from being fought by the linter.
+templater = raw
+max_line_length = 88
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
