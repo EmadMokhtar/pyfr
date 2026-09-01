@@ -7,6 +7,7 @@ adapter and nothing above the infrastructure layer changes.
 
 from __future__ import annotations
 
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -18,6 +19,7 @@ from reference_service.infrastructure.db.mappers import (
     to_domain,
 )
 from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
+from reference_service.infrastructure.errors import CorruptPersistedDataError
 
 # The two SELECTs in get() below must see ONE version of the aggregate.
 # PostgreSQL's default READ COMMITTED gives each STATEMENT its own snapshot,
@@ -71,7 +73,34 @@ class PostgresOrderRepository:
                     )
                 ).all()
             )
-            return to_domain(row, lines)
+            try:
+                return to_domain(row, lines)
+            except PydanticValidationError as exc:
+                # to_domain() reruns every domain validator on the way OUT
+                # of storage, so a row that disagrees with itself (see
+                # mappers.py's to_domain docstring) fails HERE, as a raw
+                # pydantic.ValidationError — the caller asked for an order
+                # that exists but is corrupt, which is our fault, not
+                # theirs. Left uncaught, that ValidationError would reach
+                # api/errors.py's _pydantic_validation_error handler, which
+                # exists for genuine client faults: it would answer 422 for
+                # a server-side data problem AND, via exc.errors(), quote
+                # the row's own field values — including internal_note —
+                # into the response body. Re-raising as
+                # CorruptPersistedDataError, which has no registered
+                # handler, sends it to the catch-all instead: a 500 that
+                # describes none of our internals, the way a storage fault
+                # should be reported. See infrastructure/errors.py.
+                # The message deliberately does not interpolate `exc` (or
+                # any row value): `from exc` already chains the original
+                # ValidationError — with its full, unfiltered field values —
+                # into this exception's traceback for the catch-all's
+                # _logger.exception to log; nothing about the response
+                # depends on what this message says, so it says the least
+                # it can.
+                raise CorruptPersistedDataError(
+                    f"order {order_id} failed domain validation on load"
+                ) from exc
 
     async def save(self, order: Order) -> None:
         """Create or replace, in one transaction covering both tables."""
