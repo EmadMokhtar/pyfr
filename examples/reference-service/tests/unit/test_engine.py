@@ -11,12 +11,14 @@ _dsn = TypeAdapter(PostgresDsn)
 
 
 def test_the_asyncpg_driver_is_added_to_a_plain_url() -> None:
-    """One environment variable has to serve two tools that disagree.
+    """APP_DATABASE__DSN is stored without a driver suffix; this adds one.
 
-    golang-migrate uses APP_DATABASE__DSN verbatim and knows the driver
-    names `postgres` and `postgresql`. SQLAlchemy needs `+asyncpg` to pick
-    its driver. Storing the plain form and adding the suffix here keeps one
-    variable in the environment instead of two that can drift apart.
+    Not because golang-migrate also reads this variable — it does not:
+    compose.yaml's migrate service carries its own hardcoded URL, so
+    APP_DATABASE__DSN is read by the application alone. The plain
+    `postgresql://` form is still the right thing to store, because
+    SQLAlchemy needs the `+asyncpg` suffix to pick its driver and there is
+    no reason to require every caller of Settings to already know that.
     """
     result = async_dsn(_dsn.validate_python("postgresql://app:secret@db:5432/app"))
 

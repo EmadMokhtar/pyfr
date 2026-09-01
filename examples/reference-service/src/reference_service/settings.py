@@ -24,8 +24,16 @@ from __future__ import annotations
 
 import sys
 from typing import Literal
+from urllib.parse import parse_qs, urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, PostgresDsn, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PostgresDsn,
+    ValidationError,
+    field_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Exit code 78 is EX_CONFIG from sysexits.h: "configuration error".
@@ -71,26 +79,80 @@ class OtelSettings(BaseModel):
     endpoint: str | None = None
 
 
+# Parameters libpq accepts and asyncpg does not — see the field_validator
+# below that rejects them, and infrastructure/db/engine.py's own copy of
+# this same tuple, kept as defence in depth once validation moved here.
+_LIBPQ_ONLY_DSN_PARAMETERS = ("sslmode", "sslcert", "sslkey", "sslrootcert")
+
+
 class DatabaseSettings(BaseModel):
     # See LogSettings.model_config for why each sub-model needs its own
     # frozen=True independently of Settings's.
     model_config = ConfigDict(frozen=True)
 
+    # Read by the APPLICATION only. `just up`'s migrate service and every
+    # `just migrate-*` recipe carry their OWN hardcoded URL in compose.yaml
+    # (see MIGRATE_URL there) and never read this variable — so there is no
+    # golang-migrate/SQLAlchemy drift to prevent by way of this setting;
+    # that drift is impossible structurally, because golang-migrate never
+    # sees this value at all.
+    #
     # Stored WITHOUT a driver suffix — `postgresql://`, never
-    # `postgresql+asyncpg://`. One setting has to satisfy two tools that
-    # disagree about the URL: golang-migrate registers the driver names
-    # `postgres` and `postgresql` and uses this string verbatim, while
-    # SQLAlchemy needs the `+asyncpg` suffix to pick its driver. Storing the
-    # plain form and letting infrastructure/db/engine.py add the suffix keeps
-    # ONE variable in the environment. Storing two would let them drift, and
-    # a service pointing its migrations at one database and its queries at
-    # another fails in a way that takes hours to see.
+    # `postgresql+asyncpg://` — and WITHOUT an `sslmode` parameter, for two
+    # reasons that both still hold on their own: infrastructure/db/engine.py
+    # adds the `+asyncpg` suffix itself (an explicitly-supplied driver is
+    # left alone, but there is no reason to supply one here), and `sslmode`
+    # is a libpq parameter asyncpg does not understand at all — rejected
+    # below, by this same model, rather than reaching asyncpg as a raw
+    # error at the first connection.
     dsn: PostgresDsn
+    # The hard ceiling on concurrent database connections this instance
+    # opens. infrastructure/db/engine.py pins SQLAlchemy's own max_overflow
+    # to 0, which is what makes this an EXACT number rather than this value
+    # plus SQLAlchemy's default overflow of 10 — the distinction matters the
+    # moment this figure is used for capacity planning against the
+    # database's own max_connections.
     pool_size: int = Field(default=10, ge=1)
     # Applied per connection as PostgreSQL's `statement_timeout`. A query that
     # runs longer is cancelled by the server, so one pathological statement
     # cannot hold a pooled connection open indefinitely.
     statement_timeout_ms: int = Field(default=5_000, ge=0)
+
+    @field_validator("dsn")
+    @classmethod
+    def _dsn_must_not_carry_libpq_only_parameters(cls, dsn: PostgresDsn) -> PostgresDsn:
+        """Fail here, as ordinary settings validation, not three calls later.
+
+        infrastructure/db/engine.py's async_dsn() used to be the only place
+        this was checked, and it ran from inside build_engine(), called
+        from FastAPI's `lifespan` — well after load_settings had already
+        succeeded. A bad value there raised an uncaught ValueError straight
+        out of startup: a traceback and `SystemExit: 3`, not the readable,
+        exit-78 message load_settings produces for every OTHER bad setting
+        (a wrong http_port, an unknown log level, a malformed dsn of any
+        other kind). Running the identical check here instead means a
+        libpq-only parameter fails exactly like those do: caught by
+        load_settings's `except ValidationError`, named by field, exit 78 —
+        and README.md's "every bad setting exits 78" claim becomes true
+        for this one too.
+
+        Never interpolate `dsn` itself into the message below: like
+        engine.py's copy of this check, this runs on a value that may carry
+        a password, and this ValueError's text is what load_settings
+        eventually renders to stderr.
+        """
+        query_parameters = parse_qs(urlsplit(str(dsn)).query)
+        for parameter in _LIBPQ_ONLY_DSN_PARAMETERS:
+            if parameter in query_parameters:
+                raise ValueError(
+                    f"must not carry the libpq parameter '{parameter}': "
+                    f"asyncpg does not understand it. Remove it from the "
+                    f"URL — golang-migrate never reads this setting (see "
+                    f"the dsn field's own comment); its own URL in "
+                    f"compose.yaml adds '?sslmode=disable' itself, on a "
+                    f"connection string this application never sees."
+                )
+        return dsn
 
 
 class Settings(BaseSettings):

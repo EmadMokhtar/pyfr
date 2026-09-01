@@ -214,6 +214,34 @@ def test_database_settings_are_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
         settings.database.pool_size = 99
 
 
+def test_a_libpq_only_dsn_parameter_stops_the_process_with_exit_78(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    Before this fix, this exact check lived only in
+    infrastructure/db/engine.py's async_dsn(), called from inside
+    build_engine() during FastAPI's `lifespan` — well after load_settings
+    had already returned successfully. Confirmed against the unpatched
+    code: load_settings(env_file=None) with this same DSN returned a
+    Settings object without raising anything, and the ValueError only
+    surfaced later, uncaught, out of container.build_container() — a
+    traceback and SystemExit: 3 at actual startup, not the exit 78
+    README.md promises for every bad setting. The check now runs as an
+    ordinary DatabaseSettings field validator, so it fails at the same
+    point and the same way every other bad setting does.
+    """
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN",
+        "postgresql://app:secret@localhost:5432/app?sslmode=disable",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        load_settings(env_file=None)
+
+    assert exit_info.value.code == EXIT_CONFIG_ERROR
+
+
 def test_a_malformed_dsn_stops_the_process_with_exit_78(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
