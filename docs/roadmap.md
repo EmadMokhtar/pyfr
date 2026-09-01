@@ -1,10 +1,14 @@
 # Roadmap
 
-PyFr is built in nine milestones. Every milestone ends with something that
-runs and is tested — there is no stage where the project is half-converted and
-nothing works.
+PyFr is built in nine milestones, M0 through M8. Every milestone ends with
+something that runs and is tested — there is no stage where the project is
+half-converted and nothing works.
 
 **M0 is done.** Everything on this site describes code that exists today.
+
+The last row of the table, M9, is not one of the nine. It is a holding place
+for extras deliberately deferred out of the first plan, with no schedule
+attached.
 
 | | Milestone | State | What exists at the end |
 | --- | --- | --- | --- |
@@ -17,7 +21,7 @@ nothing works.
 | **M6** | Supply chain | Planned | Dependency and image vulnerability scanning, a software bill of materials, automated dependency updates, multi-architecture builds, log redaction, and seed data. |
 | **M7** | Templatise | Planned | The reference service becomes the template. Generation tests across all eight backend combinations, and the golden diff. **PyFr becomes a usable template here.** |
 | **M8** | Template updates | Planned | A generated project can pull in later template versions through a git merge, with a weekly job that opens a pull request when one is available. |
-| **M9** | Extras | Out of scope for now | Kubernetes manifests or Helm, a devcontainer, idempotency keys, rate limiting, load tests. |
+| **M9** | Extras | Deferred, not one of the nine | Kubernetes manifests or Helm, a devcontainer, idempotency keys, rate limiting, load tests. |
 
 ## Why M0 ships on its own
 

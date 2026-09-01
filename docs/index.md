@@ -12,7 +12,7 @@ placeholders. The [cookiecutter](https://cookiecutter.readthedocs.io/) tool
 asks you questions, substitutes your answers into the skeleton, and writes a
 new repository to disk.
 
-!!! warning "Status: milestone M0 of 8"
+!!! warning "Status: M0 complete, M1–M8 to go"
 
     **The template itself does not exist yet.** What exists today is the
     *reference service* — the complete, running service that the template

@@ -16,7 +16,7 @@ template fixes into itself through an ordinary git merge.
 
 ---
 
-## Status: milestone M0 of 8
+## Status: M0 complete, M1–M8 to go
 
 **The template itself does not exist yet.** What exists today is the
 *reference service* in [`examples/reference-service/`](examples/reference-service/)
