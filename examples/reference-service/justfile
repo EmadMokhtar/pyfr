@@ -23,6 +23,14 @@ typecheck:
 test:
     uv run pytest
 
+# The container-backed tier. Needs a running Docker daemon; `just test` does not.
+test-integration:
+    uv run pytest -m integration
+
+# Everything: unit, api and integration.
+test-all:
+    uv run pytest -m ''
+
 imports:
     uv run lint-imports
 

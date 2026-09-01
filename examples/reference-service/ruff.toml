@@ -16,6 +16,11 @@ select = [
 
 [lint.per-file-ignores]
 "tests/*" = ["S101", "B017"]  # assert is how tests assert; B017 is deliberately broad exception
+# Throwaway Testcontainers credentials. The container lives for one test
+# session, is reachable from nothing outside it, and is destroyed afterwards.
+# Scoped to this directory rather than all of tests/ so a real credential
+# appearing anywhere else is still caught.
+"tests/integration/*" = ["S101", "B017", "S105"]
 
 [lint.isort]
 known-first-party = ["reference_service"]
