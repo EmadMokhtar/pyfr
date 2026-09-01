@@ -25,7 +25,7 @@ from __future__ import annotations
 import sys
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PostgresDsn, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Exit code 78 is EX_CONFIG from sysexits.h: "configuration error".
@@ -71,6 +71,28 @@ class OtelSettings(BaseModel):
     endpoint: str | None = None
 
 
+class DatabaseSettings(BaseModel):
+    # See LogSettings.model_config for why each sub-model needs its own
+    # frozen=True independently of Settings's.
+    model_config = ConfigDict(frozen=True)
+
+    # Stored WITHOUT a driver suffix — `postgresql://`, never
+    # `postgresql+asyncpg://`. One setting has to satisfy two tools that
+    # disagree about the URL: golang-migrate registers the driver names
+    # `postgres` and `postgresql` and uses this string verbatim, while
+    # SQLAlchemy needs the `+asyncpg` suffix to pick its driver. Storing the
+    # plain form and letting infrastructure/db/engine.py add the suffix keeps
+    # ONE variable in the environment. Storing two would let them drift, and
+    # a service pointing its migrations at one database and its queries at
+    # another fails in a way that takes hours to see.
+    dsn: PostgresDsn
+    pool_size: int = Field(default=10, ge=1)
+    # Applied per connection as PostgreSQL's `statement_timeout`. A query that
+    # runs longer is cancelled by the server, so one pathological statement
+    # cannot hold a pooled connection open indefinitely.
+    statement_timeout_ms: int = Field(default=5_000, ge=0)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="APP_",
@@ -93,6 +115,9 @@ class Settings(BaseSettings):
     http_port: int = Field(default=8000, ge=1, le=65535)
     log: LogSettings = Field(default_factory=LogSettings)
     otel: OtelSettings = Field(default_factory=OtelSettings)
+    # Optional on purpose: None selects the in-memory adapter, which is the
+    # path a service generated with database=none takes. See container.py.
+    database: DatabaseSettings | None = None
 
 
 def load_settings(env_file: str | None = ".env") -> Settings:

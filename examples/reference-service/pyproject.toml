@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-settings>=2.6",
     "structlog>=24.4",
     "orjson>=3.10",
+    "sqlalchemy[asyncio]>=2.0.52",
+    "asyncpg>=0.31",
 ]
 
 [dependency-groups]
@@ -23,6 +25,14 @@ dev = [
     "ruff>=0.7",
     "import-linter>=2.1",
     "pre-commit>=4.0",
+    # Alembic is NOT a migration tool in this project — golang-migrate owns the
+    # schema (spec D12), and there is deliberately no alembic/ directory and no
+    # alembic_version table. It is installed for exactly one job: its
+    # compare_metadata() function is the comparison engine behind the
+    # model/schema drift gate in tests/integration/test_schema_drift.py. Deleting
+    # this dependency silently removes that gate. See Task 9 of the M1 plan.
+    "alembic>=1.19",
+    "testcontainers[postgres]>=4.15",
 ]
 
 [build-system]
@@ -33,9 +43,15 @@ build-backend = "hatchling.build"
 packages = ["src/reference_service"]
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers --strict-config"
+addopts = "-q --strict-markers --strict-config -m 'not integration'"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    # Anything needing a container. Excluded from the default run by the `-m`
+    # in addopts above, so `just test` stays a few seconds and needs no Docker.
+    # `just test-integration` selects them back in with `-m integration`.
+    "integration: requires a running Docker daemon",
+]
 filterwarnings = [
     "error",
     # starlette.testclient still imports httpx directly; nothing in our
