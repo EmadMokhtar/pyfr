@@ -1,4 +1,4 @@
-"""Gates 1 and 2 of four: the schema snapshot, and reversibility.
+"""Gates 1 and 2 of five: the schema snapshot, and reversibility.
 
 Gate 3 (version collisions) is pure filename inspection and lives in
 tests/unit/test_migration_files.py. Gate 4 (model drift) is in

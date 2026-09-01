@@ -1,4 +1,4 @@
-"""Gate 4 of four: the SQLAlchemy models against the real migrated schema.
+"""Gate 4 of five: the SQLAlchemy models against the real migrated schema.
 
 ALEMBIC IS NOT A MIGRATION TOOL IN THIS PROJECT. golang-migrate owns the
 schema (spec D12): there is no alembic/ directory, no alembic.ini and no

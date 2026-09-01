@@ -36,7 +36,7 @@ is not there yet.
 | `just test` | Run the unit and api tiers — no containers, no Docker needed |
 | `just test-integration` | Run the container-backed integration tier (needs Docker) |
 | `just test-all` | Run every tier: unit, api and integration |
-| `just gates` | All four schema governance gates — see [Database](#database) |
+| `just gates` | All five schema governance gates — see [Database](#database) |
 | `just schema-snapshot` | Regenerate the committed `schema.sql` after a migration change |
 | `just migrate` | Apply every outstanding migration |
 | `just migrate-new NAME` | Write a new `.up.sql` / `.down.sql` pair |

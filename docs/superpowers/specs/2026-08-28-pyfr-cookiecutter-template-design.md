@@ -1237,7 +1237,7 @@ generated projects updatable.
 | # | Milestone | What exists at the end |
 |---|---|---|
 | **M0** | Walking skeleton | FastAPI app factory and lifespan, Pydantic Settings, structured logging in full (section 7.6: the standard-library bridge, the field-name contract, structured tracebacks, the replacement access log, configurable per-logger levels, and the console renderer for local work), the three health endpoints, Problem Details, correlation IDs, graceful shutdown, one example domain slice on an in-memory repository, unit tests with Hypothesis, `justfile`, ruff, mypy, import-linter, pre-commit, Dockerfile, compose. `just up` serves a working API. |
-| **M1** | Persistence | golang-migrate end to end, the migrations image, SQLAlchemy async models and the PostgreSQL adapter, Testcontainers integration tests, all four schema gates. |
+| **M1** | Persistence | golang-migrate end to end, the migrations image, SQLAlchemy async models and the PostgreSQL adapter, Testcontainers integration tests, all five schema gates. |
 | **M2** | Observability | OpenTelemetry SDK and auto-instrumentation, trace-to-log correlation, the `o11y` compose profile, three dashboards, SLO recording rules and burn-rate alerts. |
 | **M3** | Contract and test depth | `openapi.json` with its drift gate, Schemathesis, oasdiff plus the version cross-check, the outbound httpx client, VCR cassettes, mutmut configured. |
 | **M4** | Cache and object storage | Redis adapter, S3 adapter over aioboto3, MinIO in compose, integration tests for both. |
