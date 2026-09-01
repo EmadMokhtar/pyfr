@@ -2,9 +2,6 @@
 -- PostgreSQL database dump
 --
 
-
-
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -35,7 +32,6 @@ CREATE TABLE public.order_lines (
     CONSTRAINT order_lines_unit_amount_non_negative CHECK ((unit_amount >= (0)::numeric))
 );
 
-
 --
 -- Name: orders; Type: TABLE; Schema: public; Owner: -
 --
@@ -49,7 +45,6 @@ CREATE TABLE public.orders (
     CONSTRAINT orders_total_amount_non_negative CHECK ((total_amount >= (0)::numeric))
 );
 
-
 --
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
@@ -59,14 +54,12 @@ CREATE TABLE public.schema_migrations (
     dirty boolean NOT NULL
 );
 
-
 --
 -- Name: order_lines order_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.order_lines
     ADD CONSTRAINT order_lines_pkey PRIMARY KEY (order_id, line_number);
-
 
 --
 -- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -75,7 +68,6 @@ ALTER TABLE ONLY public.order_lines
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT orders_pkey PRIMARY KEY (id);
 
-
 --
 -- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
@@ -83,14 +75,12 @@ ALTER TABLE ONLY public.orders
 ALTER TABLE ONLY public.schema_migrations
     ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
 
-
 --
 -- Name: order_lines order_lines_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.order_lines
     ADD CONSTRAINT order_lines_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE CASCADE;
-
 
 --
 -- PostgreSQL database dump complete

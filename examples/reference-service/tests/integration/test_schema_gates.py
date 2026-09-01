@@ -46,6 +46,22 @@ _DUMP_VERSION_BANNER = re.compile(
 def normalise_dump(dump: str) -> str:
     dump = _DUMP_NONCE.sub("", dump)
     dump = _DUMP_VERSION_BANNER.sub("", dump)
+    # The two substitutions above do not consume the same number of
+    # newlines. _DUMP_NONCE's pattern has no trailing \n, so it erases only
+    # the \restrict/\unrestrict line's TEXT and leaves an empty line behind
+    # in its place; _DUMP_VERSION_BANNER's pattern ends in \n?, so it
+    # consumes its own trailing newline along with the banner line. A
+    # pg_dump new enough to emit both leaves behind MORE blank lines than
+    # one that predates the \restrict feature (16.13) and so never emits
+    # it — the count of blank lines becomes a property of which pg_dump
+    # produced the dump, not of the schema, and the committed schema.sql
+    # would need to be regenerated on whichever machine's cached
+    # postgres:16-alpine image happens to disagree with the one that last
+    # regenerated it. Collapsing any run of 3+ newlines down to one blank
+    # line (2 newlines) — the spacing every other section boundary in this
+    # file already uses — makes the result the same regardless of which of
+    # the two cases produced it.
+    dump = re.sub(r"\n{3,}", "\n\n", dump)
     return dump.strip() + "\n"
 
 
