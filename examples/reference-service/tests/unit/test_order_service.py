@@ -89,6 +89,22 @@ def test_a_command_with_mixed_currency_lines_is_refused() -> None:
         )
 
 
+def test_place_order_line_rejects_a_quantity_above_int4_max() -> None:
+    """Mirrors domain.order.OrderLine's bound — see that test's docstring.
+
+    A command must stand on its own for a non-HTTP caller, so this
+    constraint is checked here independently of api/v1/schemas.py having
+    already filtered the input.
+    """
+    with pytest.raises(ValidationError):
+        PlaceOrderLine(
+            sku="sku-1",
+            quantity=2_147_483_648,
+            unit_amount=Decimal("1.00"),
+            currency="EUR",
+        )
+
+
 async def test_returns_a_stored_order() -> None:
     orders = FakeOrderRepository()
     placed = await PlaceOrder(orders)(

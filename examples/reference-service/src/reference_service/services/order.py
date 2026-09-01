@@ -45,7 +45,10 @@ class PlaceOrderLine(BaseModel):
     # a non-HTTP caller, not rely on api/v1/schemas.py having already
     # filtered bad input.
     sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
-    quantity: Annotated[int, Field(gt=0)]
+    # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
+    # (PostgreSQL int4, max 2_147_483_647) — same reasoning as
+    # domain.order.OrderLine.quantity and api/v1/schemas.py's OrderLineIn.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
     unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 

@@ -22,7 +22,14 @@ class MoneyOut(BaseModel):
 
 class OrderLineIn(BaseModel):
     sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
-    quantity: Annotated[int, Field(gt=0)]
+    # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
+    # (PostgreSQL int4, max 2_147_483_647), in
+    # migrations/000001_create_orders_tables.up.sql. Without it, a quantity
+    # the column cannot hold passes this schema and the service command and
+    # blows up as asyncpg.exceptions.DataError deep inside the adapter
+    # instead of a 422 at the edge — the same failure mode unit_amount's
+    # bounds below exist to prevent for Money.amount / NUMERIC(14, 2).
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
     # Mirrors domain.order.Money.amount: without these bounds, a value the
     # domain rejects (e.g. "10.123", three decimal places) passes this
     # schema and blows up as an unhandled ValidationError deep inside the

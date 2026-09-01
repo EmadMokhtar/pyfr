@@ -51,7 +51,15 @@ class OrderLine(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     sku: Sku
-    quantity: Annotated[int, Field(gt=0)]
+    # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
+    # (PostgreSQL int4, max 2_147_483_647), in
+    # migrations/000001_create_orders_tables.up.sql — the same reason
+    # Money.amount below is bounded to mirror NUMERIC(14, 2). Without it, a
+    # quantity the column cannot hold passes every model in this codebase
+    # and fails only when asyncpg sends it to PostgreSQL, as
+    # DataError: value out of int32 range — a 500 for schema-valid input
+    # instead of a 422 at construction.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
     unit_price: Money
 
     @property
