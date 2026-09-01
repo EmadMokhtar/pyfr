@@ -31,6 +31,23 @@ test-integration:
 test-all:
     uv run pytest -m ''
 
+# Regenerate the committed schema.sql from the migrations. Run this after
+# changing any migration, and commit the result — the snapshot is reviewed
+# like any other source file.
+#
+# Reuses the gate's own dump-and-normalise code rather than repeating it in
+# shell: a second implementation here would be one more thing to keep in step
+# with the pg_dump flags the gate uses.
+schema-snapshot:
+    UPDATE_SCHEMA_SNAPSHOT=1 uv run pytest -m integration \
+        -k test_gate_1_the_committed_schema_matches_the_migrations
+
+# All four schema gates in one command: version collisions from the unit tier,
+# then the three that need a database.
+gates:
+    uv run pytest tests/unit/test_migration_files.py
+    uv run pytest -m integration -k "schema_gates or schema_drift"
+
 imports:
     uv run lint-imports
 
