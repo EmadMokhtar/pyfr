@@ -210,5 +210,19 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         # milestone) to remember to join that list before its own first
         # malformed value is safe to print. A blanket rule cannot be
         # forgotten the way a list can.
-        sys.stderr.write(f"Invalid configuration:\n{exc.errors(include_input=False)}\n")
+        # One line per problem rather than the raw repr of a list of dicts:
+        # the module docstring promises a READABLE message, and eliding the
+        # input must not be paid for in legibility. loc/msg/type are the three
+        # fields that say which setting, what is wrong, and which rule
+        # rejected it; `ctx` is deliberately left out because it can carry the
+        # offending value, which is the whole thing this elision exists to
+        # keep out of the log. JSON was the other candidate and would also be
+        # structured, but nobody reading a startup failure in a terminal wants
+        # to parse braces to find the field name.
+        details = "\n".join(
+            f"  {'.'.join(str(part) for part in error['loc']) or '<root>'}: "
+            f"{error['msg']} ({error['type']})"
+            for error in exc.errors(include_input=False)
+        )
+        sys.stderr.write(f"Invalid configuration:\n{details}\n")
         raise SystemExit(EXIT_CONFIG_ERROR) from exc

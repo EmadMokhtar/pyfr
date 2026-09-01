@@ -192,6 +192,18 @@ def read_manifest(path: Path) -> dict[str, str]:
         if not stripped:
             continue
         digest, filename = stripped.split(maxsplit=1)
+        if filename in entries:
+            # Last-one-wins would let a duplicated line hide a real edit: the
+            # stale hash above and the regenerated one below would both parse,
+            # only the second would be compared, and gate 5 would report a
+            # clean manifest for a file whose recorded hash is contradictory.
+            # A duplicate can only come from a hand edit or a bad merge, so
+            # there is no case where quietly picking one is the right answer.
+            raise ValueError(
+                f"{path} records {filename} more than once; a migration must "
+                f"have exactly one recorded hash. Regenerate the file with "
+                f"`just migrate-manifest`."
+            )
         entries[filename] = digest
     return entries
 
@@ -305,3 +317,34 @@ def test_a_brand_new_unrecorded_migration_file_is_not_obstructed(
     new_file.write_text("ALTER TABLE orders ADD COLUMN shipping_note TEXT;\n")
 
     assert changed_manifest_entries(manifest, tmp_path) == []
+
+
+def test_read_manifest_rejects_a_duplicated_filename(tmp_path: Path) -> None:
+    """A duplicated line must fail loudly rather than last-one-wins.
+
+    Parsing into a dict silently kept whichever entry came last, so a manifest
+    holding two contradictory hashes for one migration would compare against
+    only one of them and report a clean result — gate 5 reporting success on
+    a manifest that disagrees with itself. A duplicate can only arrive from a
+    hand edit or a bad merge, so there is no reading of it that is safe to
+    guess at.
+    """
+    manifest = tmp_path / "manifest.sha256"
+    manifest.write_text(
+        "aaa  000001_create_orders_tables.up.sql\n"
+        "bbb  000001_create_orders_tables.up.sql\n"
+    )
+
+    with pytest.raises(ValueError, match="more than once"):
+        read_manifest(manifest)
+
+
+def test_read_manifest_accepts_distinct_filenames(tmp_path: Path) -> None:
+    """The guard must not reject an ordinary manifest."""
+    manifest = tmp_path / "manifest.sha256"
+    manifest.write_text("aaa  000001_a.up.sql\nbbb  000001_a.down.sql\n")
+
+    assert read_manifest(manifest) == {
+        "000001_a.up.sql": "aaa",
+        "000001_a.down.sql": "bbb",
+    }
