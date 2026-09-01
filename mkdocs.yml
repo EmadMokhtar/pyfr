@@ -1,0 +1,90 @@
+site_name: PyFr
+site_description: A cookiecutter template for production-ready Python microservices.
+site_url: https://emadmokhtar.github.io/pyfr/
+repo_url: https://github.com/EmadMokhtar/pyfr
+repo_name: EmadMokhtar/pyfr
+edit_uri: edit/main/docs/
+copyright: Licensed under the Mozilla Public License 2.0
+
+validation:
+  # A reference that no longer resolves is a broken page, and `--strict`
+  # turns each of these into a build failure rather than a warning nobody
+  # reads.
+  anchors: warn
+  absolute_links: warn
+  unrecognized_links: warn
+
+# docs/superpowers/ is the historical record of design specs and
+# implementation plans. It stays in the repository — it is the reasoning
+# behind the decisions the site describes — but it is not part of the
+# published site: it is written for whoever is building PyFr at that
+# moment, is thousands of lines long, and goes out of date by design once
+# a milestone lands.
+exclude_docs: |
+  superpowers/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  # base_path reaches the repository root so a page can include a file that
+  # lives outside docs/ instead of duplicating it. check_paths turns a
+  # missing include into a build error rather than a silently empty page.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guides:
+      - Add an endpoint: guides/add-an-endpoint.md
+      - Add a backend: guides/add-a-backend.md
+      - Run in a container: guides/run-in-a-container.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/http-api.md
+      - Errors: reference/errors.md
+      - Logging: reference/logging.md
+  - Explanation:
+      - Architecture: explanation/architecture.md
+      - Why a template, not a framework: explanation/why-a-template.md
+      - Layers and the dependency rule: explanation/layers.md
+      - Testing strategy: explanation/testing.md
+  - Project:
+      - Roadmap: roadmap.md
+      - Contributing: contributing.md
+      - Glossary: glossary.md

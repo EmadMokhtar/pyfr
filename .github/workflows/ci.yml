@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    # `labeled`/`unlabeled` are not default trigger types, but the
+    # docs-freshness job's `no-docs-needed` escape hatch is worthless without
+    # them: with no rerun, adding the label leaves the already-failed check
+    # red.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the documentation toolchain
+        run: uv sync --group docs
+
+      - name: Build the docs site
+        # --strict turns a dead reference or an unresolvable include into a
+        # failure rather than a warning nobody reads.
+        run: uv run mkdocs build --strict
+
+  docs-freshness:
+    # Blunt backstop for stale prose. The `no-docs-needed` label is the escape
+    # hatch for refactors and internal-only changes; a label is used rather
+    # than a commit trailer because pull requests are squash-merged, which
+    # rewrites the message.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'no-docs-needed')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `git diff base...head` needs both sides of the history.
+          fetch-depth: 0
+
+      - name: Check that documentation was updated
+        env:
+          # Passed via env rather than interpolated into the script body, so
+          # nothing from the event payload can be read as shell.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # No dependencies: the script is stdlib-only, so this needs no uv sync.
+        run: python3 scripts/check_docs_updated.py "$BASE_SHA" HEAD

@@ -26,22 +26,26 @@ test:
 imports:
     uv run lint-imports
 
-# `git ls-files` scopes this to the project's own files. `--all-files` walks
-# up to the enclosing repository when this project sits inside one, and
-# rewrites files outside it — during development that silently reformatted
-# Python snippets inside this plan's own Markdown. In a standalone generated
-# project the two are equivalent, so this is correct in both layouts.
+# Run the pre-commit hooks over this project's own files.
 precommit:
+    # `git ls-files` scopes this to the project's own files. `--all-files`
+    # walks up to the enclosing repository when this project sits inside
+    # one, and rewrites files outside it — during development that silently
+    # reformatted Python snippets inside this plan's own Markdown. In a
+    # standalone generated project the two are equivalent, so this is
+    # correct in both layouts.
     uv run pre-commit run --files $(git ls-files)
 
-# Several pre-commit hooks mutate files (ruff-format, uv-lock,
-# end-of-file-fixer, trailing-whitespace), so `precommit` above can modify
-# the tree and still exit 0 — a `check` that only runs it would pass on a
-# second run without anyone noticing the tree changed. `git diff --exit-code`
-# after it turns any such mutation into a loud failure instead of a silent
-# one. Keep the hooks running here regardless: that is how we know the
-# config itself still works, not just that the tree was already clean.
+# Everything CI checks, failing loudly if a hook modified the tree.
 check: lint typecheck imports test precommit
+    # Several pre-commit hooks mutate files (ruff-format, uv-lock,
+    # end-of-file-fixer, trailing-whitespace), so `precommit` above can
+    # modify the tree and still exit 0 — a `check` that only runs it would
+    # pass on a second run without anyone noticing the tree changed.
+    # `git diff --exit-code` after it turns any such mutation into a loud
+    # failure instead of a silent one. Keep the hooks running here
+    # regardless: that is how we know the config itself still works, not
+    # just that the tree was already clean.
     git diff --exit-code
 
 up:
