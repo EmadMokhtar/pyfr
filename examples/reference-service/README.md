@@ -122,13 +122,19 @@ migration; golang-migrate owns the schema.
 ## Configuration
 
 Every variable is prefixed `APP_`; nested settings use `__`. Copy
-`.env.example` to `.env` to start. `APP_DATABASE__DSN` ships commented out
-there, like `APP_OTEL__ENDPOINT`: the justfile sets `dotenv-load := true`, so
-a `.env` with it uncommented but no PostgreSQL actually running would make
-`just dev` silently pick the PostgreSQL adapter instead of the in-memory one
-described below, and 500 on the first order. Uncomment it once a database is
-actually reachable at that URL — `just up` provides one without needing this
-variable at all (see [Database](#database)).
+`.env.example` to `.env` to start. The whole `APP_DATABASE__*` block ships
+commented out there, like `APP_OTEL__ENDPOINT`: the justfile sets
+`dotenv-load := true`, so a `.env` with `APP_DATABASE__DSN` uncommented but
+no PostgreSQL actually running would make `just dev` silently pick the
+PostgreSQL adapter instead of the in-memory one described below, and 500 on
+the first order. Uncomment the whole block once a database is actually
+reachable at that URL — `just up` provides one without needing this block set
+at all (see [Database](#database)). Uncomment all three lines together, not
+`APP_DATABASE__DSN` alone: `database` only stays optional when NONE of its
+variables are set — with any one of `APP_DATABASE__POOL_SIZE` or
+`APP_DATABASE__STATEMENT_TIMEOUT_MS` present but `APP_DATABASE__DSN`
+missing, settings validation fails outright (`dsn`: "Field required")
+instead of falling back to the in-memory repository.
 
 | Variable | Default | Meaning |
 |---|---|---|
