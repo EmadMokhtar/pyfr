@@ -106,8 +106,8 @@ and object storage, release automation, and supply-chain scanning.
 | 🤝 [Contributing](https://emadmokhtar.github.io/pyfr/contributing/) | Working on PyFr itself |
 
 The design specification and milestone plans live in
-[`docs/superpowers/`](docs/superpowers/). They hold the reasoning behind the
-decisions the site describes, and are deliberately not published.
+[`docs/superpowers/`](docs/superpowers/). They contain the reasoning behind
+the decisions the site describes, and are deliberately not published.
 
 ## 🛠️ Development
 
