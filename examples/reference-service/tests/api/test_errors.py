@@ -307,7 +307,9 @@ class _FakeCorruptSession:
     async def scalar(self, *args: object, **kwargs: object) -> object:
         return self._row
 
-    async def scalars(self, *args: object, **kwargs: object) -> _FakeCorruptScalarResult:
+    async def scalars(
+        self, *args: object, **kwargs: object
+    ) -> _FakeCorruptScalarResult:
         return _FakeCorruptScalarResult(self._lines)
 
 
@@ -364,7 +366,7 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
         PostgresOrderRepository,
     )
 
-    secret = "FRAUD REVIEW: customer flagged, do not ship"
+    withheld_note = "FRAUD REVIEW: customer flagged, do not ship"
     lines = (
         OrderLine(
             sku="apple",
@@ -377,7 +379,7 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
         customer_id=CustomerId(uuid4()),
         lines=lines,
         total=total_of(lines),
-        internal_note=secret,
+        internal_note=withheld_note,
     )
     # The stored total disagrees with the lines — the exact corruption
     # to_domain()'s revalidation exists to catch on the way back out.
@@ -394,7 +396,7 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
     response = client.get(f"/api/v1/orders/{order.id}")
 
     assert response.status_code == 500
-    assert secret not in response.text
+    assert withheld_note not in response.text
     assert "internal_note" not in response.text
     body = response.json()
     assert body["title"] == "Internal server error"

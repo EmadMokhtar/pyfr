@@ -99,9 +99,7 @@ def test_a_quantity_above_int4_max_is_refused_with_422_not_500(
     This must fail at the edge (422 here), not the adapter — a value this
     large never reaches domain construction or a database round trip now.
     """
-    response = client.post(
-        "/api/v1/orders", json=a_payload(quantity=3_000_000_000)
-    )
+    response = client.post("/api/v1/orders", json=a_payload(quantity=3_000_000_000))
 
     assert response.status_code == 422
     assert response.headers["content-type"].startswith("application/problem+json")

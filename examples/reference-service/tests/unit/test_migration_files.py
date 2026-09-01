@@ -262,7 +262,7 @@ def test_no_recorded_migration_file_has_changed_since_it_was_recorded() -> None:
         f"these migration files have changed since manifest.sha256 recorded "
         f"their hash: {changed}. An already-committed migration must never be "
         f"edited: every environment that already applied it will never see "
-        f"the change (`migrate up` reports \"no change\" there, silently). Add "
+        f'the change (`migrate up` reports "no change" there, silently). Add '
         f"a new migration instead. If this file is genuinely new, or its "
         f"content change is intentional and has not been applied anywhere "
         f"yet, regenerate the manifest with: just migrate-manifest"
@@ -285,9 +285,7 @@ def test_editing_a_recorded_migration_is_detected(tmp_path: Path) -> None:
 
     # Edited after being recorded — exactly the trap: a developer needing a
     # new column edits the existing file instead of adding 000002.
-    path.write_text(
-        "CREATE TABLE orders (id UUID PRIMARY KEY, shipping_note TEXT);\n"
-    )
+    path.write_text("CREATE TABLE orders (id UUID PRIMARY KEY, shipping_note TEXT);\n")
 
     assert changed_manifest_entries(manifest, tmp_path) == [path.name]
 
