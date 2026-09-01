@@ -116,6 +116,11 @@ precommit:
 check: lint typecheck imports test precommit
     git diff --exit-code
 
+# What CI will run at M5, and what to run before opening a pull request that
+# touches the schema or the adapter. Separate from `check` so the fast loop
+# stays fast and usable without Docker.
+check-all: check test-integration gates
+
 up:
     docker compose up --build
 

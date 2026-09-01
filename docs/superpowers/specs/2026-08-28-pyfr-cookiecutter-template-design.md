@@ -299,7 +299,7 @@ class Settings(BaseSettings):
         env_file=".env", frozen=True,
     )
     environment: Literal["local", "staging", "production"]
-    database: DatabaseSettings
+    database: DatabaseSettings | None = None
     otel: OtelSettings
 ```
 
@@ -312,6 +312,12 @@ class Settings(BaseSettings):
   response an hour later.
 - `just config-check` prints the resolved configuration with secrets masked.
 - Each settings sub-model is pruned away when its backend is `none`.
+- `database` is `DatabaseSettings | None`, not required, because M1's reference
+  service has no template-time pruning yet — that arrives with M7's
+  templatisation pass (section 3.3). Until then, `None` is what a service
+  generated with `database=none` gets, and the composition root reads it to
+  select the in-memory repository instead of refusing to start for want of a
+  DSN it was never going to receive.
 
 ### 5.2 Wiring: a composition root, not a DI framework
 
@@ -323,6 +329,41 @@ overridden in tests via `app.dependency_overrides`.
 No dependency-injection library is used. FastAPI's own `Depends` plus one module
 already does the job, and a DI container is a large concept for every new team
 member to learn for no gain at this size.
+
+### 5.3 Transaction boundaries
+
+The repository adapter opens and commits its own transaction, one per call,
+rather than a FastAPI request-scoped dependency doing it around the handler: an
+aggregate is the transactional consistency boundary, and
+`PostgresOrderRepository.save()` already writes `orders` and `order_lines`
+inside one `session.begin()` block — the guarantee an `Order` actually
+requires, and no more. A team that later needs two aggregates written
+atomically should introduce a unit of work at that point and move the
+`async with` upward; nothing in M1 needs it yet.
+
+A `yield` dependency that commits after the handler returns was measured and
+rejected. FastAPI runs a `yield` dependency's post-yield code after the
+response has already been produced, so a commit placed there fails invisibly to
+the very request that triggered it: a probe against that shape returned `200
+{"ok": true}` to the client while the commit itself raised. Rollback in a
+`yield` dependency is safe — a rolled-back transaction changes nothing the
+response has already promised — but a commit is not, for exactly that reason.
+The composition root therefore hands the repository a plain session factory and
+lets the repository own the transaction, rather than wiring a per-request
+session through `api/deps.py`.
+
+A narrower rule sits beside it: any read that loads an aggregate with more than
+one statement must pin its transaction to `REPEATABLE READ`. PostgreSQL's
+default `READ COMMITTED` isolation gives each *statement* its own snapshot, not
+each transaction — so `PostgresOrderRepository.get()`, which issues one
+`SELECT` for the order header and a second for its lines, could otherwise
+straddle a concurrent `save()`'s commit and read a header from one version of
+the order and lines from another. `Order`'s own invariant check
+(`total_must_match_lines`) then rejects the mismatch, turning a healthy
+concurrent read into a 500. `REPEATABLE READ` takes one snapshot for the whole
+transaction instead, and because the read is read-only, pinning it cannot raise
+the serialization failures a *writing* transaction under the same isolation
+level could.
 
 ---
 
@@ -349,13 +390,19 @@ what the other did.
 
 ```
 migrations/
-  000001_create_orders_table.up.sql
-  000001_create_orders_table.down.sql
-  000002_add_orders_status_index.up.sql
-  000002_add_orders_status_index.down.sql
+  000001_create_orders_tables.up.sql
+  000001_create_orders_tables.down.sql
+  000002_add_order_check_constraints.up.sql
+  000002_add_order_check_constraints.down.sql
 schema.sql                    # committed snapshot of the resulting schema
 Dockerfile.migrations         # FROM migrate/migrate + COPY migrations/
 ```
+
+The second migration adds check constraints, not the status index this section
+originally sketched: `Order` has no `status` field, and an index on
+`order_lines.order_id` alone would have been redundant against the composite
+primary key `(order_id, line_number)`, whose leading column already gives
+PostgreSQL an index to use for lookups by order.
 
 ### 6.3 Interfaces
 
@@ -380,7 +427,10 @@ application image stays Python-only.
 
 **Integration tests** run the real `migrate/migrate` container against the
 Testcontainers PostgreSQL instance, so tests exercise the same tool and the same
-ordering that production uses.
+ordering that production uses. The two containers share an explicit Docker
+network and the migrate container reaches the database by its network alias,
+not by the host-mapped port: that port is published for the *host* to reach
+the container, and is not reachable from inside another container.
 
 ### 6.4 Known traps, and how the template answers them
 
@@ -428,6 +478,37 @@ All four run in CI against a throwaway PostgreSQL container.
    that adopting golang-migrate would otherwise have lost. Because its presence
    looks contradictory, `pyproject.toml` and the test both carry a prominent
    comment explaining exactly why Alembic is installed.
+
+Three implementation details that are not optional, found while building the
+gates above, recorded here so the next person does not rediscover them:
+
+- **`pg_dump` output is not byte-stable, in two separate ways.** Every dump is
+  wrapped in a `\restrict` / `\unrestrict` pair carrying a token regenerated on
+  each run, and stamped with a `-- Dumped from database version X` / `-- Dumped
+  by pg_dump version X` banner. The token alone makes two dumps of an unchanged
+  schema differ seconds apart; the banner makes them differ across time even
+  with the token stripped, because the gate pins PostgreSQL to the floating
+  major tag `postgres:16-alpine`, and the banner moves on the next point
+  release with no migration having changed. Both read as drift that is not
+  there. The snapshot gate strips both before comparing, or it fails on every
+  run — and, for the banner, on every routine image repull.
+- **Gate 4 must exclude `schema_migrations`; gate 1 must include it.**
+  golang-migrate's own bookkeeping table is genuinely present in every migrated
+  database and is deliberately absent from the SQLAlchemy models — modelling
+  another tool's private table would be wrong. Measured: pointing
+  `compare_metadata` at the unfiltered `Base.metadata` reports exactly one
+  difference, the missing table; adding an `include_name` hook that excludes it
+  reports zero. Gate 1 does the opposite and asserts the table *is* in
+  `schema.sql`, because the snapshot describes the real database, while the
+  models describe only the tables this application owns.
+- **The snapshot gate's regeneration escape hatch needs its own CI guard.**
+  Setting `UPDATE_SCHEMA_SNAPSHOT=1` rewrites the committed `schema.sql` from
+  whatever the currently migrated database produces, instead of checking it
+  against what is committed — exactly what a developer wants right after a
+  deliberate migration change, and exactly what turns the gate into a no-op
+  that always passes if the variable is ever set ambiently in CI. The gate
+  checks for a CI environment first and fails loudly there rather than
+  silently regenerating.
 
 ---
 
