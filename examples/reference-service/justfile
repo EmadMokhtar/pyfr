@@ -26,6 +26,45 @@ test:
 imports:
     uv run lint-imports
 
+# Apply every outstanding migration. Uses the migrate service's entrypoint,
+# so the database URL lives in exactly one place — compose.yaml.
+migrate:
+    docker compose run --rm migrate up
+
+# Write a new .up.sql / .down.sql pair. -seq gives sequential numbering, which
+# is what turns two branches adding a migration into a git conflict instead of
+# a silently skipped file (spec 6.4). --no-deps because creating files needs no
+# database, and --entrypoint skips the -database flag `create` has no use for.
+migrate-new name:
+    docker compose run --rm --no-deps --entrypoint migrate migrate \
+        create -ext sql -dir /migrations -seq {{name}}
+
+# Roll back N steps. Defaults to one, because `down` with no argument means
+# "all the way to empty" and that is not a default anyone wants to type twice.
+migrate-down steps="1":
+    docker compose run --rm migrate down {{steps}}
+
+# Current version, and whether the database is dirty.
+migrate-version:
+    docker compose run --rm migrate version
+
+# `migrate force` does NOT run or undo any SQL. It only overwrites the version
+# recorded in schema_migrations and clears the dirty flag.
+#
+# A migration that fails partway leaves the database dirty, and golang-migrate
+# then refuses every further command — correctly, because it cannot know how
+# much of the failed file actually applied. Recovering means a human looking at
+# the real schema, finishing or reversing the partial change BY HAND, and only
+# then running `just migrate-force <the version that is genuinely applied>`.
+# Running it first, to make the error go away, tells the tool a lie it will
+# believe for the rest of the database's life.
+migrate-force version:
+    docker compose run --rm migrate force {{version}}
+
+# An interactive psql session against the running compose database.
+psql:
+    docker compose exec postgres psql -U app -d app
+
 # `git ls-files` scopes this to the project's own files. `--all-files` walks
 # up to the enclosing repository when this project sits inside one, and
 # rewrites files outside it — during development that silently reformatted

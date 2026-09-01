@@ -1,11 +1,70 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: app
+    ports:
+      # Published so `just psql` and any local tool can reach it. The
+      # application inside compose does NOT use this — it connects over the
+      # compose network to the host name `postgres`.
+      - "5432:5432"
+    healthcheck:
+      # `migrate` and `app` both wait on this. Without it they start while
+      # PostgreSQL is still initialising and fail on connection refused.
+      # pg_isready is the server's own readiness tool and needs no client.
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Mounted over the directory the image COPYs in, so migrations edited on
+      # the host apply without rebuilding, and `just migrate-new` writes its new
+      # files back out to the host. Production runs the image as built, with no
+      # mount — see Dockerfile.migrations.
+      - ./migrations:/migrations
+    # The single definition of the local database URL. Every `just migrate-*`
+    # recipe passes only a subcommand and inherits these flags.
+    #
+    # `?sslmode=disable` belongs HERE and not in APP_DATABASE__DSN: it is a
+    # libpq parameter, golang-migrate requires it against a local server with
+    # no TLS, and asyncpg rejects it. engine.py fails loudly if it ever appears
+    # in the application's own URL.
+    entrypoint:
+      - migrate
+      - -path=/migrations
+      - -database
+      - postgres://app:secret@postgres:5432/app?sslmode=disable
+    command: ["up"]
+
   app:
     build: .
     ports:
       - "8000:8000"
+    depends_on:
+      # Not just "started": the API must not serve a request against a schema
+      # that is not there yet. service_completed_successfully waits for the
+      # one-shot migrate container to exit 0, so `just up` is a single command
+      # that yields a migrated database and a working API.
+      migrate:
+        condition: service_completed_successfully
     environment:
       APP_ENVIRONMENT: production
       APP_LOG__LEVEL: info
+      # Host `postgres` is the compose service name. No driver suffix and no
+      # sslmode — see settings.py's DatabaseSettings.dsn.
+      APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
     # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
     # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
     # (and Docker's) own default kill deadline is 10s, so without raising
@@ -19,3 +78,6 @@ services:
     # APP_HTTP_PORT is overridden — Compose applies the image's own
     # healthcheck automatically, so duplicating it just to hardcode the
     # port both drifts and repeats the same instruction twice.
+
+volumes:
+  postgres-data:
