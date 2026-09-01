@@ -224,3 +224,40 @@ def test_a_malformed_dsn_stops_the_process_with_exit_78(
         load_settings(env_file=None)
 
     assert exit_info.value.code == EXIT_CONFIG_ERROR
+
+
+def test_a_malformed_dsn_s_password_never_reaches_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    pydantic's default ValidationError rendering (both plain str(exc) and
+    the bare exception passed to an f-string) embeds the VALUE that failed
+    validation, and for database.dsn that value is the whole connection
+    string, credentials included. Confirmed against the unpatched
+    load_settings: this exact DSN printed
+    `input_value='mysql://app:sup3rs3cr3t@db.internal:3306/app'` to stderr,
+    directly contradicting this module's own docstring and spec 5.1's
+    promise that a secret cannot reach a log line or a traceback by
+    accident.
+
+    The message must still be useful, not merely safe: the field location
+    and the constraint name are asserted below too, so a fix that achieved
+    silence by discarding the whole message would not pass this either.
+    """
+    secret = "sup3rs3cr3t"  # noqa: S105 - the value under test, not a real credential
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN", f"mysql://app:{secret}@db.internal:3306/app"
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        load_settings(env_file=None)
+
+    assert exit_info.value.code == EXIT_CONFIG_ERROR
+    stderr = capsys.readouterr().err
+    assert secret not in stderr
+    assert "db.internal" not in stderr
+    # Still useful, not merely silent: names the field and the constraint.
+    assert "dsn" in stderr
+    assert "url_scheme" in stderr

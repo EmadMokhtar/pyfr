@@ -125,5 +125,28 @@ def load_settings(env_file: str | None = ".env") -> Settings:
     try:
         return Settings(_env_file=env_file)  # type: ignore[call-arg]
     except ValidationError as exc:
-        sys.stderr.write(f"Invalid configuration:\n{exc}\n")
+        # exc.errors(include_input=False), not str(exc) or the bare exc:
+        # pydantic's default rendering embeds the VALUE that failed
+        # validation for every field, and for database.dsn that value is
+        # the connection string with its password in it — verified: a
+        # malformed `APP_DATABASE__DSN=mysql://app:sup3rs3cr3t@...` printed
+        # `input_value='mysql://app:sup3rs3cr3t@...'` to stderr here, in
+        # direct contradiction of this module's own docstring ("a missing
+        # or malformed variable stops the process ... with a readable
+        # message") and of spec 5.1's promise that a secret cannot reach a
+        # log line or a traceback by accident. include_input=False elides
+        # it while keeping the field location and the constraint message —
+        # confirmed on the installed pydantic (2.13.4) to still identify
+        # exactly which setting is wrong and why.
+        #
+        # Applied globally, not only to database.dsn: every OTHER field
+        # loses the courtesy of having its bad value echoed back too, which
+        # is a real trade-off — a typo in, say, http_port is now named by
+        # field and constraint but not shown verbatim. The alternative, an
+        # allowlist of "safe" fields to elide, requires every future
+        # secret-bearing setting (a Redis or S3 credential in a later
+        # milestone) to remember to join that list before its own first
+        # malformed value is safe to print. A blanket rule cannot be
+        # forgotten the way a list can.
+        sys.stderr.write(f"Invalid configuration:\n{exc.errors(include_input=False)}\n")
         raise SystemExit(EXIT_CONFIG_ERROR) from exc
