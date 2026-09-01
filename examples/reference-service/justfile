@@ -26,21 +26,27 @@ test:
 imports:
     uv run lint-imports
 
-# Apply every outstanding migration. Uses the migrate service's entrypoint,
-# so the database URL lives in exactly one place — compose.yaml.
+# Uses the migrate service's entrypoint, so the database URL lives in exactly
+# one place — compose.yaml.
+#
+# Apply every outstanding migration.
 migrate:
     docker compose run --rm migrate up
 
-# Write a new .up.sql / .down.sql pair. -seq gives sequential numbering, which
-# is what turns two branches adding a migration into a git conflict instead of
-# a silently skipped file (spec 6.4). --no-deps because creating files needs no
-# database, and --entrypoint skips the -database flag `create` has no use for.
+# -seq gives sequential numbering, which is what turns two branches adding a
+# migration into a git conflict instead of a silently skipped file (spec 6.4).
+# --no-deps because creating files needs no database, and --entrypoint skips
+# the -database flag `create` has no use for.
+#
+# Write a new .up.sql / .down.sql pair.
 migrate-new name:
     docker compose run --rm --no-deps --entrypoint migrate migrate \
         create -ext sql -dir /migrations -seq {{name}}
 
-# Roll back N steps. Defaults to one, because `down` with no argument means
-# "all the way to empty" and that is not a default anyone wants to type twice.
+# Defaults to one, because `down` with no argument means "all the way to
+# empty" and that is not a default anyone wants to type twice.
+#
+# Roll back N steps.
 migrate-down steps="1":
     docker compose run --rm migrate down {{steps}}
 
@@ -58,6 +64,8 @@ migrate-version:
 # then running `just migrate-force <the version that is genuinely applied>`.
 # Running it first, to make the error go away, tells the tool a lie it will
 # believe for the rest of the database's life.
+#
+# Clear a dirty flag by declaring the true version. Read the warning below before using this.
 migrate-force version:
     docker compose run --rm migrate force {{version}}
 
