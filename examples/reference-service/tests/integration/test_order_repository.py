@@ -6,7 +6,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from reference_service.domain.order import (
@@ -225,25 +225,34 @@ async def test_each_test_starts_from_an_empty_database(
     assert count == 0
 
 
-async def test_get_pins_the_read_transaction_to_repeatable_read(
+async def test_repeatable_read_is_transmitted_to_postgresql(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Task 4's review found get() could tear an aggregate under the
-    default READ COMMITTED isolation: PostgreSQL gives each of get()'s two
-    SELECTs its own snapshot, so a save() committing in between could hand
-    back a header from one version and lines from another, and
+    """The isolation_level execution option must actually reach the server.
+
+    Task 4's review found get() could tear an aggregate under the default
+    READ COMMITTED isolation: PostgreSQL gives each of get()'s two SELECTs
+    its own snapshot, so a save() committing in between could hand back a
+    header from one version and lines from another, and
     Order.total_must_match_lines would turn that healthy read into a 500.
     The fix pins the read transaction to REPEATABLE READ via
-    READ_ISOLATION_LEVEL, applied exactly the way get() applies it:
-    `session.connection(execution_options={"isolation_level": ...})` before
-    the first statement.
+    READ_ISOLATION_LEVEL, applied through
+    `session.connection(execution_options={"isolation_level": ...})`.
 
-    That fix was unverified against a real database until now. Testing the
-    race itself would be timing-dependent and flaky; what is deterministic,
-    and what this asserts, is that PostgreSQL itself reports the isolation
-    level took effect — queried with `SHOW transaction_isolation`, the same
-    session variable PostgreSQL uses to answer `current_setting
-    ('transaction_isolation')`.
+    That mechanism was unverified against a real database until now.
+    Testing the race itself would be timing-dependent and flaky; what is
+    deterministic, and what this asserts, is that PostgreSQL itself reports
+    the isolation level took effect — queried with `SHOW
+    transaction_isolation`, the same session variable PostgreSQL uses to
+    answer `current_setting('transaction_isolation')`.
+
+    What this test does NOT prove: that get() is the one actually setting
+    this option. It opens its own session and applies the option directly,
+    never constructing a PostgresOrderRepository or calling get() at all —
+    a later review caught that a deleted isolation call inside get() itself
+    would leave this test passing regardless. See
+    test_get_pins_the_read_transaction_to_repeatable_read below for the
+    call-site coverage this test does not provide.
     """
     async with sessionmaker() as session:
         await session.connection(
@@ -257,3 +266,51 @@ async def test_get_pins_the_read_transaction_to_repeatable_read(
     # not a second hardcoded string, so this follows the constant if it
     # ever changes.
     assert reported == READ_ISOLATION_LEVEL.lower()
+
+
+async def test_get_pins_the_read_transaction_to_repeatable_read(
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """get() itself must be the one requesting REPEATABLE READ.
+
+    The test above proves the mechanism works end to end; it does not
+    prove get() is what invokes it. This test observes the REAL get() call
+    instead, deterministically and with no timing dependence: a
+    sqlalchemy.event listener on `set_connection_execution_options` (fired
+    whenever `Connection.execution_options(...)` runs, which is what
+    `session.connection(execution_options=...)` does under the hood)
+    records every isolation_level any connection this engine hands out is
+    given. `sessionmaker.kw["bind"]` recovers the underlying AsyncEngine
+    that `async_sessionmaker` was built from — SQLAlchemy's event API
+    operates on the sync layer even for an async engine, hence
+    `engine.sync_engine` rather than `engine` itself.
+
+    save() runs first only to create a row get() can find; the recording is
+    cleared immediately afterward because save() sets no isolation_level of
+    its own (confirmed: the list is empty at that point) and this test
+    asserts on what get() alone contributes. The listener is removed in a
+    `finally` because the engine — and the event registration on it — is
+    session-scoped and shared with every other test in this file; leaving
+    it attached would keep recording (and leaking state into) tests that
+    run afterward.
+    """
+    engine = sessionmaker.kw["bind"]
+    recorded_isolation_levels: list[str] = []
+
+    def _record(conn: Connection, opts: dict[str, object]) -> None:
+        if "isolation_level" in opts:
+            recorded_isolation_levels.append(str(opts["isolation_level"]))
+
+    event.listen(engine.sync_engine, "set_connection_execution_options", _record)
+    try:
+        repository = PostgresOrderRepository(sessionmaker)
+        order = make_order()
+        await repository.save(order)
+        recorded_isolation_levels.clear()
+
+        loaded = await repository.get(order.id)
+
+        assert loaded is not None
+        assert recorded_isolation_levels == [READ_ISOLATION_LEVEL]
+    finally:
+        event.remove(engine.sync_engine, "set_connection_execution_options", _record)

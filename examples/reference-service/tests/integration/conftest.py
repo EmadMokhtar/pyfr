@@ -4,6 +4,25 @@ One PostgreSQL container for the whole session, migrated once with the real
 golang-migrate image, on a shared Docker network so the two containers can
 find each other by name. Tables are truncated between tests, which is far
 cheaper than a container per test and gives the same isolation.
+
+Rule for every test module added to this directory: if it uses the
+`sessionmaker` fixture below (or anything built on the same engine), it
+must carry its own module-level `pytestmark =
+pytest.mark.asyncio(loop_scope="session")`. pytest-asyncio does expose a
+project-wide `asyncio_default_test_loop_scope` ini option that would apply
+this scope everywhere at once, but pyproject.toml deliberately leaves it at
+pytest-asyncio's own default ("function") rather than set it there: a
+project-wide change would also alter event-loop behaviour for the async
+tests in tests/unit/ and tests/api/, which have no need of it. Two
+alternatives that WOULD have been central to just this directory — a
+marker added dynamically in `pytest_collection_modifyitems` below, and a
+package-level `pytestmark` in this directory's `__init__.py` — were both
+tried and confirmed not to work; see `pytest_collection_modifyitems`'s
+docstring for the mechanism. A module that forgets the rule does not fail
+quietly: it crashes with `RuntimeError: Event loop is closed` on the
+second test in that module that opens a session — loud enough to point
+back here. See `sessionmaker`'s docstring for the full mechanism this rule
+protects against.
 """
 
 from __future__ import annotations
@@ -65,41 +84,45 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     means a new test file cannot forget it and quietly make `just test`
     require Docker.
 
-    The `_THIS_DIRECTORY in item.path.parents` guard is load-bearing, not
-    decorative: `pytest_collection_modifyitems` implementations from EVERY
-    conftest.py pytest loads are registered as session-wide hooks and all
-    run against the FULL, whole-session `items` list once — a local
-    conftest.py does not confine its own hook to its own directory. An
-    unconditional `for item in items: item.add_marker(...)` here would mark
-    every test in the ENTIRE suite `integration`, not just this directory's,
-    which turns `-m 'not integration'` into "match nothing": `just test`
-    would exit with pytest's NO_TESTS_COLLECTED (5) instead of running the
-    unit and api tiers, and `just test-integration` would silently run the
-    whole suite rather than just this directory. Confirmed empirically
-    while building this file: the unscoped version reproduces both symptoms
-    exactly.
+    The `_THIS_DIRECTORY in Path(item.path).resolve().parents` guard is
+    load-bearing, not decorative, in two separate ways. First:
+    `pytest_collection_modifyitems` implementations from EVERY conftest.py
+    pytest loads are registered as session-wide hooks and all run against
+    the FULL, whole-session `items` list once — a local conftest.py does
+    not confine its own hook to its own directory. An unconditional `for
+    item in items: item.add_marker(...)` here would mark every test in the
+    ENTIRE suite `integration`, not just this directory's, which turns
+    `-m 'not integration'` into "match nothing": `just test` would exit
+    with pytest's NO_TESTS_COLLECTED (5) instead of running the unit and
+    api tiers, and `just test-integration` would silently run the whole
+    suite rather than just this directory. Confirmed empirically while
+    building this file: the unscoped version reproduces both symptoms
+    exactly. Second: `item.path` must be resolved before the comparison,
+    not compared raw — `_THIS_DIRECTORY` above is already `.resolve()`d,
+    and a symlink anywhere in the checkout's path could make an unresolved
+    `item.path` fail to appear in its `.parents`, so the guard would stop
+    matching and every test here would silently lose the marker — this
+    exact bug arriving again, by a different door.
 
-    This hook is deliberately NOT where the event-loop scope for these
-    tests gets fixed, even though that problem has the same "one place, so
-    no file forgets it" shape as the marker above. `sessionmaker` is
-    session-scoped, and so is the connection pool inside the `AsyncEngine`
-    it wraps, but pytest-asyncio decides which event loop scope a test
-    uses inside ITS OWN `pytest_generate_tests` — which runs per test
-    function during collection, before this hook ever sees the collected
-    `items` list. A marker added here, via `item.add_marker(...)`, is
-    provably too late: confirmed empirically by adding
-    `pytest.mark.asyncio(loop_scope="session")` right here and checking
-    `pytest --setup-plan`, which still showed `_function_scoped_runner` for
-    every test. `pytestmark` at the top of a test MODULE is read early
+    This hook is deliberately NOT where the event-loop scope described in
+    this file's module docstring gets fixed, even though that has the same
+    "one place, so no file forgets it" shape as the marker above.
+    `sessionmaker` is session-scoped, but pytest-asyncio decides which
+    event loop scope a test uses inside ITS OWN `pytest_generate_tests` —
+    which runs per test function during collection, before this hook ever
+    sees the collected `items` list. A marker added here, via
+    `item.add_marker(...)`, is provably too late: confirmed empirically by
+    adding `pytest.mark.asyncio(loop_scope="session")` right here and
+    checking `pytest --setup-plan`, which still showed
+    `_function_scoped_runner` for every test. A package-level `pytestmark`
+    in this directory's `__init__.py` was tried too and also made no
+    difference. `pytestmark` at the top of a test MODULE is read early
     enough (module import happens before `pytest_generate_tests` fires for
-    that module's functions); a package-level `pytestmark` in this
-    directory's `__init__.py` was tried too and made no difference, so
-    every test file in this directory that opens a session needs its own
-    `pytestmark = pytest.mark.asyncio(loop_scope="session")` — see
-    test_order_repository.py's copy for what it fixes and why.
+    that module's functions) — which is why the rule lives there instead,
+    stated at the top of this file.
     """
     for item in items:
-        if _THIS_DIRECTORY in item.path.parents:
+        if _THIS_DIRECTORY in Path(item.path).resolve().parents:
             item.add_marker(pytest.mark.integration)
 
 
@@ -144,12 +167,25 @@ def run_migrate(docker_network: Network) -> MigrateRunner:
             .with_command(f"-path=/migrations -database {MIGRATE_URL} {args}")
         )
         container.start()
-        raw = container.get_wrapped_container()
-        # start() returns as soon as the container is running; this is a
-        # one-shot command, so wait for it to exit and read its status.
-        exit_code = int(raw.wait()["StatusCode"])
-        logs = raw.logs().decode().strip()
-        container.stop()
+        # A failing migrate command does not raise here — it returns a
+        # non-zero exit code, caught below and returned rather than thrown.
+        # What the try/finally guards against is a Docker-side exception
+        # from wait()/logs() itself (a lost connection to the daemon, for
+        # instance): without it, that would skip stop() and leak the
+        # container. The ordinary `migrate up` path is unlikely to hit
+        # this, but Task 8's reversibility gate drives this same fixture
+        # through `down -all` and back, which is exactly the kind of
+        # unusual, longer-running command where a Docker-side error is
+        # more likely to surface.
+        try:
+            raw = container.get_wrapped_container()
+            # start() returns as soon as the container is running; this is
+            # a one-shot command, so wait for it to exit and read its
+            # status.
+            exit_code = int(raw.wait()["StatusCode"])
+            logs = raw.logs().decode().strip()
+        finally:
+            container.stop()
         return exit_code, logs
 
     return run
@@ -182,8 +218,9 @@ async def sessionmaker(
     rather than left to `asyncio_default_fixture_loop_scope` (which
     pyproject.toml never sets): every test in this directory shares ONE
     event loop via `pytestmark = pytest.mark.asyncio(loop_scope="session")`
-    in each test module (see conftest.py's `pytest_collection_modifyitems`
-    docstring for why that lives there and not here), and this fixture must
+    in each test module (this file's module docstring states that as a
+    rule for every file added here; `pytest_collection_modifyitems` below
+    explains why it cannot live centrally instead), and this fixture must
     resolve to that SAME loop — matching scope names share the identical
     `_session_scoped_runner` fixture pytest-asyncio creates on demand — so
     the engine's pooled connections are always used, and disposed, on the

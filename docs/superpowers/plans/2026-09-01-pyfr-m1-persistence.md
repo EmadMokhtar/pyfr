@@ -1993,6 +1993,23 @@ exiting 1. None of these are addressed by changing `build_engine` or
 `PostgresOrderRepository` (Task 4's code, unmodified) — all three are fixed entirely
 inside this task's own test fixtures.
 
+**A second, independent review — reading the finished code rather than running
+it — found four more problems, all in `conftest.py`, plus a gap in the isolation-level
+test.** `run_migrate` could leak a container: only its success path called
+`container.stop()`, so a Docker-side exception from `wait()`/`logs()` after
+`start()` had already succeeded would skip it. The directory guard compared a
+resolved directory against `item.path` left unresolved, which stops matching
+behind a symlinked checkout — the exact tier-separation failure the guard exists
+to prevent, arriving by a different door. Two of this section's own explanatory
+claims needed correcting, not the code: pytest-asyncio *does* expose a way to set
+the event-loop scope project-wide (declining it is the right call, but it is a
+choice, not an absence of one), and the `pytestmark` rule for future test files
+was documented somewhere a future author would not think to look. Separately, the
+isolation-level test added for requirement 1 asserted on its own inline copy of
+`get()`'s isolation call rather than on `get()` itself, so deleting the real call
+from `order_repository.py` would have left it passing — Step 3 below covers the
+fix, with a second test added alongside the first rather than a rewrite in place.
+
 - [ ] **Step 1: Write the fixtures**
 
 Create `tests/integration/__init__.py` (empty) and `tests/integration/conftest.py`:
@@ -2004,6 +2021,25 @@ One PostgreSQL container for the whole session, migrated once with the real
 golang-migrate image, on a shared Docker network so the two containers can
 find each other by name. Tables are truncated between tests, which is far
 cheaper than a container per test and gives the same isolation.
+
+Rule for every test module added to this directory: if it uses the
+`sessionmaker` fixture below (or anything built on the same engine), it
+must carry its own module-level `pytestmark =
+pytest.mark.asyncio(loop_scope="session")`. pytest-asyncio does expose a
+project-wide `asyncio_default_test_loop_scope` ini option that would apply
+this scope everywhere at once, but pyproject.toml deliberately leaves it at
+pytest-asyncio's own default ("function") rather than set it there: a
+project-wide change would also alter event-loop behaviour for the async
+tests in tests/unit/ and tests/api/, which have no need of it. Two
+alternatives that WOULD have been central to just this directory — a
+marker added dynamically in `pytest_collection_modifyitems` below, and a
+package-level `pytestmark` in this directory's `__init__.py` — were both
+tried and confirmed not to work; see `pytest_collection_modifyitems`'s
+docstring for the mechanism. A module that forgets the rule does not fail
+quietly: it crashes with `RuntimeError: Event loop is closed` on the
+second test in that module that opens a session — loud enough to point
+back here. See `sessionmaker`'s docstring for the full mechanism this rule
+protects against.
 """
 
 from __future__ import annotations
@@ -2065,41 +2101,45 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     means a new test file cannot forget it and quietly make `just test`
     require Docker.
 
-    The `_THIS_DIRECTORY in item.path.parents` guard is load-bearing, not
-    decorative: `pytest_collection_modifyitems` implementations from EVERY
-    conftest.py pytest loads are registered as session-wide hooks and all
-    run against the FULL, whole-session `items` list once — a local
-    conftest.py does not confine its own hook to its own directory. An
-    unconditional `for item in items: item.add_marker(...)` here would mark
-    every test in the ENTIRE suite `integration`, not just this directory's,
-    which turns `-m 'not integration'` into "match nothing": `just test`
-    would exit with pytest's NO_TESTS_COLLECTED (5) instead of running the
-    unit and api tiers, and `just test-integration` would silently run the
-    whole suite rather than just this directory. Confirmed empirically
-    while building this file: the unscoped version reproduces both symptoms
-    exactly.
+    The `_THIS_DIRECTORY in Path(item.path).resolve().parents` guard is
+    load-bearing, not decorative, in two separate ways. First:
+    `pytest_collection_modifyitems` implementations from EVERY conftest.py
+    pytest loads are registered as session-wide hooks and all run against
+    the FULL, whole-session `items` list once — a local conftest.py does
+    not confine its own hook to its own directory. An unconditional `for
+    item in items: item.add_marker(...)` here would mark every test in the
+    ENTIRE suite `integration`, not just this directory's, which turns
+    `-m 'not integration'` into "match nothing": `just test` would exit
+    with pytest's NO_TESTS_COLLECTED (5) instead of running the unit and
+    api tiers, and `just test-integration` would silently run the whole
+    suite rather than just this directory. Confirmed empirically while
+    building this file: the unscoped version reproduces both symptoms
+    exactly. Second: `item.path` must be resolved before the comparison,
+    not compared raw — `_THIS_DIRECTORY` above is already `.resolve()`d,
+    and a symlink anywhere in the checkout's path could make an unresolved
+    `item.path` fail to appear in its `.parents`, so the guard would stop
+    matching and every test here would silently lose the marker — this
+    exact bug arriving again, by a different door.
 
-    This hook is deliberately NOT where the event-loop scope for these
-    tests gets fixed, even though that problem has the same "one place, so
-    no file forgets it" shape as the marker above. `sessionmaker` is
-    session-scoped, and so is the connection pool inside the `AsyncEngine`
-    it wraps, but pytest-asyncio decides which event loop scope a test
-    uses inside ITS OWN `pytest_generate_tests` — which runs per test
-    function during collection, before this hook ever sees the collected
-    `items` list. A marker added here, via `item.add_marker(...)`, is
-    provably too late: confirmed empirically by adding
-    `pytest.mark.asyncio(loop_scope="session")` right here and checking
-    `pytest --setup-plan`, which still showed `_function_scoped_runner` for
-    every test. `pytestmark` at the top of a test MODULE is read early
+    This hook is deliberately NOT where the event-loop scope described in
+    this file's module docstring gets fixed, even though that has the same
+    "one place, so no file forgets it" shape as the marker above.
+    `sessionmaker` is session-scoped, but pytest-asyncio decides which
+    event loop scope a test uses inside ITS OWN `pytest_generate_tests` —
+    which runs per test function during collection, before this hook ever
+    sees the collected `items` list. A marker added here, via
+    `item.add_marker(...)`, is provably too late: confirmed empirically by
+    adding `pytest.mark.asyncio(loop_scope="session")` right here and
+    checking `pytest --setup-plan`, which still showed
+    `_function_scoped_runner` for every test. A package-level `pytestmark`
+    in this directory's `__init__.py` was tried too and also made no
+    difference. `pytestmark` at the top of a test MODULE is read early
     enough (module import happens before `pytest_generate_tests` fires for
-    that module's functions); a package-level `pytestmark` in this
-    directory's `__init__.py` was tried too and made no difference, so
-    every test file in this directory that opens a session needs its own
-    `pytestmark = pytest.mark.asyncio(loop_scope="session")` — see
-    test_order_repository.py's copy for what it fixes and why.
+    that module's functions) — which is why the rule lives there instead,
+    stated at the top of this file.
     """
     for item in items:
-        if _THIS_DIRECTORY in item.path.parents:
+        if _THIS_DIRECTORY in Path(item.path).resolve().parents:
             item.add_marker(pytest.mark.integration)
 
 
@@ -2144,12 +2184,25 @@ def run_migrate(docker_network: Network) -> MigrateRunner:
             .with_command(f"-path=/migrations -database {MIGRATE_URL} {args}")
         )
         container.start()
-        raw = container.get_wrapped_container()
-        # start() returns as soon as the container is running; this is a
-        # one-shot command, so wait for it to exit and read its status.
-        exit_code = int(raw.wait()["StatusCode"])
-        logs = raw.logs().decode().strip()
-        container.stop()
+        # A failing migrate command does not raise here — it returns a
+        # non-zero exit code, caught below and returned rather than thrown.
+        # What the try/finally guards against is a Docker-side exception
+        # from wait()/logs() itself (a lost connection to the daemon, for
+        # instance): without it, that would skip stop() and leak the
+        # container. The ordinary `migrate up` path is unlikely to hit
+        # this, but Task 8's reversibility gate drives this same fixture
+        # through `down -all` and back, which is exactly the kind of
+        # unusual, longer-running command where a Docker-side error is
+        # more likely to surface.
+        try:
+            raw = container.get_wrapped_container()
+            # start() returns as soon as the container is running; this is
+            # a one-shot command, so wait for it to exit and read its
+            # status.
+            exit_code = int(raw.wait()["StatusCode"])
+            logs = raw.logs().decode().strip()
+        finally:
+            container.stop()
         return exit_code, logs
 
     return run
@@ -2182,8 +2235,9 @@ async def sessionmaker(
     rather than left to `asyncio_default_fixture_loop_scope` (which
     pyproject.toml never sets): every test in this directory shares ONE
     event loop via `pytestmark = pytest.mark.asyncio(loop_scope="session")`
-    in each test module (see conftest.py's `pytest_collection_modifyitems`
-    docstring for why that lives there and not here), and this fixture must
+    in each test module (this file's module docstring states that as a
+    rule for every file added here; `pytest_collection_modifyitems` below
+    explains why it cannot live centrally instead), and this fixture must
     resolve to that SAME loop — matching scope names share the identical
     `_session_scoped_runner` fixture pytest-asyncio creates on demand — so
     the engine's pooled connections are always used, and disposed, on the
@@ -2240,19 +2294,31 @@ declared; Pydantic validates and coerces it, and the `type: ignore` records that
 mypy cannot see that. The URL already carries `+asyncpg`, which `async_dsn` leaves
 alone — that behaviour has its own unit test in Task 4.
 
-**Why `pytest_collection_modifyitems` needs the `_THIS_DIRECTORY` guard.** A hook
-with this name, defined in *any* `conftest.py` pytest loads, is registered
-session-wide and runs once against the complete, whole-session `items` list — not
-scoped to the directory that defined it. An earlier version of this fixture without
-the guard (`for item in items: item.add_marker(pytest.mark.integration)`, no `if`)
-marked every test in the entire suite `integration`, confirmed two ways: `uv run
-pytest --collect-only -q` (the default `-m 'not integration'` addopts) collected
-zero tests and exited with pytest's `NO_TESTS_COLLECTED` (5), because every test now
-carried the marker `-m 'not integration'` excludes; and `uv run pytest -m
-integration --collect-only -q` collected all 137 tests — `tests/api/`, `tests/unit/`
-and `tests/integration/` together — instead of just this directory's 8. With the
-guard, the default run collects only the unit and api tiers and the `-m integration`
-run collects only this directory.
+**Why `pytest_collection_modifyitems` needs the `_THIS_DIRECTORY` guard, resolved
+on both sides.** A hook with this name, defined in *any* `conftest.py` pytest
+loads, is registered session-wide and runs once against the complete,
+whole-session `items` list — not scoped to the directory that defined it. An
+earlier version of this fixture without the guard (`for item in items:
+item.add_marker(pytest.mark.integration)`, no `if`) marked every test in the
+entire suite `integration`, confirmed two ways: `uv run pytest --collect-only -q`
+(the default `-m 'not integration'` addopts) collected zero tests and exited with
+pytest's `NO_TESTS_COLLECTED` (5), because every test now carried the marker `-m
+'not integration'` excludes; and `uv run pytest -m integration --collect-only -q`
+collected all 137 tests — `tests/api/`, `tests/unit/` and `tests/integration/`
+together — instead of just this directory's 9. With the guard, the default run
+collects only the unit and api tiers and the `-m integration` run collects only
+this directory. A later review caught a second, subtler way the same guard could
+fail: `_THIS_DIRECTORY` is already `.resolve()`d, but the guard originally
+compared it against the raw, unresolved `item.path` — behind a symlinked
+checkout, `item.path` need not appear in `_THIS_DIRECTORY`'s `.parents` even
+though it points at the same file, so the guard would silently stop matching and
+every test here would silently lose the `integration` marker, which is this
+exact tier-separation failure again, by a different door. Confirmed directly:
+isolating the two comparisons in Python — `resolved_dir in unresolved_item_path
+.parents` versus `resolved_dir in unresolved_item_path.resolve().parents`, both
+against the same underlying file reached through a symlink — the first is
+`False` and the second `True`. Resolving `item.path` before the comparison
+closes that gap.
 
 **Why `sessionmaker` is an `async` fixture pinned to `loop_scope="session"`, and
 why every test module in this directory needs `pytestmark = pytest.mark.asyncio
@@ -2280,9 +2346,24 @@ the top of the test **module** itself (module import happens before
 file in this directory, not just this one: **any test module added under
 `tests/integration/` that touches the `sessionmaker` fixture (or any fixture built
 on the same engine) must carry its own `pytestmark =
-pytest.mark.asyncio(loop_scope="session")`.** There is no way to enforce this
-centrally the way the `integration` marker is enforced above — a future author has
-to know to add it.
+pytest.mark.asyncio(loop_scope="session")`.**
+
+A first version of this plan claimed there was no way to enforce that rule
+centrally. A review corrected the claim rather than the code: pytest-asyncio does
+expose `asyncio_default_test_loop_scope` as a project-wide ini option that
+would apply `"session"` scope everywhere at once, so a central mechanism does
+exist — declining to use it is a choice, not a gap. It is declined here because
+setting it project-wide would also change event-loop behaviour for the async
+tests in `tests/unit/` and `tests/api/`, which have no need of it; scoping the
+change to just this directory is worth the per-file `pytestmark` line. The rule
+itself was also moved: it originally lived only inside
+`pytest_collection_modifyitems`'s docstring, which nobody adding a new test file
+would have reason to open, so it now lives in `conftest.py`'s own module
+docstring, at the top of the file, where a new test file's author is more likely
+to see it. A module that forgets the rule does not fail quietly — it crashes
+with `RuntimeError: Event loop is closed` on the second test in that module that
+opens a session, which is loud enough to point back here even without having
+read the docstring first.
 
 `sessionmaker` is further pinned to `loop_scope="session"` on the fixture itself
 (via `@pytest_asyncio.fixture(scope="session", loop_scope="session")`, not plain
@@ -2295,6 +2376,20 @@ which raises `ResourceWarning` instead of closing them, and this project's
 `filterwarnings = ["error"]` turns that warning into a hard error during pytest's
 shutdown — confirmed directly, via three such warnings (a connection, a transport,
 and a socket) surfacing as an `ExceptionGroup` from `pytest_unconfigure`.
+
+**Why `run_migrate`'s `container.stop()` moved into a `finally`.** The original
+version called `container.start()`, then `raw.wait()` and `raw.logs()`, then
+`container.stop()` in a straight line: if a failing `migrate` command were the
+only concern this would be enough, since golang-migrate reports failure as a
+non-zero exit code rather than by raising. A review pointed out the real risk is
+a *Docker-side* exception from `wait()` or `logs()` themselves — a lost
+connection to the daemon, for instance — which this straight-line version would
+propagate without ever reaching `container.stop()`, leaking the container. Task
+8's reversibility gate drives this same fixture through `down -all` and back,
+which is exactly the kind of unusual, longer-running command where a Docker-side
+error is more likely to surface than on the ordinary `migrate up` path. Wrapping
+`get_wrapped_container()` through `logs()` in `try` and moving `container.stop()`
+into `finally` closes that gap.
 
 - [ ] **Step 2: Let the throwaway container credentials past the security linter**
 
@@ -2334,7 +2429,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from reference_service.domain.order import (
@@ -2553,25 +2648,34 @@ async def test_each_test_starts_from_an_empty_database(
     assert count == 0
 
 
-async def test_get_pins_the_read_transaction_to_repeatable_read(
+async def test_repeatable_read_is_transmitted_to_postgresql(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Task 4's review found get() could tear an aggregate under the
-    default READ COMMITTED isolation: PostgreSQL gives each of get()'s two
-    SELECTs its own snapshot, so a save() committing in between could hand
-    back a header from one version and lines from another, and
+    """The isolation_level execution option must actually reach the server.
+
+    Task 4's review found get() could tear an aggregate under the default
+    READ COMMITTED isolation: PostgreSQL gives each of get()'s two SELECTs
+    its own snapshot, so a save() committing in between could hand back a
+    header from one version and lines from another, and
     Order.total_must_match_lines would turn that healthy read into a 500.
     The fix pins the read transaction to REPEATABLE READ via
-    READ_ISOLATION_LEVEL, applied exactly the way get() applies it:
-    `session.connection(execution_options={"isolation_level": ...})` before
-    the first statement.
+    READ_ISOLATION_LEVEL, applied through
+    `session.connection(execution_options={"isolation_level": ...})`.
 
-    That fix was unverified against a real database until now. Testing the
-    race itself would be timing-dependent and flaky; what is deterministic,
-    and what this asserts, is that PostgreSQL itself reports the isolation
-    level took effect — queried with `SHOW transaction_isolation`, the same
-    session variable PostgreSQL uses to answer `current_setting
-    ('transaction_isolation')`.
+    That mechanism was unverified against a real database until now.
+    Testing the race itself would be timing-dependent and flaky; what is
+    deterministic, and what this asserts, is that PostgreSQL itself reports
+    the isolation level took effect — queried with `SHOW
+    transaction_isolation`, the same session variable PostgreSQL uses to
+    answer `current_setting('transaction_isolation')`.
+
+    What this test does NOT prove: that get() is the one actually setting
+    this option. It opens its own session and applies the option directly,
+    never constructing a PostgresOrderRepository or calling get() at all —
+    a later review caught that a deleted isolation call inside get() itself
+    would leave this test passing regardless. See
+    test_get_pins_the_read_transaction_to_repeatable_read below for the
+    call-site coverage this test does not provide.
     """
     async with sessionmaker() as session:
         await session.connection(
@@ -2585,6 +2689,54 @@ async def test_get_pins_the_read_transaction_to_repeatable_read(
     # not a second hardcoded string, so this follows the constant if it
     # ever changes.
     assert reported == READ_ISOLATION_LEVEL.lower()
+
+
+async def test_get_pins_the_read_transaction_to_repeatable_read(
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """get() itself must be the one requesting REPEATABLE READ.
+
+    The test above proves the mechanism works end to end; it does not
+    prove get() is what invokes it. This test observes the REAL get() call
+    instead, deterministically and with no timing dependence: a
+    sqlalchemy.event listener on `set_connection_execution_options` (fired
+    whenever `Connection.execution_options(...)` runs, which is what
+    `session.connection(execution_options=...)` does under the hood)
+    records every isolation_level any connection this engine hands out is
+    given. `sessionmaker.kw["bind"]` recovers the underlying AsyncEngine
+    that `async_sessionmaker` was built from — SQLAlchemy's event API
+    operates on the sync layer even for an async engine, hence
+    `engine.sync_engine` rather than `engine` itself.
+
+    save() runs first only to create a row get() can find; the recording is
+    cleared immediately afterward because save() sets no isolation_level of
+    its own (confirmed: the list is empty at that point) and this test
+    asserts on what get() alone contributes. The listener is removed in a
+    `finally` because the engine — and the event registration on it — is
+    session-scoped and shared with every other test in this file; leaving
+    it attached would keep recording (and leaking state into) tests that
+    run afterward.
+    """
+    engine = sessionmaker.kw["bind"]
+    recorded_isolation_levels: list[str] = []
+
+    def _record(conn: Connection, opts: dict[str, object]) -> None:
+        if "isolation_level" in opts:
+            recorded_isolation_levels.append(str(opts["isolation_level"]))
+
+    event.listen(engine.sync_engine, "set_connection_execution_options", _record)
+    try:
+        repository = PostgresOrderRepository(sessionmaker)
+        order = make_order()
+        await repository.save(order)
+        recorded_isolation_levels.clear()
+
+        loaded = await repository.get(order.id)
+
+        assert loaded is not None
+        assert recorded_isolation_levels == [READ_ISOLATION_LEVEL]
+    finally:
+        event.remove(engine.sync_engine, "set_connection_execution_options", _record)
 ```
 
 `test_line_order_is_preserved` does not merely call `save()` then `get()` — an
@@ -2605,18 +2757,39 @@ once more as part of the full `just test-integration` run; with `.order_by
 it was run, deterministically, with `AssertionError: assert ['bread', 'apple'] ==
 ['apple', 'bread']` — the exact reversed order the rows were physically inserted in.
 
-`test_get_pins_the_read_transaction_to_repeatable_read` is the carried-forward
-verification for Task 4's review finding (see that task's section, Finding 3):
-`READ_ISOLATION_LEVEL` was added there as a module-level constant specifically so
-this task could import it and confirm, against a real server, that it actually takes
-effect. It opens a session the same way `get()` does — the identical
+**Two tests now cover `READ_ISOLATION_LEVEL`, not one, because the first only
+covered half of what requirement 1 asked for.**
+`test_repeatable_read_is_transmitted_to_postgresql` is the original: it opens its
+own session, applies `execution_options={"isolation_level": READ_ISOLATION_LEVEL}`
+directly, and asks PostgreSQL itself via `SHOW transaction_isolation` whether the
+setting took effect — proving SQLAlchemy and asyncpg genuinely transmit the
+option through to the server rather than silently dropping or mistranslating it,
+which was the real unknown. A review caught what it does *not* prove: it never
+constructs a `PostgresOrderRepository` and never calls `get()` at all, so deleting
+the isolation call from `get()` in `order_repository.py` would leave this test
+passing regardless — it asserts on its own inline copy of the production code,
+not on the production code itself.
+
+`test_get_pins_the_read_transaction_to_repeatable_read` — the name the first test
+used to carry, now moved to the one that actually earns it — closes that gap
+deterministically, with no timing dependence. A `sqlalchemy.event` listener on
+`set_connection_execution_options`, registered on `sessionmaker.kw["bind"]
+.sync_engine` (the sync engine underlying the async one — SQLAlchemy's event API
+operates on that layer even for an async engine), records every `isolation_level`
+any connection this engine hands out is given. `save()` runs first only to create
+a row `get()` can find, the recording is cleared immediately afterward (confirmed
+empty at that point — `save()` sets no isolation_level of its own), then the real
+`get()` runs, and the test asserts the recording equals `[READ_ISOLATION_LEVEL]`
+exactly. Verified both ways, mutating `order_repository.py` itself this time, not
+the test: with the real isolation call in `get()`, both tests passed together 6
+times in a row (3 runs before the RED check, 3 more after restoring); with
 `session.connection(execution_options={"isolation_level": READ_ISOLATION_LEVEL})`
-call — and asks PostgreSQL itself via `SHOW transaction_isolation`, rather than
-testing the underlying race directly (timing-dependent, would be flaky). Confirmed
-PostgreSQL reports `'repeatable read'` with the fix applied, and — by temporarily
-removing the `execution_options` call — confirmed the test genuinely fails
-(`AssertionError: assert 'read committed' == 'repeatable read'`) when the fix is
-absent, so the test is not vacuous.
+temporarily deleted from `get()`, the new test failed 6 times in a row (5 in a
+loop, one more with full detail) with `AssertionError: assert [] == ['REPEATABLE
+READ']` while the first test kept passing unaffected (`1 failed, 1 passed` each
+run) — proof the two tests cover genuinely different things, and that the new
+one fails for exactly the
+reason it exists.
 
 - [ ] **Step 4: Add the recipes**
 
@@ -2641,7 +2814,7 @@ pytest applies the last `-m` it is given.
 just test-integration
 ```
 
-Expected: eight tests pass. The first run pulls `postgres:16-alpine` and
+Expected: nine tests pass. The first run pulls `postgres:16-alpine` and
 `migrate/migrate:v4.19.0` if they are not cached, so it may take a minute; later
 runs start containers in a few seconds.
 
