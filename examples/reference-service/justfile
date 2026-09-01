@@ -68,6 +68,17 @@ migrate-new name:
     docker compose run --rm --no-deps --entrypoint migrate migrate \
         create -ext sql -dir /migrations -seq {{name}}
 
+# Regenerate migrations/manifest.sha256 from every file currently in
+# migrations/. Run this after `migrate-new` adds a pair, and commit the
+# result — `just gates` (tests/unit/test_migration_files.py) checks every
+# file the manifest already records against its recorded hash, and fails
+# if one disagrees. Do NOT run this to make that check pass again after
+# editing an ALREADY-COMMITTED migration: that edit is exactly what the
+# check exists to catch, and regenerating the manifest to silence it
+# defeats the entire point — add a new migration instead (spec 6.4).
+migrate-manifest:
+    uv run python -c "from tests.unit.test_migration_files import write_manifest; write_manifest()"
+
 # Defaults to one, because `down` with no argument means "all the way to
 # empty" and that is not a default anyone wants to type twice.
 #

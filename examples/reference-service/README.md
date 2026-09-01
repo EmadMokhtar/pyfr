@@ -40,6 +40,7 @@ is not there yet.
 | `just schema-snapshot` | Regenerate the committed `schema.sql` after a migration change |
 | `just migrate` | Apply every outstanding migration |
 | `just migrate-new NAME` | Write a new `.up.sql` / `.down.sql` pair |
+| `just migrate-manifest` | Regenerate `migrations/manifest.sha256` — run after `migrate-new`, never after editing an already-committed migration |
 | `just migrate-down [N]` | Roll back N steps (default 1) |
 | `just migrate-version` | Current version, and whether it is dirty |
 | `just migrate-force VERSION` | Clear a dirty flag — read the justfile comment first |
@@ -85,6 +86,7 @@ image built from `Dockerfile.migrations`.
 ```
 just migrate                 apply everything outstanding
 just migrate-new NAME        write a new .up.sql / .down.sql pair
+just migrate-manifest        regenerate manifest.sha256 — run after migrate-new
 just migrate-down 1          roll back one step
 just migrate-version         current version, and whether it is dirty
 just migrate-force VERSION   clear a dirty flag — read the justfile comment first
@@ -100,7 +102,10 @@ falls back to an in-memory repository and still serves.
 
 ### Schema governance
 
-Four gates, all runnable with `just gates`:
+Five gates. The first four rebuild the database from scratch every run, which is
+exactly why none of them can see the fifth's trap: an EXISTING migration file
+edited in place, after it may already be applied elsewhere. All five run with
+`just gates`:
 
 | Gate | What it proves |
 |---|---|
@@ -108,6 +113,7 @@ Four gates, all runnable with `just gates`:
 | Schema snapshot | The migrations still produce the committed `schema.sql` |
 | Reversibility | Every `down.sql` truly reverses its `up.sql` — checked before an incident, not during one |
 | Model drift | The SQLAlchemy models still match the real schema, which is what catches a model changed without a migration |
+| Migration manifest | No migration file `manifest.sha256` already records has changed since it was recorded. Editing an already-applied migration instead of adding a new one is silently ignored everywhere that migration already ran (`migrate up` reports "no change" there) — this is the only gate that can see it |
 
 Alembic appears in the development dependencies **only** as the comparison engine
 behind the model drift gate. There is no `alembic/` directory and no Alembic
@@ -116,7 +122,13 @@ migration; golang-migrate owns the schema.
 ## Configuration
 
 Every variable is prefixed `APP_`; nested settings use `__`. Copy
-`.env.example` to `.env` to start.
+`.env.example` to `.env` to start. `APP_DATABASE__DSN` ships commented out
+there, like `APP_OTEL__ENDPOINT`: the justfile sets `dotenv-load := true`, so
+a `.env` with it uncommented but no PostgreSQL actually running would make
+`just dev` silently pick the PostgreSQL adapter instead of the in-memory one
+described below, and 500 on the first order. Uncomment it once a database is
+actually reachable at that URL — `just up` provides one without needing this
+variable at all (see [Database](#database)).
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -125,8 +137,8 @@ Every variable is prefixed `APP_`; nested settings use `__`. Copy
 | `APP_HTTP_PORT` | `8000` | Port to serve on — read by `just dev` and the container's `CMD` |
 | `APP_LOG__LEVEL` | `info` | Root log level |
 | `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
-| `APP_DATABASE__DSN` | unset | PostgreSQL connection string. Unset selects the in-memory repository (see [Database](#database)); when set, store it WITHOUT a `+asyncpg` driver suffix and WITHOUT an `sslmode` parameter — golang-migrate uses this same string verbatim and `just up`'s migrate service adds its own `?sslmode=disable`, while asyncpg rejects `sslmode` outright. `infrastructure/db/engine.py` adds the `+asyncpg` suffix itself and fails loudly at startup if `sslmode` is present, rather than let the two tools drift onto different databases |
-| `APP_DATABASE__POOL_SIZE` | `10` | SQLAlchemy async engine connection pool size |
+| `APP_DATABASE__DSN` | unset (commented out in `.env.example`) | PostgreSQL connection string, read by the **application only** — `just up`'s migrate service and every `just migrate-*` recipe carry their own hardcoded URL in `compose.yaml` and never read this one, so there is no golang-migrate/SQLAlchemy drift to worry about here. Unset selects the in-memory repository (see [Database](#database)); when set, store it WITHOUT a `+asyncpg` driver suffix and WITHOUT an `sslmode` parameter — `infrastructure/db/engine.py` adds `+asyncpg` itself, and `sslmode` is a libpq parameter asyncpg does not understand, rejected at settings-validation time (exit 78, naming the field) rather than reaching asyncpg as a raw error |
+| `APP_DATABASE__POOL_SIZE` | `10` | The hard ceiling on concurrent database connections this instance opens. `infrastructure/db/engine.py` pins SQLAlchemy's `max_overflow` to `0`, so this is an exact number, not this plus SQLAlchemy's own default overflow of 10 — the difference matters when this figure is used for capacity planning against the database's own `max_connections` |
 | `APP_DATABASE__STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout`, applied per connection — a runaway query is cancelled by the server rather than holding a pooled connection forever |
 | `APP_OTEL__ENABLED` | `false` | Reserved for M2's OpenTelemetry exporter |
 | `APP_OTEL__LOGS_ENABLED` | `false` | Reserved for M2; would double log ingest if enabled alongside a platform log agent |

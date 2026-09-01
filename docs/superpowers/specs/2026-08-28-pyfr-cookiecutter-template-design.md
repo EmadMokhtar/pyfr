@@ -450,9 +450,31 @@ error.** The template therefore uses sequential numbering (`migrate create -seq`
 so a collision surfaces as a git conflict, plus a CI check rejecting duplicate
 version numbers and malformed filenames.
 
-### 6.5 Schema governance: four gates
+**Silent skipping of an edit to an already-applied version — the other half of
+the trap above.** The previous trap is about a version number colliding or
+arriving out of order; this one is about a version number that never changes at
+all. golang-migrate keeps no per-file checksum, so it has no way to notice that
+the CONTENT of, say, `000001_create_orders_tables.up.sql` changed after that
+version was already applied somewhere. `migrate up` there compares only the
+version number against `schema_migrations`, sees no change, and reports "no
+change" — the edit silently never takes effect in any environment that already
+ran that version, with no error, exactly like the out-of-order case above. And
+because every schema-governance gate rebuilds its database from scratch, gates
+1, 2 and 4 all see a fresh database built from the EDITED file and find it
+perfectly self-consistent; gate 3 sees an unchanged, still-well-formed filename.
+A pull request editing an already-applied migration instead of adding a new one
+can pass all four of those gates and still be wrong. The template therefore
+commits `migrations/manifest.sha256`, one content hash per migration file, and
+a fifth gate (section 6.5) that recomputes each file's hash and fails the
+moment one the manifest already records disagrees with it — the one gate that
+reads a file's past content rather than rebuilding a database and asking
+whether the present result looks consistent.
 
-All four run in CI against a throwaway PostgreSQL container.
+### 6.5 Schema governance: five gates
+
+Gates 1, 2 and 4 run in CI against a throwaway PostgreSQL container; gate 3 and
+the new gate 5 read only the `migrations/` directory and need no database at
+all.
 
 1. **Schema snapshot gate.** Apply all migrations to an empty database, run
    `pg_dump --schema-only`, fail if the output differs from the committed
@@ -478,6 +500,16 @@ All four run in CI against a throwaway PostgreSQL container.
    that adopting golang-migrate would otherwise have lost. Because its presence
    looks contradictory, `pyproject.toml` and the test both carry a prominent
    comment explaining exactly why Alembic is installed.
+5. **Migration manifest gate.** Gates 1, 2 and 4 each rebuild the database from
+   scratch every run, so none of them can tell whether an EXISTING migration
+   file's content is the one that actually built every environment already
+   running it, or a later edit to it (section 6.4's second trap). A committed
+   `migrations/manifest.sha256` records one SHA-256 hash per migration file;
+   this gate recomputes every file's hash and fails the moment one the
+   manifest already records has changed. Adding a new migration is never
+   obstructed — a new file simply has no entry yet, and `just migrate-manifest`
+   (or the template's equivalent) adds one; only a change to a file the
+   manifest already vouches for fails.
 
 Three implementation details that are not optional, found while building the
 gates above, recorded here so the next person does not rediscover them:
