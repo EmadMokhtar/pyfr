@@ -1980,6 +1980,19 @@ import. `pyproject.toml` sets `filterwarnings = ["error"]`, so the old path does
 merely warn — it fails collection with an error that names the wrong cause. Verified
 while writing this plan.
 
+**Three fixture problems below were found only by actually running everything
+against real Docker containers, not by reading the code.** Each is explained where
+it's fixed, but the shape is worth stating up front: `pytest_collection_modifyitems`
+hooks from every `conftest.py` pytest loads run against the *whole session's*
+collected items, not just their own directory's, so an unguarded one marks every
+test in the suite `integration` and breaks tier separation entirely; pytest-asyncio's
+default event-loop scope is per test function, which corrupts a session-scoped
+engine's connection pool across tests; and an `AsyncEngine` that is built but never
+disposed leaves `just test-integration` reporting every test passed while still
+exiting 1. None of these are addressed by changing `build_engine` or
+`PostgresOrderRepository` (Task 4's code, unmodified) — all three are fixed entirely
+inside this task's own test fixtures.
+
 - [ ] **Step 1: Write the fixtures**
 
 Create `tests/integration/__init__.py` (empty) and `tests/integration/conftest.py`:
@@ -1995,10 +2008,11 @@ cheaper than a container per test and gives the same isolation.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
 from testcontainers.core.container import DockerContainer
@@ -2034,10 +2048,13 @@ MIGRATE_URL = (
 
 # Spelled out rather than left to inference: the fixture below returns a
 # closure, and tests in other files take it as a parameter, so they need a name
-# for its type. `# noqa: ANN201` would NOT work here — the ANN ruleset is not
-# enabled in ruff.toml, and RUF100 (which is) rejects a noqa that suppresses
-# nothing.
+# for its type. A suppression naming ANN201 would NOT work here — the ANN
+# ruleset is not enabled in ruff.toml, and RUF100 (which is) rejects a
+# suppression that names a rule that is not enabled.
 MigrateRunner = Callable[[str], tuple[int, str]]
+
+
+_THIS_DIRECTORY = Path(__file__).resolve().parent
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -2047,9 +2064,43 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     filters out of the default run. Applying it here rather than by hand
     means a new test file cannot forget it and quietly make `just test`
     require Docker.
+
+    The `_THIS_DIRECTORY in item.path.parents` guard is load-bearing, not
+    decorative: `pytest_collection_modifyitems` implementations from EVERY
+    conftest.py pytest loads are registered as session-wide hooks and all
+    run against the FULL, whole-session `items` list once — a local
+    conftest.py does not confine its own hook to its own directory. An
+    unconditional `for item in items: item.add_marker(...)` here would mark
+    every test in the ENTIRE suite `integration`, not just this directory's,
+    which turns `-m 'not integration'` into "match nothing": `just test`
+    would exit with pytest's NO_TESTS_COLLECTED (5) instead of running the
+    unit and api tiers, and `just test-integration` would silently run the
+    whole suite rather than just this directory. Confirmed empirically
+    while building this file: the unscoped version reproduces both symptoms
+    exactly.
+
+    This hook is deliberately NOT where the event-loop scope for these
+    tests gets fixed, even though that problem has the same "one place, so
+    no file forgets it" shape as the marker above. `sessionmaker` is
+    session-scoped, and so is the connection pool inside the `AsyncEngine`
+    it wraps, but pytest-asyncio decides which event loop scope a test
+    uses inside ITS OWN `pytest_generate_tests` — which runs per test
+    function during collection, before this hook ever sees the collected
+    `items` list. A marker added here, via `item.add_marker(...)`, is
+    provably too late: confirmed empirically by adding
+    `pytest.mark.asyncio(loop_scope="session")` right here and checking
+    `pytest --setup-plan`, which still showed `_function_scoped_runner` for
+    every test. `pytestmark` at the top of a test MODULE is read early
+    enough (module import happens before `pytest_generate_tests` fires for
+    that module's functions); a package-level `pytestmark` in this
+    directory's `__init__.py` was tried too and made no difference, so
+    every test file in this directory that opens a session needs its own
+    `pytestmark = pytest.mark.asyncio(loop_scope="session")` — see
+    test_order_repository.py's copy for what it fixes and why.
     """
     for item in items:
-        item.add_marker(pytest.mark.integration)
+        if _THIS_DIRECTORY in item.path.parents:
+            item.add_marker(pytest.mark.integration)
 
 
 @pytest.fixture(scope="session")
@@ -2121,10 +2172,45 @@ def database_url(migrated_database: PostgresContainer) -> str:
     return str(migrated_database.get_connection_url())
 
 
-@pytest.fixture(scope="session")
-def sessionmaker(database_url: str) -> async_sessionmaker[AsyncSession]:
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def sessionmaker(
+    database_url: str,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Build the engine once per session and dispose it once per session.
+
+    An `async` fixture, not a plain one, and pinned to `loop_scope="session"`
+    rather than left to `asyncio_default_fixture_loop_scope` (which
+    pyproject.toml never sets): every test in this directory shares ONE
+    event loop via `pytestmark = pytest.mark.asyncio(loop_scope="session")`
+    in each test module (see conftest.py's `pytest_collection_modifyitems`
+    docstring for why that lives there and not here), and this fixture must
+    resolve to that SAME loop — matching scope names share the identical
+    `_session_scoped_runner` fixture pytest-asyncio creates on demand — so
+    the engine's pooled connections are always used, and disposed, on the
+    loop that opened them.
+
+    The disposal itself is what this fixture adds over a plain `return`:
+    `AsyncEngine.dispose()` closes every pooled connection cleanly. Without
+    it, the engine and its still-open asyncpg connections are only ever
+    reclaimed by garbage collection, at some later, unpredictable point —
+    possibly after the loop that owns them has already closed — and
+    asyncpg's own `Connection.__del__` responds to exactly that by raising
+    a `ResourceWarning` instead of actually closing anything.
+    pyproject.toml's `filterwarnings = ["error"]` then turns that warning
+    into a hard error during pytest's shutdown, failing the whole run even
+    though every test already passed. Confirmed empirically: before this
+    fixture disposed the engine, `just test-integration` reported "8
+    passed" and still exited 1, via three `ResourceWarning`s (an asyncpg
+    connection, a transport, and its socket) that pytest's
+    `unraisableexception` handling turned into errors at
+    `pytest_unconfigure`.
+    """
     settings = DatabaseSettings(dsn=database_url)  # type: ignore[arg-type]
-    return build_sessionmaker(build_engine(settings))
+    engine = build_engine(settings)
+    try:
+        yield build_sessionmaker(engine)
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -2153,6 +2239,62 @@ def clean_database(migrated_database: PostgresContainer) -> None:
 declared; Pydantic validates and coerces it, and the `type: ignore` records that
 mypy cannot see that. The URL already carries `+asyncpg`, which `async_dsn` leaves
 alone — that behaviour has its own unit test in Task 4.
+
+**Why `pytest_collection_modifyitems` needs the `_THIS_DIRECTORY` guard.** A hook
+with this name, defined in *any* `conftest.py` pytest loads, is registered
+session-wide and runs once against the complete, whole-session `items` list — not
+scoped to the directory that defined it. An earlier version of this fixture without
+the guard (`for item in items: item.add_marker(pytest.mark.integration)`, no `if`)
+marked every test in the entire suite `integration`, confirmed two ways: `uv run
+pytest --collect-only -q` (the default `-m 'not integration'` addopts) collected
+zero tests and exited with pytest's `NO_TESTS_COLLECTED` (5), because every test now
+carried the marker `-m 'not integration'` excludes; and `uv run pytest -m
+integration --collect-only -q` collected all 137 tests — `tests/api/`, `tests/unit/`
+and `tests/integration/` together — instead of just this directory's 8. With the
+guard, the default run collects only the unit and api tiers and the `-m integration`
+run collects only this directory.
+
+**Why `sessionmaker` is an `async` fixture pinned to `loop_scope="session"`, and
+why every test module in this directory needs `pytestmark = pytest.mark.asyncio
+(loop_scope="session")`.** `pyproject.toml` sets `asyncio_mode = "auto"` but never
+sets `asyncio_default_test_loop_scope`, so pytest-asyncio 1.4's own default applies:
+`"function"` — every async test function gets its own fresh event loop.
+`sessionmaker` is session-scoped, and so is the connection pool inside the
+`AsyncEngine` it wraps: a connection an earlier test checked back into that pool
+stays there, still bound to that test's now-closed loop, and the next test that
+checks it out triggers `build_engine`'s `pool_pre_ping` (a deliberate, correct
+production setting, not touched here), which tries to ping the connection and raises
+`RuntimeError: Event loop is closed` — confirmed directly: 4 of the first 8 tests
+failed exactly that way before this fix. Adding
+`pytest.mark.asyncio(loop_scope="session")` to each item inside
+`pytest_collection_modifyitems` above does **not** work — confirmed by adding it
+and checking `pytest --setup-plan`, which still showed a fresh
+`_function_scoped_runner` per test — because pytest-asyncio resolves loop scope
+inside its own `pytest_generate_tests` hook, which runs per test function during
+collection, before `pytest_collection_modifyitems` ever sees the collected items. A
+package-level `pytestmark` in this directory's `__init__.py` was tried too and also
+made no difference. The only place that is read early enough is a `pytestmark` at
+the top of the test **module** itself (module import happens before
+`pytest_generate_tests` fires for that module's functions) — see
+`test_order_repository.py`'s `pytestmark` in Step 3. This is a rule for every future
+file in this directory, not just this one: **any test module added under
+`tests/integration/` that touches the `sessionmaker` fixture (or any fixture built
+on the same engine) must carry its own `pytestmark =
+pytest.mark.asyncio(loop_scope="session")`.** There is no way to enforce this
+centrally the way the `integration` marker is enforced above — a future author has
+to know to add it.
+
+`sessionmaker` is further pinned to `loop_scope="session"` on the fixture itself
+(via `@pytest_asyncio.fixture(scope="session", loop_scope="session")`, not plain
+`@pytest.fixture`) so that its `finally: await engine.dispose()` runs on the exact
+same event loop the tests used — matching `scope` names share the one
+`_session_scoped_runner` pytest-asyncio creates on demand. Without the disposal,
+`just test-integration` reported all 8 tests passing and still exited 1: the
+engine's pooled asyncpg connections were only ever reclaimed by garbage collection,
+which raises `ResourceWarning` instead of closing them, and this project's
+`filterwarnings = ["error"]` turns that warning into a hard error during pytest's
+shutdown — confirmed directly, via three such warnings (a connection, a transport,
+and a socket) surfacing as an `ExceptionGroup` from `pytest_unconfigure`.
 
 - [ ] **Step 2: Let the throwaway container credentials past the security linter**
 
@@ -2191,6 +2333,8 @@ from __future__ import annotations
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from reference_service.domain.order import (
@@ -2202,8 +2346,11 @@ from reference_service.domain.order import (
     total_of,
 )
 from reference_service.infrastructure.db.order_repository import (
+    READ_ISOLATION_LEVEL,
     PostgresOrderRepository,
 )
+
+pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
 def make_order(internal_note: str | None = None) -> Order:
@@ -2261,15 +2408,66 @@ async def test_decimals_come_back_exact(
 async def test_line_order_is_preserved(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Without ORDER BY line_number this passes by luck and fails later.
+    """Without ORDER BY line_number this fails, deterministically.
 
-    Reordered lines still sum to the same total, so the aggregate's own
-    invariant cannot catch this. Only asserting the sequence can.
+    Going through save() alone cannot exercise this: mappers.line_values()
+    assigns each row's line_number via enumerate() of the very tuple being
+    inserted, so insertion order and line_number order are IDENTICAL by
+    construction for anything reachable through save()/get() alone —
+    confirmed the hard way. An earlier version of this test did exactly
+    that (save(), then get()), and passed 10 times out of 10 with
+    `.order_by(OrderLineRow.line_number)` removed from get(): PostgreSQL
+    chose a Bitmap Heap Scan for the order_lines lookup, which returns rows
+    in physical heap order, and a freshly inserted, never-updated set of
+    rows has physical order equal to insertion order — so the old test
+    could not fail for the reason it existed.
+
+    This version reaches around save() and inserts the two rows directly,
+    in the REVERSE of their line_number order: line_number=1 ("bread")
+    physically first, line_number=0 ("apple") physically second. Physical/
+    insertion order and logical (line_number) order now deliberately
+    disagree. With ORDER BY line_number, get() returns ["apple", "bread"]
+    regardless of insertion order. Without it, a scan returning physical
+    order returns ["bread", "apple"] instead, and the assertion below
+    fails — verified both ways; see the Task 7 report for both
+    transcripts.
     """
+    from sqlalchemy import delete, insert
+
+    from reference_service.infrastructure.db.models import OrderLineRow
+
     repository = PostgresOrderRepository(sessionmaker)
     order = make_order()
-
+    # save() first, only to create the `orders` row order_lines' foreign
+    # key needs. Its own insert of the lines is undone immediately below.
     await repository.save(order)
+
+    async with sessionmaker() as session, session.begin():
+        await session.execute(
+            delete(OrderLineRow).where(OrderLineRow.order_id == order.id)
+        )
+        await session.execute(
+            insert(OrderLineRow),
+            [
+                {
+                    "order_id": order.id,
+                    "line_number": 1,
+                    "sku": "bread",
+                    "quantity": 1,
+                    "unit_amount": Decimal("2.25"),
+                    "unit_currency": "EUR",
+                },
+                {
+                    "order_id": order.id,
+                    "line_number": 0,
+                    "sku": "apple",
+                    "quantity": 3,
+                    "unit_amount": Decimal("1.50"),
+                    "unit_currency": "EUR",
+                },
+            ],
+        )
+
     loaded = await repository.get(order.id)
 
     assert loaded is not None
@@ -2353,7 +2551,72 @@ async def test_each_test_starts_from_an_empty_database(
         count = await session.scalar(select(func.count()).select_from(OrderRow))
 
     assert count == 0
+
+
+async def test_get_pins_the_read_transaction_to_repeatable_read(
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Task 4's review found get() could tear an aggregate under the
+    default READ COMMITTED isolation: PostgreSQL gives each of get()'s two
+    SELECTs its own snapshot, so a save() committing in between could hand
+    back a header from one version and lines from another, and
+    Order.total_must_match_lines would turn that healthy read into a 500.
+    The fix pins the read transaction to REPEATABLE READ via
+    READ_ISOLATION_LEVEL, applied exactly the way get() applies it:
+    `session.connection(execution_options={"isolation_level": ...})` before
+    the first statement.
+
+    That fix was unverified against a real database until now. Testing the
+    race itself would be timing-dependent and flaky; what is deterministic,
+    and what this asserts, is that PostgreSQL itself reports the isolation
+    level took effect — queried with `SHOW transaction_isolation`, the same
+    session variable PostgreSQL uses to answer `current_setting
+    ('transaction_isolation')`.
+    """
+    async with sessionmaker() as session:
+        await session.connection(
+            execution_options={"isolation_level": READ_ISOLATION_LEVEL}
+        )
+        reported = await session.scalar(text("SHOW transaction_isolation"))
+
+    # PostgreSQL reports the setting lowercased ("repeatable read"), while
+    # the SQLAlchemy/asyncpg execution option spells it the standard SQL way
+    # ("REPEATABLE READ") — asserted against READ_ISOLATION_LEVEL itself,
+    # not a second hardcoded string, so this follows the constant if it
+    # ever changes.
+    assert reported == READ_ISOLATION_LEVEL.lower()
 ```
+
+`test_line_order_is_preserved` does not merely call `save()` then `get()` — an
+earlier version that did exactly that passed 10 times out of 10 with
+`.order_by(OrderLineRow.line_number)` removed from `get()`, because
+`mappers.line_values()` assigns each row's `line_number` via `enumerate()` of the
+very tuple `save()` inserts, so insertion order and `line_number` order are
+identical by construction for anything reachable through `save()`/`get()` alone; the
+query planner's chosen Bitmap Heap Scan then returns rows in that same (matching)
+physical order regardless of whether `ORDER BY` is present. The version above
+reaches around `save()` and inserts the two rows directly, in the *reverse* of their
+`line_number` order — physical/insertion order and logical order now deliberately
+disagree, so only an explicit `ORDER BY line_number` produces the correct sequence.
+Confirmed both ways: with the real `ORDER BY` in place the test passed 8 times in a
+row on its own (5 runs, then 3 more after restoring the file post-RED-check), plus
+once more as part of the full `just test-integration` run; with `.order_by
+(OrderLineRow.line_number)` temporarily removed from `get()` it failed all 10 times
+it was run, deterministically, with `AssertionError: assert ['bread', 'apple'] ==
+['apple', 'bread']` — the exact reversed order the rows were physically inserted in.
+
+`test_get_pins_the_read_transaction_to_repeatable_read` is the carried-forward
+verification for Task 4's review finding (see that task's section, Finding 3):
+`READ_ISOLATION_LEVEL` was added there as a module-level constant specifically so
+this task could import it and confirm, against a real server, that it actually takes
+effect. It opens a session the same way `get()` does — the identical
+`session.connection(execution_options={"isolation_level": READ_ISOLATION_LEVEL})`
+call — and asks PostgreSQL itself via `SHOW transaction_isolation`, rather than
+testing the underlying race directly (timing-dependent, would be flaky). Confirmed
+PostgreSQL reports `'repeatable read'` with the fix applied, and — by temporarily
+removing the `execution_options` call — confirmed the test genuinely fails
+(`AssertionError: assert 'read committed' == 'repeatable read'`) when the fix is
+absent, so the test is not vacuous.
 
 - [ ] **Step 4: Add the recipes**
 
@@ -2378,7 +2641,7 @@ pytest applies the last `-m` it is given.
 just test-integration
 ```
 
-Expected: seven tests pass. The first run pulls `postgres:16-alpine` and
+Expected: eight tests pass. The first run pulls `postgres:16-alpine` and
 `migrate/migrate:v4.19.0` if they are not cached, so it may take a minute; later
 runs start containers in a few seconds.
 

@@ -80,15 +80,66 @@ async def test_decimals_come_back_exact(
 async def test_line_order_is_preserved(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Without ORDER BY line_number this passes by luck and fails later.
+    """Without ORDER BY line_number this fails, deterministically.
 
-    Reordered lines still sum to the same total, so the aggregate's own
-    invariant cannot catch this. Only asserting the sequence can.
+    Going through save() alone cannot exercise this: mappers.line_values()
+    assigns each row's line_number via enumerate() of the very tuple being
+    inserted, so insertion order and line_number order are IDENTICAL by
+    construction for anything reachable through save()/get() alone —
+    confirmed the hard way. An earlier version of this test did exactly
+    that (save(), then get()), and passed 10 times out of 10 with
+    `.order_by(OrderLineRow.line_number)` removed from get(): PostgreSQL
+    chose a Bitmap Heap Scan for the order_lines lookup, which returns rows
+    in physical heap order, and a freshly inserted, never-updated set of
+    rows has physical order equal to insertion order — so the old test
+    could not fail for the reason it existed.
+
+    This version reaches around save() and inserts the two rows directly,
+    in the REVERSE of their line_number order: line_number=1 ("bread")
+    physically first, line_number=0 ("apple") physically second. Physical/
+    insertion order and logical (line_number) order now deliberately
+    disagree. With ORDER BY line_number, get() returns ["apple", "bread"]
+    regardless of insertion order. Without it, a scan returning physical
+    order returns ["bread", "apple"] instead, and the assertion below
+    fails — verified both ways; see the Task 7 report for both
+    transcripts.
     """
+    from sqlalchemy import delete, insert
+
+    from reference_service.infrastructure.db.models import OrderLineRow
+
     repository = PostgresOrderRepository(sessionmaker)
     order = make_order()
-
+    # save() first, only to create the `orders` row order_lines' foreign
+    # key needs. Its own insert of the lines is undone immediately below.
     await repository.save(order)
+
+    async with sessionmaker() as session, session.begin():
+        await session.execute(
+            delete(OrderLineRow).where(OrderLineRow.order_id == order.id)
+        )
+        await session.execute(
+            insert(OrderLineRow),
+            [
+                {
+                    "order_id": order.id,
+                    "line_number": 1,
+                    "sku": "bread",
+                    "quantity": 1,
+                    "unit_amount": Decimal("2.25"),
+                    "unit_currency": "EUR",
+                },
+                {
+                    "order_id": order.id,
+                    "line_number": 0,
+                    "sku": "apple",
+                    "quantity": 3,
+                    "unit_amount": Decimal("1.50"),
+                    "unit_currency": "EUR",
+                },
+            ],
+        )
+
     loaded = await repository.get(order.id)
 
     assert loaded is not None
