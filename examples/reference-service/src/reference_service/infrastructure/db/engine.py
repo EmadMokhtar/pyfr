@@ -101,16 +101,20 @@ def build_engine(settings: DatabaseSettings) -> AsyncEngine:
         # connection details out of a response, applied here to keep row
         # data out of a log line instead.
         #
-        # NOT a complete guarantee: verified directly that a CHECK
-        # constraint violation still puts the full failing row — internal_
-        # note and customer_id included — into PostgreSQL's own error
-        # DETAIL text, which asyncpg surfaces regardless of this setting.
-        # hide_parameters controls SQLAlchemy's client-side echo of the
-        # parameters IT sent; it has no reach into content the SERVER
-        # decided to put in its own error response. That gap still reaches
-        # only logs, never an HTTP response — _unexpected_error never
-        # serialises exc — so it is narrower than the one this setting
-        # closes, but it is not nothing.
+        # This setting alone is NOT the whole guarantee, because it only
+        # governs SQLAlchemy's echo of the parameters the CLIENT sent. When
+        # PostgreSQL rejects a row it composes its own error DETAIL holding
+        # the offending VALUES, and asyncpg carries that into the exception
+        # text where hide_parameters has no reach — verified against 16.13,
+        # where a CHECK violation's `Failing row contains (...)` includes
+        # internal_note identically with this setting on and off.
+        #
+        # The other half lives at the point the error is raised:
+        # db/order_repository.py's save() catches IntegrityError and
+        # re-raises StorageConstraintViolatedError with a message built from
+        # identifier fields only. Both halves are needed. This one covers
+        # every statement the engine runs; that one covers the text the
+        # server writes back.
         hide_parameters=True,
         connect_args={
             # Applied by the server, per connection. A statement running longer

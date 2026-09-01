@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import traceback
 from decimal import Decimal
 from uuid import uuid4
 
@@ -20,6 +21,9 @@ from reference_service.domain.order import (
 from reference_service.infrastructure.db.order_repository import (
     READ_ISOLATION_LEVEL,
     PostgresOrderRepository,
+)
+from reference_service.infrastructure.errors import (
+    StorageConstraintViolatedError,
 )
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -314,3 +318,87 @@ async def test_get_pins_the_read_transaction_to_repeatable_read(
         assert recorded_isolation_levels == [READ_ISOLATION_LEVEL]
     finally:
         event.remove(engine.sync_engine, "set_connection_execution_options", _record)
+
+
+# A value distinctive enough that finding it in any message or traceback is
+# unambiguous evidence of a leak, rather than a coincidental substring.
+LEAK_CANARY = "FRAUD-REVIEW-CANARY-do-not-ship"
+
+
+def order_the_database_will_refuse() -> Order:
+    """A structurally valid Order carrying a total the CHECK constraint rejects.
+
+    Built with model_construct/model_copy, which skip validation, because the
+    domain will not produce this object: Money.amount is `ge=0` and
+    Order.total_must_match_lines cross-checks the sum. That is the point — the
+    row can only arrive from a path that bypassed the domain, which is exactly
+    the bug class migration 000002's constraints exist to stop, and exactly
+    when PostgreSQL composes the DETAIL text this test is about.
+    """
+    valid = make_order(internal_note=LEAK_CANARY)
+    return valid.model_copy(
+        update={"total": Money.model_construct(amount=Decimal("-5.00"), currency="EUR")}
+    )
+
+
+async def test_a_rejected_write_becomes_a_storage_constraint_error(
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A CHECK violation must not escape as a raw driver error."""
+    repository = PostgresOrderRepository(sessionmaker)
+
+    with pytest.raises(StorageConstraintViolatedError):
+        await repository.save(order_the_database_will_refuse())
+
+
+async def test_a_rejected_write_still_names_the_constraint(
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Scrubbing must not cost an operator the diagnosis.
+
+    sqlstate 23514 is check_violation; the constraint and relation names come
+    from migration 000002. Together they say precisely what failed without
+    quoting anything from the row.
+    """
+    repository = PostgresOrderRepository(sessionmaker)
+
+    with pytest.raises(StorageConstraintViolatedError) as caught:
+        await repository.save(order_the_database_will_refuse())
+
+    message = str(caught.value)
+    assert "orders_total_amount_non_negative" in message
+    assert "table_name=orders" in message
+    assert "sqlstate=23514" in message
+
+
+async def test_a_rejected_write_leaks_no_row_data_anywhere(
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """The regression guard for `from None`, and the reason this file imports
+    traceback.
+
+    PostgreSQL puts the offending VALUES in its own error DETAIL — `Failing
+    row contains (...)`, internal_note included — and asyncpg carries that
+    into the exception text. `hide_parameters=True` on the engine cannot
+    reach it, because that setting governs only the parameters the client
+    sent. So the exception this adapter raises must not carry the original
+    as __cause__ either: the catch-all handler in api/errors.py logs a full
+    traceback, and a rendered traceback includes the cause.
+
+    Asserting on the RENDERED TRACEBACK rather than on str(exc) is what makes
+    this a real guard. A scrubbed message with `from exc` would pass a
+    message-only assertion and still put the row in every log line.
+    """
+    repository = PostgresOrderRepository(sessionmaker)
+
+    with pytest.raises(StorageConstraintViolatedError) as caught:
+        await repository.save(order_the_database_will_refuse())
+
+    rendered = "".join(
+        traceback.format_exception(
+            type(caught.value), caught.value, caught.value.__traceback__
+        )
+    )
+    assert LEAK_CANARY not in rendered
+    assert "Failing row contains" not in rendered
+    assert caught.value.__cause__ is None

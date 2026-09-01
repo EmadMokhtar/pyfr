@@ -36,3 +36,32 @@ class CorruptPersistedDataError(Exception):
     the catch-all in api/errors.py, which logs the full traceback and
     returns a 500 that describes none of our internals.
     """
+
+
+class StorageConstraintViolatedError(Exception):
+    """The database refused a write because one of its constraints failed.
+
+    The CHECK constraints in migrations/000002 mirror invariants the domain
+    already enforces (`quantity > 0`, amounts `>= 0`), so reaching one of them
+    means the domain was bypassed — a bug on a second write path, a hand-run
+    statement, or another service writing to the same tables. That is this
+    system's fault rather than the caller's, so like its siblings here it gets
+    no registered handler and falls through to the catch-all in api/errors.py,
+    which logs a traceback and returns a 500 describing none of our internals.
+
+    It exists for a second reason, and that one is about disclosure. When
+    PostgreSQL rejects a row it puts the offending VALUES in its own error
+    DETAIL — `Failing row contains (..., internal_note)` for a CHECK, `Key
+    (col)=(value) already exists` for a unique violation — and asyncpg carries
+    that straight into the exception text. `hide_parameters=True` on the engine
+    cannot reach it: that setting governs SQLAlchemy's echo of the parameters
+    the CLIENT sent, not text the SERVER composed. Verified against PostgreSQL
+    16.13: the failing row, `internal_note` included, appears in `str(exc)`
+    identically with `hide_parameters` on and off. Since the catch-all logs the
+    exception, that put row data in a log line.
+
+    Raising this type instead is what closes it — see the comment on the
+    `except` clause in db/order_repository.py's save(), which explains why the
+    replacement message is built from an allowlist of identifier fields and
+    why it must be raised with `from None`.
+    """

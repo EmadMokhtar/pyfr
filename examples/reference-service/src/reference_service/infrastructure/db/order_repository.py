@@ -10,6 +10,7 @@ from __future__ import annotations
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from reference_service.domain.order import Order, OrderId
@@ -19,7 +20,10 @@ from reference_service.infrastructure.db.mappers import (
     to_domain,
 )
 from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
-from reference_service.infrastructure.errors import CorruptPersistedDataError
+from reference_service.infrastructure.errors import (
+    CorruptPersistedDataError,
+    StorageConstraintViolatedError,
+)
 
 # The two SELECTs in get() below must see ONE version of the aggregate.
 # PostgreSQL's default READ COMMITTED gives each STATEMENT its own snapshot,
@@ -32,6 +36,39 @@ from reference_service.infrastructure.errors import CorruptPersistedDataError
 # imports it to assert the level actually took effect against a real
 # database.
 READ_ISOLATION_LEVEL = "REPEATABLE READ"
+
+# The only fields of PostgreSQL's error we are willing to repeat. Each is an
+# identifier — a state code, a relation name, a constraint name — so none can
+# contain a value from the rejected row.
+#
+# This is an allowlist rather than a denylist on purpose. The obvious
+# alternative, stripping the one field known to carry data (`detail`), assumes
+# we can enumerate every field PostgreSQL might put a value in, for every error
+# class, in every future version. Naming the three we want inverts that: a
+# field we have not considered is excluded by default rather than included by
+# default. `message` is left out under the same rule — its wording is
+# server-composed prose, and while every integrity error we have seen keeps
+# values out of it and in DETAIL, "we have not seen a counterexample" is a
+# weaker guarantee than "this is an identifier".
+_SAFE_ERROR_FIELDS = ("sqlstate", "table_name", "constraint_name")
+
+
+def _constraint_summary(exc: IntegrityError) -> str:
+    """Describe an integrity failure using no data from the rejected row.
+
+    The structured fields live on asyncpg's own exception, two links down the
+    chain: SQLAlchemy's IntegrityError wraps the dialect's, which wraps
+    asyncpg's. Reached defensively — a different driver, or a failure raised
+    before asyncpg got involved, leaves us with nothing to report, and saying
+    so plainly beats an AttributeError inside an error path.
+    """
+    driver_error = getattr(exc.orig, "__cause__", None)
+    described = [
+        f"{field}={value}"
+        for field in _SAFE_ERROR_FIELDS
+        if (value := getattr(driver_error, field, None))
+    ]
+    return ", ".join(described) or "no constraint metadata available"
 
 
 class PostgresOrderRepository:
@@ -105,31 +142,46 @@ class PostgresOrderRepository:
     async def save(self, order: Order) -> None:
         """Create or replace, in one transaction covering both tables."""
         values = order_values(order)
-        async with self._sessionmaker() as session, session.begin():
-            statement = postgres_insert(OrderRow).values(**values)
-            await session.execute(
-                statement.on_conflict_do_update(
-                    index_elements=[OrderRow.id],
-                    set_={
-                        column: value
-                        for column, value in values.items()
-                        if column != "id"
-                    },
+        try:
+            async with self._sessionmaker() as session, session.begin():
+                statement = postgres_insert(OrderRow).values(**values)
+                await session.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[OrderRow.id],
+                        set_={
+                            column: value
+                            for column, value in values.items()
+                            if column != "id"
+                        },
+                    )
                 )
-            )
-            # Replace the whole line set rather than diffing it. The lines have
-            # no identity of their own — they are part of the aggregate — so
-            # "which line changed" is not a question worth answering, and
-            # delete-then-insert is correct for both a new order and a changed
-            # one. Both statements are inside the transaction above, so no
-            # reader ever sees an order with its lines missing.
-            await session.execute(
-                delete(OrderLineRow).where(OrderLineRow.order_id == order.id)
-            )
-            await session.execute(postgres_insert(OrderLineRow), line_values(order))
-            # get()'s freedom from torn reads is not this method's atomicity
-            # alone. This transaction either commits both statements above or
-            # neither, but a reader using the default isolation level could
-            # still take its two SELECTs from either side of that commit.
-            # READ_ISOLATION_LEVEL on the read side is the other half of the
-            # guarantee — see its comment near the top of this module.
+                # Replace the whole line set rather than diffing it. The lines have
+                # no identity of their own — they are part of the aggregate — so
+                # "which line changed" is not a question worth answering, and
+                # delete-then-insert is correct for both a new order and a changed
+                # one. Both statements are inside the transaction above, so no
+                # reader ever sees an order with its lines missing.
+                await session.execute(
+                    delete(OrderLineRow).where(OrderLineRow.order_id == order.id)
+                )
+                await session.execute(postgres_insert(OrderLineRow), line_values(order))
+                # get()'s freedom from torn reads is not this method's atomicity
+                # alone. This transaction either commits both statements above or
+                # neither, but a reader using the default isolation level could
+                # still take its two SELECTs from either side of that commit.
+                # READ_ISOLATION_LEVEL on the read side is the other half of the
+                # guarantee — see its comment near the top of this module.
+        except IntegrityError as exc:
+            # `from None`, NOT `from exc` — and that is the whole point of this
+            # clause, not a slip. Chaining would attach the original exception
+            # as __cause__, and the catch-all handler's traceback renders the
+            # cause in full, so PostgreSQL's DETAIL line — the failing row,
+            # internal_note included — would still reach the log despite the
+            # scrubbed message above it. Verified both ways against PostgreSQL
+            # 16.13: with `from exc` the row appears in the rendered traceback;
+            # with `from None` it does not. The cost is the driver's own
+            # frames, which is a fair trade for a message that already names
+            # the state code, the relation and the constraint.
+            raise StorageConstraintViolatedError(
+                f"the database rejected this write ({_constraint_summary(exc)})"
+            ) from None
