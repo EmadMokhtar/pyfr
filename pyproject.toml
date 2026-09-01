@@ -1,0 +1,32 @@
+# The PyFr repository's own tooling, not a distributable package.
+#
+# PyFr v1 is a cookiecutter template (see docs/explanation/why-a-template.md):
+# nothing here is published to a package index, and a generated service
+# imports no PyFr package. This file exists so `uv` has a project to sync —
+# today that is the documentation toolchain; M7 adds the template's own test
+# suite (cookiecutter, pytest-cookies) to a `dev` group beside it.
+#
+# The reference service has its own, entirely separate `pyproject.toml` under
+# examples/reference-service/. The two are never synced together.
+[project]
+name = "pyfr"
+version = "0.0.0"
+description = "PyFr — a cookiecutter template for production-ready Python microservices"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { file = "LICENSE" }
+
+[tool.uv]
+# No build-system section below, so uv already treats this as a virtual
+# project. Stated explicitly so the intent survives someone later adding
+# dependencies here and wondering why nothing installs `pyfr` itself.
+package = false
+
+[dependency-groups]
+docs = [
+    # Capped below 2.0: MkDocs 2.0 removes the plugin system entirely, with
+    # no migration path, which would break mkdocs-material and the docs
+    # build outright.
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5,<10",
+]

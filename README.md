@@ -1,51 +1,147 @@
-# 🔥 PyFr - The Python Microservice Framework
+<div align="center">
 
-PyFr is the **game-changing Python microservice framework** that eliminates weeks of boilerplate setup and delivers **production-ready services in under 10 minutes**. Inspired by GoFr's revolutionary architecture and powered by cutting-edge tools like UV, Ruff, and OpenTelemetry, it's the framework that transforms microservice development from painful to **absolutely delightful**. Perfect for teams who demand excellence without complexity!
+# 🐍 PyFr
 
-> PyFr is influenced by [GoFr](https://gofr.dev), the Go microservice framework that has redefined how teams build and deploy services. With PyFr, you get the same **context-driven architecture** and **developer experience excellence**, but tailored for Python's rich ecosystem.
+**A cookiecutter template for production-ready Python microservices.**
 
-## **🔥 The Painful Reality We're Solving**
-Building Python microservices is **unnecessarily brutal**. Developers waste **2-4 weeks** configuring observability, database adapters, testing frameworks, CI/CD pipelines, and deployment infrastructure. Every team reinvents the same wheel, leading to:
-- 💸 **Massive time waste** on repetitive boilerplate
-- 🐛 **Inconsistent practices** across teams  
-- 😩 **Developer frustration** with complex tooling
-- 🚨 **Production incidents** due to poor observability
-- 📉 **Slow time-to-market** for new features
+*Answer a few prompts. Get a service that runs, is tested, is observable, and is documented.*
 
-## **✨ Our Revolutionary Solution**
-PyFr provides a **comprehensive, battle-tested framework** that eliminates microservice complexity while maintaining complete flexibility. Built on proven patterns from GoFr and the latest Python ecosystem innovations.
+[![CI](https://github.com/EmadMokhtar/pyfr/actions/workflows/ci.yml/badge.svg)](https://github.com/EmadMokhtar/pyfr/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-pyfr-blue)](https://emadmokhtar.github.io/pyfr/)
+[![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
+[![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-brightgreen)](LICENSE)
+[![Status: pre-release](https://img.shields.io/badge/status-building%20toward%20M7-orange)](https://emadmokhtar.github.io/pyfr/roadmap/)
 
-## **🚀 Why Teams Are Making the Switch**
+📖 **[Read the documentation →](https://emadmokhtar.github.io/pyfr/)**
 
-### **⚡ 10x Faster Development Velocity**
-- **Production-ready service in 10 minutes** vs 2-4 weeks of manual setup
-- **Backstage integration** for one-click service creation
-- **Pre-configured everything**: databases, observability, testing, deployment
-- **Zero cognitive overhead** - focus on business logic, not infrastructure
+</div>
 
-### **🏎️ Performance That Dominates**
-- **UV package management**: 10-100x faster builds and installs
-- **Ruff linting**: 10-100x faster code quality checks
-- **Async-first architecture** with optimal resource utilization
-- **Production-optimized containers** with multi-stage builds
+---
 
-### **🔍 Observability That Actually Helps**
-- **OpenTelemetry distributed tracing** - follow requests across your entire system
-- **Prometheus metrics** with pre-built Grafana dashboards
-- **Structured logging** with correlation IDs and request context
-- **Kubernetes-ready health checks** that prevent outages
+## 👋 Welcome
 
-### **🎯 Developer Experience Excellence**
-- **Context-driven architecture** inspired by GoFr's innovative patterns
-- **Comprehensive testing** with pytest, testcontainers, and property-based testing
-- **Modern tooling integration** (UV, Ruff, pre-commit) that just works
-- **Extensive documentation** and real-world examples
+Every team starts a new Python service the same way: wiring up logging, health
+checks, configuration, error formats, a container image. It takes two to four
+weeks, and every team's result is a little different.
 
-### **🐳 Production-Ready From Day Zero**
-- **Security-scanned Docker images** with minimal attack surface
-- **Kubernetes manifests** with auto-scaling and resource management
-- **CI/CD templates** for GitHub Actions, GitLab, and Jenkins
-- **Multi-database support** without vendor lock-in
+PyFr aims to make that a ten-minute step instead — and to make the result the
+same good one every time.
 
-## **🌟 Join the PyFr Revolution**
-If you're tired of the **painful reality** of Python microservices, it's time to embrace the **PyFr revolution**. Our framework is designed for teams who demand **excellence without complexity**.
+**The generated code is yours.** 🎁 Nothing is published to a package index, and
+a generated service imports no PyFr package. There is no framework to upgrade,
+no runtime dependency on us, and nothing to lock you in. From M8, a generated
+project will still be able to pull later template fixes into itself through an
+ordinary `git merge`.
+
+## 🚧 Honest status: M0 done, M1–M8 to go
+
+**You cannot generate a project yet.** The template itself does not exist
+today. What *does* exist is the
+[**reference service**](examples/reference-service/) — the complete, running
+service the template will be built from. You can run it, read it, and copy
+from it right now.
+
+PyFr is built in three phases:
+
+| Phase | Milestones | What happens |
+| --- | --- | --- |
+| **A** | M0–M6 | Build the reference service as ordinary Python — no template placeholders anywhere |
+| **B** | M7 | Convert it into the cookiecutter template ✨ |
+| **C** | M8+ | Keep the two in step, forever |
+
+The rule behind that order: never debug Jinja and Python at the same time. 🙂
+
+**M0 — the walking skeleton — is complete. PyFr becomes a usable template at
+M7.** See the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what
+ships when.
+
+## 🚀 Try it in one command
+
+```bash
+cd examples/reference-service && uv sync && just dev
+```
+
+Then open <http://localhost:8000/docs> and say hello. 👋
+
+The [getting started guide](https://emadmokhtar.github.io/pyfr/getting-started/)
+walks you through placing an order and explains what each response is telling
+you.
+
+## 📦 What's in the box
+
+Every item below already runs in the reference service today — nothing here is
+a promise:
+
+- ⚡ **FastAPI**, with an application factory and a lifespan.
+- 🧱 **Four layers** — domain, services, infrastructure, api — with the
+  dependency rule enforced by a build check, not by code review.
+- ✅ **Configuration validated at startup.** A bad value stops the process
+  with a readable message and exit code 78, instead of causing a 500 an hour
+  later.
+- 📋 **Structured logging** — one JSON object per line on standard output,
+  with third-party records passing through the same chain.
+- 💚 **Three health endpoints** answering three different questions. Liveness
+  never checks a dependency, so a database hiccup cannot restart every
+  instance at once.
+- 🚨 **RFC 9457 Problem Details** error responses.
+- 🔗 **Correlation identifiers** binding one value to every log line a single
+  request produced.
+- 🛑 **Graceful shutdown**, so a rolling deployment does not drop live
+  requests.
+- 🔒 **A hardened container image**: non-root, no build tools, no shell
+  utilities in the final layer, and reproducible installs from a lock file.
+
+Still to come in M1–M6: persistence, OpenTelemetry, contract testing, cache
+and object storage, release automation, and supply-chain scanning.
+
+## 📚 Documentation
+
+| Page | What it covers |
+| --- | --- |
+| 🏁 [Getting started](https://emadmokhtar.github.io/pyfr/getting-started/) | Run the reference service and place an order |
+| 🔨 [Add an endpoint](https://emadmokhtar.github.io/pyfr/guides/add-an-endpoint/) | Build a feature through all four layers |
+| 🏛️ [Architecture](https://emadmokhtar.github.io/pyfr/explanation/architecture/) | How the pieces fit, and why |
+| ⚙️ [Configuration](https://emadmokhtar.github.io/pyfr/reference/configuration/) | Every environment variable |
+| 🗺️ [Roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) | What ships when |
+| 🤝 [Contributing](https://emadmokhtar.github.io/pyfr/contributing/) | Working on PyFr itself |
+
+The design specification and milestone plans live in
+[`docs/superpowers/`](docs/superpowers/). They contain the reasoning behind
+the decisions the site describes, and are deliberately not published.
+
+## 🛠️ Development
+
+The repository root and the reference service are two separate Python
+projects, each with its own `pyproject.toml`. They are never synced together.
+
+```bash
+# The reference service
+cd examples/reference-service && uv sync && just check
+```
+
+```bash
+# The documentation site
+just docs-install && just docs
+```
+
+## 🤝 Contributing
+
+Issues, questions, and pull requests are all welcome — including "I read this
+and it didn't make sense," which is one of the most useful things you can send
+while the project is this young.
+
+Commit messages and pull request titles must follow
+[Conventional Commits](https://www.conventionalcommits.org/). The
+[contributing guide](https://emadmokhtar.github.io/pyfr/contributing/) has the
+rest.
+
+## 🙏 Credits
+
+PyFr's architecture is influenced by [GoFr](https://gofr.dev), the Go
+microservice framework — the context-driven layering and the emphasis on
+developer experience, adapted to Python's ecosystem and to a template rather
+than a library.
+
+## ⚖️ License
+
+[Mozilla Public License 2.0](LICENSE).
