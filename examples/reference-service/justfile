@@ -23,8 +23,104 @@ typecheck:
 test:
     uv run pytest
 
+# The container-backed tier. Needs a running Docker daemon; `just test` does not.
+test-integration:
+    uv run pytest -m integration
+
+# Everything: unit, api and integration.
+test-all:
+    uv run pytest -m ''
+
+# Run this after changing any migration, and commit the result — the snapshot
+# is reviewed like any other source file.
+#
+# Reuses the gate's own dump-and-normalise code rather than repeating it in
+# shell: a second implementation here would be one more thing to keep in step
+# with the pg_dump flags the gate uses.
+#
+# Regenerate the committed schema.sql from the migrations.
+schema-snapshot:
+    UPDATE_SCHEMA_SNAPSHOT=1 uv run pytest -m integration \
+        -k test_gate_1_the_committed_schema_matches_the_migrations
+
+# Version collisions and the migration manifest come from the unit tier; the
+# snapshot, reversibility and model-drift gates need a database.
+#
+# Run all five schema gates.
+gates:
+    uv run pytest tests/unit/test_migration_files.py
+    uv run pytest -m integration -k "schema_gates or schema_drift"
+
 imports:
     uv run lint-imports
+
+# Uses the migrate service's entrypoint, so the database URL lives in exactly
+# one place — compose.yaml.
+#
+# Apply every outstanding migration.
+migrate:
+    docker compose run --rm migrate up
+
+# -seq gives sequential numbering, which is what turns two branches adding a
+# migration into a git conflict instead of a silently skipped file (spec 6.4).
+# --no-deps because creating files needs no database, and --entrypoint skips
+# the -database flag `create` has no use for. --user "$(id -u):$(id -g)"
+# because the migrate/migrate image runs as root by default (confirmed:
+# `docker run --rm --entrypoint sh migrate/migrate:v4.19.0 -c id` reports
+# uid=0) and this command writes through a bind mount (compose.yaml mounts
+# ./migrations over the image's own copy) — on a native Linux Docker host,
+# a bind mount keeps the writing process's real uid, so the two new files
+# come out root-owned and need sudo to edit or delete. No-op on macOS:
+# Docker Desktop's file sharing maps ownership back to the host user
+# regardless of the container's uid, which is why this was never visible
+# running it here.
+#
+# Write a new .up.sql / .down.sql pair.
+migrate-new name:
+    docker compose run --rm --no-deps --user "$(id -u):$(id -g)" --entrypoint migrate migrate \
+        create -ext sql -dir /migrations -seq {{name}}
+
+# Run this after `migrate-new` adds a pair, and commit the result —
+# `just gates` (tests/unit/test_migration_files.py) checks every file the
+# manifest already records against its recorded hash, and fails if one
+# disagrees. Do NOT run this to make that check pass again after editing an
+# ALREADY-COMMITTED migration: that edit is exactly what the check exists to
+# catch, and regenerating the manifest to silence it defeats the entire
+# point — add a new migration instead (spec 6.4).
+#
+# Rebuild migrations/manifest.sha256 from the files in migrations/.
+migrate-manifest:
+    uv run python -c "from tests.unit.test_migration_files import write_manifest; write_manifest()"
+
+# Defaults to one, because `down` with no argument means "all the way to
+# empty" and that is not a default anyone wants to type twice.
+#
+# Roll back N steps.
+migrate-down steps="1":
+    docker compose run --rm migrate down {{steps}}
+
+# Current version, and whether the database is dirty.
+migrate-version:
+    docker compose run --rm migrate version
+
+# `migrate force` does NOT run or undo any SQL. It only overwrites the version
+# recorded in schema_migrations and clears the dirty flag.
+#
+# A migration that fails partway leaves the database dirty, and golang-migrate
+# then refuses every further command — correctly, because it cannot know how
+# much of the failed file actually applied. Recovering means a human looking at
+# the real schema, finishing or reversing the partial change BY HAND, and only
+# then running `just migrate-force <the version that is genuinely applied>`.
+# Running it first, to make the error go away, tells the tool a lie it will
+# believe for the rest of the database's life.
+#
+# Clear a dirty flag by declaring the true version. Read the warning below before using this.
+migrate-force version:
+    docker compose run --rm migrate force {{version}}
+
+# An interactive psql session against the running compose database.
+psql:
+    docker compose exec postgres psql -U app -d app
 
 # Run the pre-commit hooks over this project's own files.
 precommit:
@@ -47,6 +143,12 @@ check: lint typecheck imports test precommit
     # regardless: that is how we know the config itself still works, not
     # just that the tree was already clean.
     git diff --exit-code
+
+# What CI will run at M5. Separate from `check` so the fast loop stays fast
+# and usable without Docker.
+#
+# Everything `check` does, plus the container tier and all five gates.
+check-all: check test-integration gates
 
 up:
     docker compose up --build

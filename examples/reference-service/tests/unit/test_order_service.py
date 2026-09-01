@@ -89,6 +89,22 @@ def test_a_command_with_mixed_currency_lines_is_refused() -> None:
         )
 
 
+def test_place_order_line_rejects_a_quantity_above_int4_max() -> None:
+    """Mirrors domain.order.OrderLine's bound — see that test's docstring.
+
+    A command must stand on its own for a non-HTTP caller, so this
+    constraint is checked here independently of api/v1/schemas.py having
+    already filtered the input.
+    """
+    with pytest.raises(ValidationError):
+        PlaceOrderLine(
+            sku="sku-1",
+            quantity=2_147_483_648,
+            unit_amount=Decimal("1.00"),
+            currency="EUR",
+        )
+
+
 async def test_returns_a_stored_order() -> None:
     orders = FakeOrderRepository()
     placed = await PlaceOrder(orders)(
@@ -118,3 +134,79 @@ async def test_raises_a_domain_error_when_missing() -> None:
         await GetOrder(orders)(missing)
 
     assert exc_info.value.order_id == missing
+
+
+async def test_a_use_case_defect_is_not_reported_as_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A valid command that produces an invalid Order is OUR bug, not theirs.
+
+    Simulated by making total_of return the wrong total, which is exactly
+    the shape of the real defect: the command validated, and the use case
+    then assembled the aggregate incorrectly. The resulting
+    pydantic.ValidationError must NOT escape as a ValidationError, because
+    api/errors.py turns those into 422s that blame the caller.
+    """
+    from decimal import Decimal
+
+    from reference_service.domain.order import Money
+    from reference_service.services import order as order_module
+    from reference_service.services.errors import ServiceDefectError
+
+    monkeypatch.setattr(
+        order_module,
+        "total_of",
+        lambda lines: Money(amount=Decimal("999.99"), currency="EUR"),
+    )
+
+    place_order = PlaceOrder(FakeOrderRepository())
+    command = PlaceOrderCommand(
+        customer_id=uuid4(),
+        lines=(
+            PlaceOrderLine(
+                sku="apple",
+                quantity=1,
+                unit_amount=Decimal("1.50"),
+                currency="EUR",
+            ),
+        ),
+    )
+
+    with pytest.raises(ServiceDefectError):
+        await place_order(command)
+
+
+async def test_a_use_case_defect_does_not_reach_the_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nothing is written when the aggregate could not be built."""
+    from decimal import Decimal
+
+    from reference_service.domain.order import Money
+    from reference_service.services import order as order_module
+    from reference_service.services.errors import ServiceDefectError
+
+    monkeypatch.setattr(
+        order_module,
+        "total_of",
+        lambda lines: Money(amount=Decimal("999.99"), currency="EUR"),
+    )
+
+    repository = FakeOrderRepository()
+    place_order = PlaceOrder(repository)
+    command = PlaceOrderCommand(
+        customer_id=uuid4(),
+        lines=(
+            PlaceOrderLine(
+                sku="apple",
+                quantity=1,
+                unit_amount=Decimal("1.50"),
+                currency="EUR",
+            ),
+        ),
+    )
+
+    with pytest.raises(ServiceDefectError):
+        await place_order(command)
+
+    assert repository.saved == []

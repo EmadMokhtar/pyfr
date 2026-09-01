@@ -22,6 +22,7 @@ from typing import Annotated, Self
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import ValidationError as PydanticValidationError
 
 from reference_service.domain.errors import OrderNotFoundError
 from reference_service.domain.order import (
@@ -33,6 +34,7 @@ from reference_service.domain.order import (
     total_of,
 )
 from reference_service.domain.repositories import OrderRepository
+from reference_service.services.errors import ServiceDefectError
 
 
 class PlaceOrderLine(BaseModel):
@@ -43,7 +45,10 @@ class PlaceOrderLine(BaseModel):
     # a non-HTTP caller, not rely on api/v1/schemas.py having already
     # filtered bad input.
     sku: Annotated[str, StringConstraints(min_length=1, max_length=64)]
-    quantity: Annotated[int, Field(gt=0)]
+    # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
+    # (PostgreSQL int4, max 2_147_483_647) — same reasoning as
+    # domain.order.OrderLine.quantity and api/v1/schemas.py's OrderLineIn.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
     unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
@@ -80,20 +85,38 @@ class PlaceOrder:
         self._orders = orders
 
     async def __call__(self, command: PlaceOrderCommand) -> Order:
-        lines = tuple(
-            OrderLine(
-                sku=item.sku,
-                quantity=item.quantity,
-                unit_price=Money(amount=item.unit_amount, currency=item.currency),
+        # The boundary. Everything below this point works from a command that
+        # has ALREADY validated, so any validation failure here means this use
+        # case assembled the aggregate wrongly — a server defect. Letting the
+        # raw pydantic.ValidationError escape would reach the 422 handler in
+        # api/errors.py and blame the caller for our bug.
+        try:
+            lines = tuple(
+                OrderLine(
+                    sku=item.sku,
+                    quantity=item.quantity,
+                    unit_price=Money(amount=item.unit_amount, currency=item.currency),
+                )
+                for item in command.lines
             )
-            for item in command.lines
-        )
-        order = Order(
-            id=OrderId(uuid4()),
-            customer_id=CustomerId(command.customer_id),
-            lines=lines,
-            total=total_of(lines),
-        )
+            order = Order(
+                id=OrderId(uuid4()),
+                customer_id=CustomerId(command.customer_id),
+                lines=lines,
+                total=total_of(lines),
+            )
+        except (PydanticValidationError, ValueError) as exc:
+            # ValueError as well as ValidationError: total_of raises a plain
+            # ValueError on mixed currencies. PlaceOrderCommand already rejects
+            # those, so reaching it here means the command validator and this
+            # assembly disagree — again our defect, not the caller's.
+            raise ServiceDefectError(
+                "failed to build a valid Order from a valid PlaceOrderCommand"
+            ) from exc
+
+        # Outside the try: a repository failure is not a validation problem,
+        # and wrapping it here would relabel a database outage as a defect in
+        # this use case. It propagates to the catch-all handler as itself.
         await self._orders.save(order)
         return order
 

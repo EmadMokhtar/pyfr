@@ -22,9 +22,28 @@ cp .env.example .env
 | `APP_HTTP_PORT` | integer, 1–65535 | `8000` | The port to serve on. Read by `just dev`, by the container's start command, and by the image's health check. |
 | `APP_LOG__LEVEL` | `debug` \| `info` \| `warning` \| `error` \| `critical` | `info` | The root log level. |
 | `APP_LOG__LEVELS` | JSON object | `{}` | Per-logger overrides, as JSON. Silencing a chatty library is configuration, not a code change. |
+| `APP_DATABASE__DSN` | PostgreSQL URL | unset | Where to store orders. **Leave it unset to run with no database at all** — the service starts on an in-memory repository and serves normally. See the rules below. |
+| `APP_DATABASE__POOL_SIZE` | integer, ≥ 1 | `10` | Connections held open to PostgreSQL. This is a true ceiling: `max_overflow` is pinned to 0, so an eleventh concurrent checkout waits rather than opening a further connection, and gives up after SQLAlchemy's 30-second `pool_timeout`. |
+| `APP_DATABASE__STATEMENT_TIMEOUT_MS` | integer, ≥ 0 | `5000` | Applied by the server per connection. A statement running longer is cancelled, so one pathological query cannot hold a pooled connection indefinitely. |
 | `APP_OTEL__ENABLED` | boolean | `false` | Reserved for M2's OpenTelemetry support. Does nothing yet. |
 | `APP_OTEL__LOGS_ENABLED` | boolean | `false` | Reserved for M2. See the warning below. |
 | `APP_OTEL__ENDPOINT` | string | unset | Reserved for M2. The collector address telemetry would be sent to. |
+
+### The database URL carries no driver and no `sslmode`
+
+Two things that look like omissions are deliberate, and the service refuses to
+start if either is wrong.
+
+**No driver suffix.** Write `postgresql://…`, not `postgresql+asyncpg://…`.
+The engine adds the asyncpg driver itself when it builds the connection pool.
+
+**No `sslmode`.** It is a libpq parameter that asyncpg does not understand, so
+it would fail at the first connection rather than at startup. The migration
+container needs `?sslmode=disable` against a local server, and adds it to its
+own URL in `compose.yaml` — a connection string this application never reads.
+
+Both are rejected during settings validation, which means exit 78 and a
+message naming the field, not a traceback from inside a driver an hour later.
 
 `APP_LOG__LEVELS` takes a JSON object, quoted so the shell does not split it:
 
@@ -50,10 +69,17 @@ value prints a readable message to standard error and exits with code **78**:
 
 ```
 Invalid configuration:
-1 validation error for Settings
-http_port
-  Input should be less than or equal to 65535 [type=less_than_equal, input_value=99999, ...]
+  http_port: Input should be less than or equal to 65535 (less_than_equal)
 ```
+
+Each line names the setting, what is wrong with it, and the rule that rejected
+it. The offending **value is deliberately not echoed**. Pydantic's own
+rendering includes it, and for `APP_DATABASE__DSN` that value is a connection
+string with a password in it — a misconfiguration would otherwise write the
+database password to the startup logs. The trade-off is real and applies to
+every setting: a typo in `APP_HTTP_PORT` is now named but not shown. A blanket
+rule cannot be forgotten the way a list of "settings that hold secrets" can.
+
 
 78 is `EX_CONFIG` from `sysexits.h`, the conventional Unix exit code for a
 configuration error. An orchestrator can tell "this was misconfigured" apart

@@ -12,7 +12,9 @@ from reference_service.api.errors import register_error_handlers, status_for
 from reference_service.api.middleware import CORRELATION_HEADER, CorrelationIdMiddleware
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 from reference_service.domain.order import OrderId
+from reference_service.main import create_app
 from reference_service.observability.logging import configure_logging
+from reference_service.settings import Settings
 
 
 @pytest.fixture(autouse=True)
@@ -214,6 +216,191 @@ def test_a_pydantic_validation_error_is_logged_at_warning(
     # request.domain_error and request.unhandled_error all carried it,
     # making this one event unable to join the others on status code.
     assert warning_record["http.response.status_code"] == 422
+
+
+def test_a_service_defect_is_a_500_not_a_422(settings: Settings) -> None:
+    """The end-to-end statement of what Task 10 fixed.
+
+    Before this, a ValidationError raised inside a use case reached
+    _pydantic_validation_error and became a 422 telling the caller their
+    request was invalid. It is now a 500 that says the fault is ours.
+
+    Built on the real `create_app`, not `build_app()` above: this must
+    exercise the real /api/v1/orders route and its real dependency wiring
+    (api/deps.py -> services/order.py), which is what actually raises the
+    use-case defect in the first place - the error handlers alone have
+    nothing to catch here. The shared `client` fixture in tests/conftest.py
+    is deliberately NOT used: it takes `raise_server_exceptions` at its
+    default `True`, under which Starlette's ServerErrorMiddleware re-raises
+    the exception into the test after sending the response (it always
+    does, whether or not a handler is registered - see
+    `ServerErrorMiddleware.__call__`), so the test would error instead of
+    getting a response back. Same pattern as
+    `test_an_unexpected_error_does_not_leak_internals` and
+    `test_an_unhandled_error_still_carries_the_correlation_id` above, both
+    of which build their own client for the same reason.
+    """
+    from decimal import Decimal
+
+    from reference_service.domain.order import Money
+    from reference_service.services import order as order_module
+
+    with TestClient(create_app(settings), raise_server_exceptions=False) as client:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(
+                order_module,
+                "total_of",
+                lambda lines: Money(amount=Decimal("999.99"), currency="EUR"),
+            )
+            response = client.post(
+                "/api/v1/orders",
+                json={
+                    "customer_id": "11111111-1111-1111-1111-111111111111",
+                    "lines": [
+                        {
+                            "sku": "apple",
+                            "quantity": 1,
+                            "unit_amount": "1.50",
+                            "currency": "EUR",
+                        }
+                    ],
+                },
+            )
+
+    assert response.status_code == 500
+    # And it still describes none of our internals.
+    body = response.json()
+    assert body["title"] == "Internal server error"
+    assert "detail" not in body or body["detail"] is None
+
+
+class _FakeCorruptScalarResult:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def all(self) -> list[object]:
+        return self._rows
+
+
+class _FakeCorruptSession:
+    """Answers get()'s three calls with a row that fails domain validation.
+
+    Same shape as tests/unit/test_order_repository.py's fake — duplicated
+    rather than imported across test tiers, matching this suite's existing
+    style of a locally-defined make_order per file (see tests/fakes.py,
+    tests/unit/test_db_mappers.py, tests/integration/test_order_repository.py).
+    """
+
+    def __init__(self, row: object, lines: list[object]) -> None:
+        self._row = row
+        self._lines = lines
+
+    async def __aenter__(self) -> "_FakeCorruptSession":
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+    async def connection(self, **kwargs: object) -> None:
+        return None
+
+    async def scalar(self, *args: object, **kwargs: object) -> object:
+        return self._row
+
+    async def scalars(
+        self, *args: object, **kwargs: object
+    ) -> _FakeCorruptScalarResult:
+        return _FakeCorruptScalarResult(self._lines)
+
+
+class _FakeCorruptSessionmaker:
+    def __init__(self, row: object, lines: list[object]) -> None:
+        self._row = row
+        self._lines = lines
+
+    def __call__(self) -> _FakeCorruptSession:
+        return _FakeCorruptSession(self._row, self._lines)
+
+
+def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
+    settings: Settings,
+) -> None:
+    """The live reproduction from the M1 whole-branch review, without a database.
+
+    A row whose stored total disagrees with its lines used to reach
+    _pydantic_validation_error as a raw pydantic.ValidationError, which
+    interpolated the row's own field values — including internal_note, the
+    one field api/v1/mappers.py exists specifically to keep off the wire —
+    into a 422 body. Confirmed against the unpatched code: GET returned 422
+    with `'internal_note': 'FRAUD REVIEW: customer flagged, do not ship'`
+    inside the response body, verbatim.
+
+    infrastructure/db/order_repository.py's get() now catches that case
+    itself and raises CorruptPersistedDataError, which has no registered
+    handler; this proves the full stack — the real route, the real
+    dependency wiring, the real PostgresOrderRepository.get() and mappers.py
+    — actually behaves that way end to end. _FakeCorruptSessionmaker fakes
+    out only the database I/O boundary; get() itself runs unmodified,
+    production code.
+
+    Built on the real create_app, like test_a_service_defect_is_a_500_not_a_422
+    above and for the same reason: this must exercise the real
+    /api/v1/orders/{id} route and its real dependency wiring, which is what
+    actually raises the defect. The shared `client` fixture is deliberately
+    NOT used, for the same raise_server_exceptions reason documented on
+    that test.
+    """
+    from decimal import Decimal
+
+    from reference_service.api.deps import get_orders
+    from reference_service.domain.order import (
+        CustomerId,
+        Money,
+        Order,
+        OrderLine,
+        total_of,
+    )
+    from reference_service.infrastructure.db.mappers import line_values, order_values
+    from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
+    from reference_service.infrastructure.db.order_repository import (
+        PostgresOrderRepository,
+    )
+
+    withheld_note = "FRAUD REVIEW: customer flagged, do not ship"
+    lines = (
+        OrderLine(
+            sku="apple",
+            quantity=3,
+            unit_price=Money(amount=Decimal("1.50"), currency="EUR"),
+        ),
+    )
+    order = Order(
+        id=OrderId(uuid4()),
+        customer_id=CustomerId(uuid4()),
+        lines=lines,
+        total=total_of(lines),
+        internal_note=withheld_note,
+    )
+    # The stored total disagrees with the lines — the exact corruption
+    # to_domain()'s revalidation exists to catch on the way back out.
+    row = OrderRow(**{**order_values(order), "total_amount": Decimal("999.99")})
+    line_rows = [OrderLineRow(**values) for values in line_values(order)]
+    repository = PostgresOrderRepository(
+        _FakeCorruptSessionmaker(row, line_rows)  # type: ignore[arg-type]
+    )
+
+    app = create_app(settings)
+    app.dependency_overrides[get_orders] = lambda: repository
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.get(f"/api/v1/orders/{order.id}")
+
+    assert response.status_code == 500
+    assert withheld_note not in response.text
+    assert "internal_note" not in response.text
+    body = response.json()
+    assert body["title"] == "Internal server error"
+    assert "detail" not in body or body["detail"] is None
 
 
 def test_request_validation_produces_problem_details() -> None:

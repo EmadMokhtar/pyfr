@@ -24,8 +24,54 @@ Run these from `examples/reference-service/`.
 | `just imports` | import-linter: verify the [dependency rule](../explanation/layers.md). |
 | `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
+| `just check-all` | Everything `just check` does, plus the container tier and all five schema gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. |
 | `just down` | Stop the stack and remove its volumes. |
+
+## The database
+
+These need Docker. The schema is owned by
+[golang-migrate](https://github.com/golang-migrate/migrate) as plain SQL in
+`migrations/`, applied by a container — nothing about applying it needs Python.
+
+| Command | What it does |
+| --- | --- |
+| `just migrate` | Apply every outstanding migration. |
+| `just migrate-new NAME` | Write a new `.up.sql` / `.down.sql` pair, numbered sequentially. |
+| `just migrate-down N` | Roll back N steps. Defaults to one. |
+| `just migrate-version` | The current version, and whether the database is dirty. |
+| `just migrate-force V` | Clear a dirty flag by declaring the true version. Read the warning below first. |
+| `just migrate-manifest` | Rebuild `migrations/manifest.sha256` after adding a migration. |
+| `just schema-snapshot` | Regenerate the committed `schema.sql` after changing a migration. |
+| `just psql` | An interactive `psql` session against the running stack. |
+
+!!! danger "`just migrate-force` runs no SQL"
+
+    It only overwrites the version recorded in `schema_migrations` and clears
+    the dirty flag. A migration that fails partway leaves the database dirty,
+    and golang-migrate then refuses every further command — correctly, because
+    it cannot know how much of the failed file actually applied.
+
+    Recovering means a human looking at the real schema, finishing or reversing
+    the partial change by hand, and only then declaring the version that is
+    genuinely applied. Running it first, to make the error go away, tells the
+    tool a lie it will believe for the rest of the database's life.
+
+## Tests and schema gates
+
+| Command | What it does |
+| --- | --- |
+| `just test` | Unit and API tests. Milliseconds, and needs no Docker. |
+| `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the real migrate image. |
+| `just test-all` | Both tiers. |
+| `just gates` | All five schema governance gates. |
+
+The five gates are the snapshot (`schema.sql` still matches the migrations),
+reversibility (every `down.sql` truly reverses its `up.sql`), version
+collisions, model drift (the SQLAlchemy models still match the real schema),
+and the manifest (nobody edited a migration that has already been applied
+somewhere). They run from `just check-all`; wiring them into CI is a later
+milestone.
 
 ### Why `just check` ends with a diff check
 

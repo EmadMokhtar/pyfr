@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from reference_service.settings import Settings, load_settings
+from reference_service.settings import EXIT_CONFIG_ERROR, Settings, load_settings
 
 
 def test_defaults_are_usable_with_no_environment() -> None:
@@ -167,3 +167,125 @@ def test_http_port_accepts_the_boundary_values(
 
     monkeypatch.setenv("APP_HTTP_PORT", "65535")
     assert Settings(_env_file=None).http_port == 65535  # type: ignore[call-arg]
+
+
+def test_database_is_absent_by_default() -> None:
+    """No DSN configured means the in-memory adapter, not a crash.
+
+    A service generated with database=none must keep working, so the
+    sub-model is optional rather than required. Task 5 turns this None
+    into the choice of adapter.
+    """
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.database is None
+
+
+def test_database_settings_are_read_from_a_nested_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN", "postgresql://app:secret@localhost:5432/app"
+    )
+    monkeypatch.setenv("APP_DATABASE__POOL_SIZE", "3")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.database is not None
+    assert str(settings.database.dsn) == "postgresql://app:secret@localhost:5432/app"
+    assert settings.database.pool_size == 3
+    # Defaults from the spec's section 5.1, not silently zero.
+    assert settings.database.statement_timeout_ms == 5_000
+
+
+def test_database_settings_are_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same reasoning as LogSettings and OtelSettings.
+
+    Settings.model_config's frozen=True governs Settings's own fields only.
+    Without its own frozen=True, `settings.database.pool_size = 99` would
+    succeed silently while Settings claims to be frozen.
+    """
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN", "postgresql://app:secret@localhost:5432/app"
+    )
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.database is not None
+
+    with pytest.raises(ValidationError):
+        settings.database.pool_size = 99
+
+
+def test_a_libpq_only_dsn_parameter_stops_the_process_with_exit_78(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    Before this fix, this exact check lived only in
+    infrastructure/db/engine.py's async_dsn(), called from inside
+    build_engine() during FastAPI's `lifespan` — well after load_settings
+    had already returned successfully. Confirmed against the unpatched
+    code: load_settings(env_file=None) with this same DSN returned a
+    Settings object without raising anything, and the ValueError only
+    surfaced later, uncaught, out of container.build_container() — a
+    traceback and SystemExit: 3 at actual startup, not the exit 78
+    README.md promises for every bad setting. The check now runs as an
+    ordinary DatabaseSettings field validator, so it fails at the same
+    point and the same way every other bad setting does.
+    """
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN",
+        "postgresql://app:secret@localhost:5432/app?sslmode=disable",
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        load_settings(env_file=None)
+
+    assert exit_info.value.code == EXIT_CONFIG_ERROR
+
+
+def test_a_malformed_dsn_stops_the_process_with_exit_78(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail fast and loudly, exactly as every other bad setting does."""
+    monkeypatch.setenv("APP_DATABASE__DSN", "mysql://app@localhost/app")
+
+    with pytest.raises(SystemExit) as exit_info:
+        load_settings(env_file=None)
+
+    assert exit_info.value.code == EXIT_CONFIG_ERROR
+
+
+def test_a_malformed_dsn_s_password_never_reaches_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    pydantic's default ValidationError rendering (both plain str(exc) and
+    the bare exception passed to an f-string) embeds the VALUE that failed
+    validation, and for database.dsn that value is the whole connection
+    string, credentials included. Confirmed against the unpatched
+    load_settings: this exact DSN printed
+    `input_value='mysql://app:sup3rs3cr3t@db.internal:3306/app'` to stderr,
+    directly contradicting this module's own docstring and spec 5.1's
+    promise that a secret cannot reach a log line or a traceback by
+    accident.
+
+    The message must still be useful, not merely safe: the field location
+    and the constraint name are asserted below too, so a fix that achieved
+    silence by discarding the whole message would not pass this either.
+    """
+    secret = "sup3rs3cr3t"  # noqa: S105 - the value under test, not a real credential
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN", f"mysql://app:{secret}@db.internal:3306/app"
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        load_settings(env_file=None)
+
+    assert exit_info.value.code == EXIT_CONFIG_ERROR
+    stderr = capsys.readouterr().err
+    assert secret not in stderr
+    assert "db.internal" not in stderr
+    # Still useful, not merely silent: names the field and the constraint.
+    assert "dsn" in stderr
+    assert "url_scheme" in stderr

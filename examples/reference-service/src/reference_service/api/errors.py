@@ -159,21 +159,35 @@ def register_error_handlers(app: FastAPI) -> None:
         # structlog.contextvars.merge_contextvars already carries it, the
         # same way _domain_error's log line above does.
         #
-        # Known, deliberate mislabeling — not fixed here: this handler
-        # catches EVERY PydanticValidationError, indiscriminately, wherever
-        # it is raised. A ValidationError with no connection to client
-        # input at all — say, a use case constructing a domain object from
-        # a value it computed itself, wrongly — is a pure server defect,
-        # not a client-fault 422, and this net currently mislabels it as
-        # one anyway, because nothing here can tell the two apart from the
-        # exception alone. The correct fix is translating validation at the
-        # use-case boundary, so a use case's own bugs surface as 500s and
-        # only genuinely bad client input reaches this handler; M0's use
-        # cases are too thin for that boundary to earn its keep yet, so
-        # this is left for M1 when they grow. See
-        # tests/api/test_errors.py's /deep-validation route for the case
-        # this handler DOES exist for: input that passed the edge schema
-        # and was rejected by a deeper validator.
+        # Scope, now that M1's Task 10 has drawn the boundary, and after the
+        # fix wave that followed the whole-branch review: this handler is
+        # INTENDED to see a PydanticValidationError only when a raw pydantic
+        # model rejects input a shallower layer had already accepted —
+        # genuinely a client fault, genuinely a 422. That intention already
+        # failed to hold once: services/order.py's PlaceOrder used to let a
+        # use-case defect reach here too, and Task 10 closed that specific
+        # gap by catching it and raising ServiceDefectError instead, which
+        # has no handler and falls through to the catch-all below as a 500.
+        # Then infrastructure/db/order_repository.py's get() opened an
+        # identical hole in the same milestone: to_domain() reruns every
+        # domain validator on the way OUT of storage, so a row corrupted at
+        # rest (a hand edit, a restore from a mid-migration backup) failed
+        # HERE too — a storage fault, not a client one, and the detail=
+        # below used to quote the row's own field values, including
+        # internal_note, into the response. get() now catches that case
+        # itself and raises infrastructure.errors.CorruptPersistedDataError,
+        # which likewise has no handler and falls through as a 500, so it no
+        # longer reaches here either. Two boundaries have now each needed a
+        # fix to keep this handler's assumption true, which is reason enough
+        # not to trust a third will not exist: `include_input=False` below
+        # means the NEXT such gap — wherever it turns out to live — fails
+        # safe by construction instead of by remembering to patch this
+        # comment again. See tests/api/test_errors.py's /deep-validation
+        # route for the case this handler DOES exist for,
+        # test_a_service_defect_is_a_500_not_a_422 for the first gap it no
+        # longer mislabels, and
+        # test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak
+        # for the second.
         _logger.warning(
             "request.validation_error",
             # Same key names as AccessLogMiddleware, _domain_error above,
@@ -190,7 +204,22 @@ def register_error_handlers(app: FastAPI) -> None:
                 type=f"{PROBLEM_TYPE_BASE}/validation_error",
                 title="Request validation failed",
                 status=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=str(exc.errors()),
+                # include_input=False: pydantic's default .errors() embeds
+                # the VALUE that failed validation, not just where it failed
+                # and why. Echoing that value back is fine when it is the
+                # client's own request body — but this handler's whole
+                # reason to exist is catching validation that happens BELOW
+                # the request boundary (see the Scope comment above), where
+                # the value being validated is not always something the
+                # client sent. Eliding it here keeps the field location and
+                # the constraint message, which is what a caller needs to
+                # fix a genuine 422, without depending on every future
+                # caller of this handler being a case where echoing the
+                # value back is safe. Contrast the RequestValidationError
+                # handler above, which keeps str(exc.errors()) as is: there,
+                # the input IS always the client's own request body, so
+                # echoing it back is the entire point of a 422.
+                detail=str(exc.errors(include_input=False)),
                 instance=request.url.path,
             )
         )

@@ -80,6 +80,45 @@ def test_a_negative_quantity_is_refused_with_problem_details(
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
+def test_a_quantity_above_int4_max_is_refused_with_422_not_500(
+    client: TestClient,
+) -> None:
+    """Regression test for a real defect, not a hypothetical one.
+
+    order_lines.quantity is INTEGER (PostgreSQL int4, max 2_147_483_647),
+    but before this fix OrderLineIn, PlaceOrderLine and domain.order's
+    OrderLine all constrained quantity with only `gt=0` — no upper bound
+    anywhere. A quantity like 3_000_000_000 passed all three and reached
+    the adapter, where asyncpg raised
+    `DataError: invalid input for query argument $4: 3000000000 (value out
+    of int32 range)` — a 500 for ordinary, schema-valid client input.
+    Confirmed against the unpatched models, live, against a real
+    PostgreSQL: the edge schema and the service command both accepted
+    3_000_000_000, and PostgresOrderRepository.save() raised that DataError.
+
+    This must fail at the edge (422 here), not the adapter — a value this
+    large never reaches domain construction or a database round trip now.
+    """
+    response = client.post("/api/v1/orders", json=a_payload(quantity=3_000_000_000))
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_the_int4_boundary_value_itself_is_accepted(client: TestClient) -> None:
+    """The bound is le, not lt: the column's own maximum must still work.
+
+    amount="0.01", not the default "10.00": kept small so the computed
+    total stays well inside Money.amount's own max_digits=14 — this test is
+    about the quantity boundary, not a second exercise of that one.
+    """
+    response = client.post(
+        "/api/v1/orders", json=a_payload(quantity=2_147_483_647, amount="0.01")
+    )
+
+    assert response.status_code == 201
+
+
 def test_an_order_with_no_lines_is_refused(client: TestClient) -> None:
     payload = a_payload()
     payload["lines"] = []

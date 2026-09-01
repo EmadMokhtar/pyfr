@@ -18,6 +18,8 @@ forbidden_modules =
     reference_service.main
     fastapi
     starlette
+    sqlalchemy
+    asyncpg
 
 [importlinter:contract:services-independence]
 name = Services import neither api nor infrastructure
@@ -31,3 +33,5 @@ forbidden_modules =
     reference_service.main
     fastapi
     starlette
+    sqlalchemy
+    asyncpg
