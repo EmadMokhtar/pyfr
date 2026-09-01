@@ -19,6 +19,18 @@ from reference_service.infrastructure.db.mappers import (
 )
 from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
 
+# The two SELECTs in get() below must see ONE version of the aggregate.
+# PostgreSQL's default READ COMMITTED gives each STATEMENT its own snapshot,
+# so a save() committing between them would return this order's header from
+# one version and its lines from another — and Order.total_must_match_lines
+# would then reject the mismatch, turning a healthy read into a 500.
+# REPEATABLE READ takes one snapshot for the whole transaction. This is
+# read-only, so it cannot raise the serialization failures a writing
+# transaction could. Kept as a named constant, not inlined, because Task 7
+# imports it to assert the level actually took effect against a real
+# database.
+READ_ISOLATION_LEVEL = "REPEATABLE READ"
+
 
 class PostgresOrderRepository:
     """One transaction per call — the aggregate is the consistency boundary.
@@ -34,6 +46,12 @@ class PostgresOrderRepository:
 
     async def get(self, order_id: OrderId) -> Order | None:
         async with self._sessionmaker() as session:
+            # Pin the transaction to REPEATABLE READ before the first
+            # statement runs — see READ_ISOLATION_LEVEL's comment above for
+            # why the two SELECTs below need one shared snapshot.
+            await session.connection(
+                execution_options={"isolation_level": READ_ISOLATION_LEVEL}
+            )
             row = await session.scalar(select(OrderRow).where(OrderRow.id == order_id))
             if row is None:
                 return None
@@ -80,3 +98,9 @@ class PostgresOrderRepository:
                 delete(OrderLineRow).where(OrderLineRow.order_id == order.id)
             )
             await session.execute(postgres_insert(OrderLineRow), line_values(order))
+            # get()'s freedom from torn reads is not this method's atomicity
+            # alone. This transaction either commits both statements above or
+            # neither, but a reader using the default isolation level could
+            # still take its two SELECTs from either side of that commit.
+            # READ_ISOLATION_LEVEL on the read side is the other half of the
+            # guarantee — see its comment near the top of this module.

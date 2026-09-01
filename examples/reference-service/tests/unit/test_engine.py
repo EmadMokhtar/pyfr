@@ -53,17 +53,44 @@ def test_a_libpq_only_query_parameter_is_rejected_with_a_readable_message() -> N
         )
 
 
+def test_unrelated_text_that_merely_contains_sslmode_is_not_rejected() -> None:
+    """The guard checks query PARAMETER NAMES, not a raw substring scan.
+
+    A `"sslmode=" in raw` scan (the earlier, wrong version of this check)
+    also matches text that merely contains that substring without `sslmode`
+    ever being set as a parameter. libpq's own `options` parameter carries a
+    freeform "-c key=value" string, so a value like this — entirely
+    unrelated to sslmode — is realistic. Parsing the query string and
+    checking parameter names, rather than scanning raw text, tells the two
+    apart.
+    """
+    result = async_dsn(
+        _dsn.validate_python(
+            "postgresql://app:secret@db:5432/app?options=-c search_path=sslmode_app"
+        )
+    )
+
+    assert result == (
+        "postgresql+asyncpg://app:secret@db:5432/app"
+        "?options=-c%20search_path=sslmode_app"
+    )
+
+
 def test_the_postgres_adapter_satisfies_the_repository_port() -> None:
     """Structural, not nominal: no inheritance, no import of the Protocol.
 
-    Mirrors the identical assertion for InMemoryOrderRepository in
-    tests/unit/test_memory_repository.py. runtime_checkable isinstance only
-    checks that the named attributes exist, not their signatures — mypy is
-    what checks the signatures.
+    Mirrors both assertions in tests/unit/test_memory_repository.py: the
+    annotated binding below (`repository: OrderRepository = ...`) is what
+    gives mypy the full signature check — parameter types, return types, and
+    async-ness — because mypy compares the assigned value against the
+    declared type on every annotated assignment. The isinstance call that
+    follows only confirms, at runtime, that the named attributes exist;
+    runtime_checkable does not check signatures at all.
     """
     from reference_service.domain.repositories import OrderRepository
     from reference_service.infrastructure.db.order_repository import (
         PostgresOrderRepository,
     )
 
-    assert isinstance(PostgresOrderRepository(sessionmaker=None), OrderRepository)  # type: ignore[arg-type]
+    repository: OrderRepository = PostgresOrderRepository(sessionmaker=None)  # type: ignore[arg-type]
+    assert isinstance(repository, OrderRepository)

@@ -6,6 +6,8 @@ no query lives in this module.
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlsplit
+
 from pydantic import PostgresDsn
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -27,18 +29,30 @@ _LIBPQ_ONLY_PARAMETERS = ("sslmode", "sslcert", "sslkey", "sslrootcert")
 def async_dsn(dsn: PostgresDsn) -> str:
     """Return `dsn` with the asyncpg driver, leaving an explicit driver alone."""
     raw = str(dsn)
+    # Parse the query string and check parameter NAMES, rather than scanning
+    # the whole URL for the substring "sslmode=". A raw substring scan also
+    # matches unrelated content that merely contains that text — libpq's own
+    # `options` parameter carries a freeform "-c key=value" string, so e.g.
+    # `?options=-c search_path=sslmode_app` would falsely reject a DSN that
+    # never set sslmode at all. Never interpolate `raw` into an error message
+    # below: it carries the password, and this ValueError is raised,
+    # uncaught, from container startup — straight to stderr and the log
+    # aggregator.
+    query_parameters = parse_qs(urlsplit(raw).query)
     for parameter in _LIBPQ_ONLY_PARAMETERS:
-        if f"{parameter}=" in raw:
+        if parameter in query_parameters:
             raise ValueError(
                 f"APP_DATABASE__DSN must not carry the libpq parameter "
-                f"'{parameter}': asyncpg does not understand it. Remove it from "
-                f"the URL — the migrate commands add '?sslmode=disable' "
-                f"themselves. Got: {raw}"
+                f"'{parameter}': asyncpg does not understand it. Remove it "
+                f"from the URL — the migrate commands add '?sslmode=disable' "
+                f"themselves."
             )
 
     scheme, separator, rest = raw.partition("://")
     if not separator:
-        raise ValueError(f"not a database URL: {raw}")
+        raise ValueError(
+            "not a database URL: missing '://' between the scheme and the rest"
+        )
     if "+" in scheme:
         return raw
     return f"postgresql+asyncpg://{rest}"

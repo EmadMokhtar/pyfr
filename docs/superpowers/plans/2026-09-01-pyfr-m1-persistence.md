@@ -1097,6 +1097,21 @@ alternatives were considered and rejected while designing M1:
 "A session per call" is not a connection per call. The engine and its pool are built
 once in `container.py`; each call checks a connection out of that pool and returns it.
 
+**Where the read isolation lives.** The paragraphs above are about `save()`;
+`get()` needs its own guarantee, for a different reason. It issues two SELECTs —
+one for the `orders` row, one for its `order_lines` — and PostgreSQL's default
+`READ COMMITTED` gives each *statement*, not each transaction, its own snapshot.
+A `save()` that commits between those two SELECTs can hand `get()` an order's
+header from one version and its lines from another; `Order.total_must_match_lines`
+then rejects the mismatch, turning a healthy read into a 500 the caller did nothing
+to deserve. `get()` pins its transaction to `REPEATABLE READ` before the first
+SELECT runs (see `READ_ISOLATION_LEVEL` in `order_repository.py`, Step 5) so both
+SELECTs share one snapshot — a read-only transaction, so this cannot itself raise
+the serialization failures a writing transaction under `REPEATABLE READ` could.
+`save()`'s atomicity and `get()`'s isolation level are two halves of the same
+promise: the writer never leaves a half-written state to be committed, and the
+reader never straddles two different commits.
+
 - [ ] **Step 1: Write the failing engine tests**
 
 Create `tests/unit/test_engine.py`:
@@ -1155,6 +1170,29 @@ def test_a_libpq_only_query_parameter_is_rejected_with_a_readable_message() -> N
         async_dsn(
             _dsn.validate_python("postgresql://app:secret@db:5432/app?sslmode=disable")
         )
+
+
+def test_unrelated_text_that_merely_contains_sslmode_is_not_rejected() -> None:
+    """The guard checks query PARAMETER NAMES, not a raw substring scan.
+
+    A `"sslmode=" in raw` scan (the earlier, wrong version of this check)
+    also matches text that merely contains that substring without `sslmode`
+    ever being set as a parameter. libpq's own `options` parameter carries a
+    freeform "-c key=value" string, so a value like this — entirely
+    unrelated to sslmode — is realistic. Parsing the query string and
+    checking parameter names, rather than scanning raw text, tells the two
+    apart.
+    """
+    result = async_dsn(
+        _dsn.validate_python(
+            "postgresql://app:secret@db:5432/app?options=-c search_path=sslmode_app"
+        )
+    )
+
+    assert result == (
+        "postgresql+asyncpg://app:secret@db:5432/app"
+        "?options=-c%20search_path=sslmode_app"
+    )
 ```
 
 - [ ] **Step 2: Run the tests and watch them fail**
@@ -1178,6 +1216,8 @@ no query lives in this module.
 
 from __future__ import annotations
 
+from urllib.parse import parse_qs, urlsplit
+
 from pydantic import PostgresDsn
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -1199,18 +1239,30 @@ _LIBPQ_ONLY_PARAMETERS = ("sslmode", "sslcert", "sslkey", "sslrootcert")
 def async_dsn(dsn: PostgresDsn) -> str:
     """Return `dsn` with the asyncpg driver, leaving an explicit driver alone."""
     raw = str(dsn)
+    # Parse the query string and check parameter NAMES, rather than scanning
+    # the whole URL for the substring "sslmode=". A raw substring scan also
+    # matches unrelated content that merely contains that text — libpq's own
+    # `options` parameter carries a freeform "-c key=value" string, so e.g.
+    # `?options=-c search_path=sslmode_app` would falsely reject a DSN that
+    # never set sslmode at all. Never interpolate `raw` into an error message
+    # below: it carries the password, and this ValueError is raised,
+    # uncaught, from container startup — straight to stderr and the log
+    # aggregator.
+    query_parameters = parse_qs(urlsplit(raw).query)
     for parameter in _LIBPQ_ONLY_PARAMETERS:
-        if f"{parameter}=" in raw:
+        if parameter in query_parameters:
             raise ValueError(
                 f"APP_DATABASE__DSN must not carry the libpq parameter "
-                f"'{parameter}': asyncpg does not understand it. Remove it from "
-                f"the URL — the migrate commands add '?sslmode=disable' "
-                f"themselves. Got: {raw}"
+                f"'{parameter}': asyncpg does not understand it. Remove it "
+                f"from the URL — the migrate commands add '?sslmode=disable' "
+                f"themselves."
             )
 
     scheme, separator, rest = raw.partition("://")
     if not separator:
-        raise ValueError(f"not a database URL: {raw}")
+        raise ValueError(
+            "not a database URL: missing '://' between the scheme and the rest"
+        )
     if "+" in scheme:
         return raw
     return f"postgresql+asyncpg://{rest}"
@@ -1229,9 +1281,7 @@ def build_engine(settings: DatabaseSettings) -> AsyncEngine:
             # is cancelled, so one pathological query cannot hold a pooled
             # connection open indefinitely. asyncpg takes server settings as
             # strings.
-            "server_settings": {
-                "statement_timeout": str(settings.statement_timeout_ms)
-            }
+            "server_settings": {"statement_timeout": str(settings.statement_timeout_ms)}
         },
     )
 
@@ -1253,13 +1303,17 @@ def build_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 uv run pytest tests/unit/test_engine.py -v
 ```
 
-Expected: four tests pass.
+Expected: five tests pass.
 
 - [ ] **Step 5: Write the repository adapter**
 
-Create `infrastructure/db/order_repository.py`. This code was written and run
-against PostgreSQL 16.13 while preparing this plan; the round trip, the line
-ordering, the upsert and the `None` case were all verified.
+Create `infrastructure/db/order_repository.py`. The base logic — the round
+trip, the line ordering, the upsert, and the `None` case — was written and run
+against PostgreSQL 16.13 while preparing this plan and confirmed working. The
+`REPEATABLE READ` isolation level on `get()` was added afterward, during Task
+4's own review, to close a torn-read gap explained in the code comment below;
+Task 7's integration tier is what confirms it actually takes effect against a
+real database.
 
 ```python
 """The PostgreSQL order repository — the only module that knows SQL.
@@ -1283,6 +1337,18 @@ from reference_service.infrastructure.db.mappers import (
 )
 from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
 
+# The two SELECTs in get() below must see ONE version of the aggregate.
+# PostgreSQL's default READ COMMITTED gives each STATEMENT its own snapshot,
+# so a save() committing between them would return this order's header from
+# one version and its lines from another — and Order.total_must_match_lines
+# would then reject the mismatch, turning a healthy read into a 500.
+# REPEATABLE READ takes one snapshot for the whole transaction. This is
+# read-only, so it cannot raise the serialization failures a writing
+# transaction could. Kept as a named constant, not inlined, because Task 7
+# imports it to assert the level actually took effect against a real
+# database.
+READ_ISOLATION_LEVEL = "REPEATABLE READ"
+
 
 class PostgresOrderRepository:
     """One transaction per call — the aggregate is the consistency boundary.
@@ -1298,9 +1364,13 @@ class PostgresOrderRepository:
 
     async def get(self, order_id: OrderId) -> Order | None:
         async with self._sessionmaker() as session:
-            row = await session.scalar(
-                select(OrderRow).where(OrderRow.id == order_id)
+            # Pin the transaction to REPEATABLE READ before the first
+            # statement runs — see READ_ISOLATION_LEVEL's comment above for
+            # why the two SELECTs below need one shared snapshot.
+            await session.connection(
+                execution_options={"isolation_level": READ_ISOLATION_LEVEL}
             )
+            row = await session.scalar(select(OrderRow).where(OrderRow.id == order_id))
             if row is None:
                 return None
 
@@ -1346,6 +1416,12 @@ class PostgresOrderRepository:
                 delete(OrderLineRow).where(OrderLineRow.order_id == order.id)
             )
             await session.execute(postgres_insert(OrderLineRow), line_values(order))
+            # get()'s freedom from torn reads is not this method's atomicity
+            # alone. This transaction either commits both statements above or
+            # neither, but a reader using the default isolation level could
+            # still take its two SELECTs from either side of that commit.
+            # READ_ISOLATION_LEVEL on the read side is the other half of the
+            # guarantee — see its comment near the top of this module.
 ```
 
 - [ ] **Step 6: Verify the port is still satisfied structurally**
@@ -1356,17 +1432,21 @@ Append to `tests/unit/test_engine.py`:
 def test_the_postgres_adapter_satisfies_the_repository_port() -> None:
     """Structural, not nominal: no inheritance, no import of the Protocol.
 
-    Mirrors the identical assertion for InMemoryOrderRepository in
-    tests/unit/test_memory_repository.py. runtime_checkable isinstance only
-    checks that the named attributes exist, not their signatures — mypy is
-    what checks the signatures.
+    Mirrors both assertions in tests/unit/test_memory_repository.py: the
+    annotated binding below (`repository: OrderRepository = ...`) is what
+    gives mypy the full signature check — parameter types, return types, and
+    async-ness — because mypy compares the assigned value against the
+    declared type on every annotated assignment. The isinstance call that
+    follows only confirms, at runtime, that the named attributes exist;
+    runtime_checkable does not check signatures at all.
     """
     from reference_service.domain.repositories import OrderRepository
     from reference_service.infrastructure.db.order_repository import (
         PostgresOrderRepository,
     )
 
-    assert isinstance(PostgresOrderRepository(sessionmaker=None), OrderRepository)  # type: ignore[arg-type]
+    repository: OrderRepository = PostgresOrderRepository(sessionmaker=None)  # type: ignore[arg-type]
+    assert isinstance(repository, OrderRepository)
 ```
 
 - [ ] **Step 7: Verify everything**
