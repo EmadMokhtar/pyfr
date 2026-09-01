@@ -56,23 +56,26 @@ def test_a_libpq_only_query_parameter_is_rejected_with_a_readable_message() -> N
 def test_unrelated_text_that_merely_contains_sslmode_is_not_rejected() -> None:
     """The guard checks query PARAMETER NAMES, not a raw substring scan.
 
-    A `"sslmode=" in raw` scan (the earlier, wrong version of this check)
-    also matches text that merely contains that substring without `sslmode`
-    ever being set as a parameter. libpq's own `options` parameter carries a
-    freeform "-c key=value" string, so a value like this — entirely
-    unrelated to sslmode — is realistic. Parsing the query string and
-    checking parameter names, rather than scanning raw text, tells the two
-    apart.
+    `parse_qs` splits each query pair on its FIRST "=" only, so text after
+    that first "=" may itself contain more "=" characters. libpq's own
+    `options` parameter carries a freeform "-c key=value" string as its
+    VALUE, so `?options=-c search_path=sslmode=app` puts the literal text
+    "sslmode=" into the raw URL without `sslmode` ever being the parameter
+    NAME — the parsed key is "options", not "sslmode". A
+    `"sslmode=" in raw` scan (the earlier, wrong version of this check)
+    cannot tell the difference and would have wrongly rejected this DSN;
+    confirmed directly in the fix report rather than assumed. The new
+    parser-based check does not reject it.
     """
     result = async_dsn(
         _dsn.validate_python(
-            "postgresql://app:secret@db:5432/app?options=-c search_path=sslmode_app"
+            "postgresql://app:secret@db:5432/app?options=-c search_path=sslmode=app"
         )
     )
 
     assert result == (
         "postgresql+asyncpg://app:secret@db:5432/app"
-        "?options=-c%20search_path=sslmode_app"
+        "?options=-c%20search_path=sslmode=app"
     )
 
 

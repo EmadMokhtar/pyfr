@@ -32,12 +32,15 @@ def async_dsn(dsn: PostgresDsn) -> str:
     # Parse the query string and check parameter NAMES, rather than scanning
     # the whole URL for the substring "sslmode=". A raw substring scan also
     # matches unrelated content that merely contains that text — libpq's own
-    # `options` parameter carries a freeform "-c key=value" string, so e.g.
-    # `?options=-c search_path=sslmode_app` would falsely reject a DSN that
-    # never set sslmode at all. Never interpolate `raw` into an error message
-    # below: it carries the password, and this ValueError is raised,
-    # uncaught, from container startup — straight to stderr and the log
-    # aggregator.
+    # `options` parameter carries a freeform "-c key=value" string as its
+    # VALUE, so e.g. `?options=-c search_path=sslmode=app` puts the literal
+    # text "sslmode=" into the URL without `sslmode` ever being a parameter
+    # NAME (parse_qs splits each pair on its first "=" only, so the parsed
+    # key here is "options", not "sslmode"); a substring scan cannot tell
+    # the difference and would falsely reject this DSN. Never interpolate
+    # `raw` into an error message below: it carries the password, and this
+    # ValueError is raised, uncaught, from container startup — straight to
+    # stderr and the log aggregator.
     query_parameters = parse_qs(urlsplit(raw).query)
     for parameter in _LIBPQ_ONLY_PARAMETERS:
         if parameter in query_parameters:
