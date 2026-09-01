@@ -61,11 +61,20 @@ migrate:
 # -seq gives sequential numbering, which is what turns two branches adding a
 # migration into a git conflict instead of a silently skipped file (spec 6.4).
 # --no-deps because creating files needs no database, and --entrypoint skips
-# the -database flag `create` has no use for.
+# the -database flag `create` has no use for. --user "$(id -u):$(id -g)"
+# because the migrate/migrate image runs as root by default (confirmed:
+# `docker run --rm --entrypoint sh migrate/migrate:v4.19.0 -c id` reports
+# uid=0) and this command writes through a bind mount (compose.yaml mounts
+# ./migrations over the image's own copy) — on a native Linux Docker host,
+# a bind mount keeps the writing process's real uid, so the two new files
+# come out root-owned and need sudo to edit or delete. No-op on macOS:
+# Docker Desktop's file sharing maps ownership back to the host user
+# regardless of the container's uid, which is why this was never visible
+# running it here.
 #
 # Write a new .up.sql / .down.sql pair.
 migrate-new name:
-    docker compose run --rm --no-deps --entrypoint migrate migrate \
+    docker compose run --rm --no-deps --user "$(id -u):$(id -g)" --entrypoint migrate migrate \
         create -ext sql -dir /migrations -seq {{name}}
 
 # Regenerate migrations/manifest.sha256 from every file currently in
