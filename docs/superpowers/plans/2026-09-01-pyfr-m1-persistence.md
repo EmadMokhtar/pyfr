@@ -2873,6 +2873,7 @@ import os
 import re
 from pathlib import Path
 
+import pytest
 from testcontainers.community.postgres import PostgresContainer
 
 from tests.integration.conftest import MigrateRunner
@@ -2888,9 +2889,26 @@ SCHEMA_FILE = Path(__file__).resolve().parents[2] / "schema.sql"
 # on every run and reads as drift that is not there.
 _DUMP_NONCE = re.compile(r"^\\(?:un)?restrict .*$", re.MULTILINE)
 
+# pg_dump also stamps its header with the exact versions it ran as:
+#     -- Dumped from database version 16.13
+#     -- Dumped by pg_dump version 16.13
+# conftest.py pins POSTGRES_IMAGE to the floating tag "postgres:16-alpine",
+# so the next routine point release (16.13 -> 16.14) moves this line on
+# whichever machine or CI runner next repulls the image, with no migration
+# having changed. The same class of problem as the nonce above -- a false
+# drift signal that looks exactly like a real one -- gets the same
+# treatment: stripped, rather than worked around by pinning an exact patch
+# version. A schema snapshot should describe the schema, not the tool that
+# dumped it.
+_DUMP_VERSION_BANNER = re.compile(
+    r"^-- Dumped (?:from database|by pg_dump) version .*\n?", re.MULTILINE
+)
+
 
 def normalise_dump(dump: str) -> str:
-    return _DUMP_NONCE.sub("", dump).strip() + "\n"
+    dump = _DUMP_NONCE.sub("", dump)
+    dump = _DUMP_VERSION_BANNER.sub("", dump)
+    return dump.strip() + "\n"
 
 
 def dump_schema(container: PostgresContainer) -> str:
@@ -2930,6 +2948,13 @@ def test_gate_1_the_committed_schema_matches_the_migrations(
     actual = dump_schema(migrated_database)
 
     if os.environ.get("UPDATE_SCHEMA_SNAPSHOT") == "1":
+        if os.environ.get("CI"):
+            pytest.fail(
+                "UPDATE_SCHEMA_SNAPSHOT must not be set in CI: it rewrites the "
+                "committed snapshot instead of checking it, which turns this "
+                "gate into a no-op that always passes. Regenerate locally with "
+                "`just schema-snapshot` and commit the result."
+            )
         SCHEMA_FILE.write_text(actual)
         return
 
@@ -2997,6 +3022,48 @@ def test_gate_2_leaves_the_database_migrated_for_later_tests(
     assert "CREATE TABLE public.orders" in dump_schema(migrated_database)
 ```
 
+**Why `normalise_dump` also strips the `-- Dumped ... version ...` lines.** A
+review found a second nonce hiding in the same header the `\restrict`/
+`\unrestrict` comment above already treats with suspicion: `pg_dump` also
+stamps its output with the exact PostgreSQL server version and the exact
+`pg_dump` version it ran as —
+
+```
+-- Dumped from database version 16.13
+-- Dumped by pg_dump version 16.13
+```
+
+`POSTGRES_IMAGE` in `conftest.py` is deliberately pinned to the *floating* tag
+`postgres:16-alpine`, not an exact patch version, so the next routine point
+release (16.13 -> 16.14) moves this line on whichever machine or CI runner
+next repulls the image — with no migration having changed. Left in, that is
+the same failure this gate exists to prevent, turned against itself: a false
+drift signal that reads exactly like a real one. Confirmed directly:
+reconstructing a real captured `pg_dump` output with the version text changed
+from `16.13` to `16.14` and running both through `normalise_dump` produces
+byte-identical output, equal to the committed `schema.sql` either way.
+Pinning an exact patch version in `POSTGRES_IMAGE` instead was rejected — a
+schema snapshot should describe the schema, not the tool that dumped it, and
+pinning would force a snapshot regeneration on every security patch.
+
+**Why the `UPDATE_SCHEMA_SNAPSHOT` escape hatch refuses to run under `CI`.**
+The escape hatch exists so a developer can regenerate `schema.sql` locally
+after a real migration change — the whole point of `just schema-snapshot` in
+Step 3 below. Left unguarded, the same branch is also a way for gate 1 to
+stop verifying anything: if `UPDATE_SCHEMA_SNAPSHOT` were ever ambiently `"1"`
+in an automated environment — a copy-paste error in a future workflow, a
+leaked variable, a stray `.env` — the test would silently rewrite the
+committed file to match whatever the migrations currently produce and report
+a pass, rather than checking anything. Latent today, because this repository
+has no `.github/workflows` yet (those arrive in M5), but cheap to close
+before CI exists rather than after. The fix fails loudly instead of falling
+through: `CI=1 UPDATE_SCHEMA_SNAPSHOT=1` now raises `pytest.fail` with a
+message pointing back at `just schema-snapshot`, confirmed against all four
+combinations of the two variables — neither set (the ordinary comparison),
+`UPDATE_SCHEMA_SNAPSHOT` alone (still regenerates), `CI` alone (unaffected,
+since the check is nested inside the `UPDATE_SCHEMA_SNAPSHOT` branch), and
+both set together (fails loudly, `schema.sql` left untouched).
+
 - [ ] **Step 2: Run the gates and watch gate 1 fail**
 
 ```bash
@@ -3039,7 +3106,8 @@ just schema-snapshot
 Expected: `schema.sql` appears. Read it. It should contain `CREATE TABLE
 public.orders`, `CREATE TABLE public.order_lines`, `CREATE TABLE
 public.schema_migrations`, the two primary keys, the foreign key with `ON DELETE
-CASCADE`, and the three named check constraints — and **no `\restrict` line**.
+CASCADE`, and the three named check constraints — and **no `\restrict` line and
+no `-- Dumped ... version ...` line**.
 
 - [ ] **Step 5: Run the gates again**
 

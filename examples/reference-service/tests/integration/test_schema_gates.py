@@ -11,6 +11,7 @@ import os
 import re
 from pathlib import Path
 
+import pytest
 from testcontainers.community.postgres import PostgresContainer
 
 from tests.integration.conftest import MigrateRunner
@@ -26,9 +27,26 @@ SCHEMA_FILE = Path(__file__).resolve().parents[2] / "schema.sql"
 # on every run and reads as drift that is not there.
 _DUMP_NONCE = re.compile(r"^\\(?:un)?restrict .*$", re.MULTILINE)
 
+# pg_dump also stamps its header with the exact versions it ran as:
+#     -- Dumped from database version 16.13
+#     -- Dumped by pg_dump version 16.13
+# conftest.py pins POSTGRES_IMAGE to the floating tag "postgres:16-alpine",
+# so the next routine point release (16.13 -> 16.14) moves this line on
+# whichever machine or CI runner next repulls the image, with no migration
+# having changed. The same class of problem as the nonce above -- a false
+# drift signal that looks exactly like a real one -- gets the same
+# treatment: stripped, rather than worked around by pinning an exact patch
+# version. A schema snapshot should describe the schema, not the tool that
+# dumped it.
+_DUMP_VERSION_BANNER = re.compile(
+    r"^-- Dumped (?:from database|by pg_dump) version .*\n?", re.MULTILINE
+)
+
 
 def normalise_dump(dump: str) -> str:
-    return _DUMP_NONCE.sub("", dump).strip() + "\n"
+    dump = _DUMP_NONCE.sub("", dump)
+    dump = _DUMP_VERSION_BANNER.sub("", dump)
+    return dump.strip() + "\n"
 
 
 def dump_schema(container: PostgresContainer) -> str:
@@ -68,6 +86,13 @@ def test_gate_1_the_committed_schema_matches_the_migrations(
     actual = dump_schema(migrated_database)
 
     if os.environ.get("UPDATE_SCHEMA_SNAPSHOT") == "1":
+        if os.environ.get("CI"):
+            pytest.fail(
+                "UPDATE_SCHEMA_SNAPSHOT must not be set in CI: it rewrites the "
+                "committed snapshot instead of checking it, which turns this "
+                "gate into a no-op that always passes. Regenerate locally with "
+                "`just schema-snapshot` and commit the result."
+            )
         SCHEMA_FILE.write_text(actual)
         return
 
