@@ -69,7 +69,7 @@ object storage, release automation, and supply-chain scanning.
 
 ## Documentation
 
-| | |
+| Page | What it covers |
 | --- | --- |
 | [Getting started](https://emadmokhtar.github.io/pyfr/getting-started/) | Run the reference service and place an order |
 | [Add an endpoint](https://emadmokhtar.github.io/pyfr/guides/add-an-endpoint/) | Build a feature through all four layers |
