@@ -14,8 +14,17 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 import structlog
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.domain.repositories import OrderRepository
+from reference_service.infrastructure.db.engine import (
+    build_engine,
+    build_sessionmaker,
+)
+from reference_service.infrastructure.db.order_repository import (
+    PostgresOrderRepository,
+)
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
@@ -92,14 +101,46 @@ class ReadinessRegistry:
 class Container:
     settings: Settings
     orders: OrderRepository
+    # None when no database is configured. Held only so close_container can
+    # dispose the pool at shutdown; nothing else reaches for it.
+    engine: AsyncEngine | None = None
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
 
 
 def build_container(settings: Settings) -> Container:
-    return Container(settings=settings, orders=InMemoryOrderRepository())
+    if settings.database is None:
+        # No database configured: the in-memory adapter, and no readiness
+        # check, because there is no dependency to report on.
+        return Container(settings=settings, orders=InMemoryOrderRepository())
+
+    engine = build_engine(settings.database)
+    container = Container(
+        settings=settings,
+        orders=PostgresOrderRepository(build_sessionmaker(engine)),
+        engine=engine,
+    )
+
+    async def database_is_reachable() -> None:
+        # Deliberately trivial. /readyz answers "can this process reach its
+        # dependencies", not "is the schema correct" — a readiness probe that
+        # runs a real query turns a slow database into an unready pod and takes
+        # the service out of rotation for a problem it could have served
+        # through. ReadinessRegistry.run bounds this with its own timeout and
+        # reports only the exception TYPE, so a connection string in a driver's
+        # error message never reaches the response body.
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+
+    container.readiness.register("database", database_is_reachable)
+    return container
 
 
 async def close_container(container: Container) -> None:
-    """Release resources. Nothing to close in M0; M1 closes the database pool."""
-    return None
+    """Release resources. Runs after in-flight requests finish."""
+    if container.engine is not None:
+        # Closes every pooled connection. Without this, shutdown leaves
+        # connections open until the server times them out, and a rolling
+        # deployment can exhaust the database's connection limit with the
+        # sockets of pods that have already stopped serving.
+        await container.engine.dispose()
