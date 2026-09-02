@@ -145,6 +145,8 @@ It is at `/otel-lgtm/prometheus/promtool`. Both `promtool check rules` (syntax) 
 **14. Python runtime metrics come from `opentelemetry-instrumentation-system-metrics`, and its default config is wrong for us.**
 Instrumented with defaults it emits ~30 metrics including *both* the current names (`cpython.gc.collections`, `process.memory.usage`, `process.thread.count`) and the deprecated `process.runtime.cpython.*` duplicates of the same numbers, plus whole-host `system.*` series that describe the developer's laptop rather than the service. Pass an explicit `config` dict to select only what dashboard 3 needs. The exact keys accepted are `process.cpu.time`, `process.cpu.utilization`, `process.memory.usage`, `process.memory.virtual`, `process.open_file_descriptor.count`, `process.thread.count`, `cpython.gc.collections`, `cpython.gc.collected_objects`, `cpython.gc.uncollectable_objects`.
 
+One trap inside the trap: **`process.cpu.utilization` is emitted with no attributes at all**, so its `["user", "system"]` config value is accepted and then silently ignored. A dashboard panel doing `sum by (type)` over it collapses to a single unlabelled series with an empty legend. The instrument that genuinely carries `type=user` / `type=system` is `process.cpu.time`, which is what the config selects and what the runtime dashboard queries.
+
 ---
 
 ## File Structure
@@ -154,9 +156,9 @@ examples/reference-service/
   ops/                                          NEW — everything mounted into the stack
     prometheus/
       prometheus.yaml                           replaces the image's own config
+      slo_test.yml                            promtool unit tests for slo.yml
       rules/
         slo.yml                                 recording rules + burn-rate alerts
-        slo_test.yml                            promtool unit tests for slo.yml
     grafana/
       provisioning/
         dashboards/pyfr-dashboards.yaml         points Grafana at the directory below
@@ -196,7 +198,8 @@ examples/reference-service/
   justfile                      MODIFIED — o11y recipes and a rules gate
   .env.example                  MODIFIED — the new variables, with warnings
   .importlinter                 MODIFIED — opentelemetry joins the forbidden list
-  Dockerfile                    MODIFIED — nothing to add; see Task 11's note
+  Dockerfile                    UNCHANGED — the image needs no OTel-specific
+                                  build step; everything is a runtime setting
 
 docs/
   reference/configuration.md    MODIFIED — the new settings
@@ -204,6 +207,9 @@ docs/
   reference/logging.md          MODIFIED — trace_id/span_id join the contract
   reference/observability.md    NEW — the one page M2 owes the site
   roadmap.md                    MODIFIED — M1 and M2 marked done
+
+mkdocs.yml                      MODIFIED — nav entry for the new page
+examples/reference-service/README.md   MODIFIED — points at `just o11y`
 ```
 
 **Why `observability/` gains three modules rather than growing `logging.py`.** Each has one job and one reason to change: `slo.py` holds numbers a product owner argues about, `otel.py` holds SDK wiring that changes when a library version changes, `metrics.py` holds instruments that change when someone wants a new panel. Nothing in `slo.py` imports OpenTelemetry, which is what lets the PromQL gate in Task 9 read it without the SDK installed.
@@ -465,6 +471,8 @@ Create `tests/unit/test_slo.py`:
 ```python
 """The SLO numbers are only useful if the histogram can express them."""
 
+import pytest
+
 from reference_service.observability.slo import (
     ERROR_BUDGET,
     HTTP_DURATION_BUCKET_BOUNDARIES,
@@ -495,10 +503,14 @@ def test_bucket_boundaries_are_sorted_and_unique() -> None:
 
 
 def test_error_budget_is_the_complement_of_the_target() -> None:
-    assert ERROR_BUDGET == 1.0 - SLO_AVAILABILITY_TARGET
-    # Floating point: 1 - 0.999 is 0.0009999999999999454, not 0.001. The
-    # alert thresholds multiply this by burn rates up to 14.4, so the
-    # module must round it rather than let the drift compound.
+    # pytest.approx, not ==: in binary floating point `1.0 - 0.999` is
+    # 0.0010000000000000009, so an exact comparison against the ROUNDED
+    # constant fails. Asserting both `== 1.0 - target` exactly and
+    # `== 0.001` exactly is self-contradictory — the rounding is the whole
+    # reason the second holds and the first does not.
+    assert ERROR_BUDGET == pytest.approx(1.0 - SLO_AVAILABILITY_TARGET)
+    # The alert thresholds multiply this by burn rates up to 14.4, so the
+    # module rounds it rather than letting the drift compound.
     assert ERROR_BUDGET == 0.001
 
 
@@ -557,7 +569,7 @@ SLO_WINDOW_DAYS = 30
 SLO_LATENCY_THRESHOLD_SECONDS = 0.3
 
 # How much failure the objective permits. Rounded on purpose: 1 - 0.999
-# is 0.0009999999999999454 in binary floating point, and the burn-rate
+# is 0.0010000000000000009 in binary floating point, and the burn-rate
 # alerts multiply this by up to 14.4, so the drift would show up in the
 # rendered alert thresholds.
 ERROR_BUDGET = round(1.0 - SLO_AVAILABILITY_TARGET, 10)
@@ -821,7 +833,11 @@ from opentelemetry.sdk.metrics.export import (
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExporter,
+)
 from opentelemetry.sdk.trace.sampling import ParentBased, Sampler, TraceIdRatioBased
 
 from reference_service.observability.slo import HTTP_DURATION_BUCKET_BOUNDARIES
@@ -967,10 +983,23 @@ def build_providers(
         resource=resource, sampler=build_sampler(settings.otel.sample_ratio)
     )
     tracer_provider.add_span_processor(
-        BatchSpanProcessor(
-            span_exporter
-            if span_exporter is not None
-            else OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
+        # SimpleSpanProcessor when an exporter is injected, Batch otherwise.
+        # This is not a cosmetic difference. BatchSpanProcessor exports on
+        # its own background timer, so a test that makes a request and then
+        # reads the exporter sees NOTHING — verified: 0 spans before a
+        # force_flush, 3 after. Two kinds of test break on that, and the
+        # second kind is worse than the first: a test asserting a span EXISTS
+        # fails loudly, but a test asserting NO span exists (the health
+        # endpoint exclusion in Task 4) passes vacuously and can never fail,
+        # shipping as coverage that checks nothing.
+        #
+        # The injection argument exists only for tests, so binding it to a
+        # synchronous processor keeps that trap shut by construction rather
+        # than relying on every future test author to remember a flush.
+        SimpleSpanProcessor(span_exporter)
+        if span_exporter is not None
+        else BatchSpanProcessor(
+            OTLPSpanExporter(endpoint=endpoint, insecure=insecure)
         )
     )
 
@@ -1208,6 +1237,12 @@ def test_health_endpoints_produce_no_spans(
     Same exclusion the access log already applies, for the same reason:
     left in, probe traffic is most of what the backend stores and most of
     what it charges for.
+
+    The real request at the end is load-bearing, not padding. A test that
+    only asserts an absence passes just as happily against an exporter
+    that never receives anything at all — which is exactly what happens
+    with a batching span processor. Proving the exporter WOULD have caught
+    a span is what makes the absence mean something.
     """
     span_exporter, _ = exporters
 
@@ -1215,6 +1250,13 @@ def test_health_endpoints_produce_no_spans(
     instrumented_client.get("/readyz")
 
     assert span_exporter.get_finished_spans() == ()
+
+    instrumented_client.get("/api/v1/orders/does-not-exist")
+
+    assert span_exporter.get_finished_spans(), (
+        "the exporter captured nothing at all, so the assertion above "
+        "proved nothing"
+    )
 
 
 def test_create_app_leaves_the_app_uninstrumented_when_otel_is_off(
@@ -1545,7 +1587,6 @@ def test_a_record_inside_a_span_carries_the_trace_and_span_ids(
     trace in Tempo you can pivot straight to the log lines that request
     produced, and given an alarming log line you can pivot to its trace.
     """
-    from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
 
     configure_logging(environment="production", level="info", levels={})
@@ -1585,7 +1626,6 @@ def test_a_standard_library_record_inside_a_span_is_correlated_too(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """uvicorn and SQLAlchemy lines must be pivotable, not just ours."""
-    from opentelemetry import trace
     from opentelemetry.sdk.trace import TracerProvider
 
     configure_logging(environment="production", level="info", levels={})
@@ -1852,9 +1892,15 @@ and before the per-logger levels loop — add:
         # LoggingHandler from the active span; the copies inside the JSON
         # body come from _add_otel_context and are for whoever reads the
         # body directly.
-        otlp_handler = LoggingHandler(
-            level=level.upper(), logger_provider=logger_provider
-        )
+        # No `level=` argument, deliberately. The stdout handler above sets
+        # none either, so both legs pass whatever their LOGGER allowed and
+        # the per-logger `levels` mapping below governs both identically.
+        # Pinning this handler to the global level would silently drop the
+        # records that mapping exists to let through — set
+        # APP_LOG__LEVELS='{"sqlalchemy.engine":"debug"}' under a global
+        # `info` and those lines would reach stdout but never OTLP,
+        # contradicting this function's "one pipeline for every record".
+        otlp_handler = LoggingHandler(logger_provider=logger_provider)
         otlp_handler.setFormatter(
             structlog.stdlib.ProcessorFormatter(
                 foreign_pre_chain=shared,
@@ -1945,15 +1991,26 @@ from reference_service.observability.otel import OtelRuntime, build_views
 def _uninstrument_system_metrics() -> Iterator[None]:
     """SystemMetricsInstrumentor is a process-wide singleton.
 
-    Left instrumented, the second test in this module gets
-    "Attempting to instrument while already instrumented" and its meter
-    provider never receives the process metrics.
+    Left instrumented, the next instrument() call hits the
+    already-instrumented guard, which logs a warning and returns None —
+    so that meter provider silently never receives the process metrics.
+
+    Guards BEFORE the test as well as after. Teardown alone only protects
+    against state this module created; pytest collects in path order, so
+    an EARLIER module that ran a lifespan with telemetry on would leave
+    the singleton instrumented and make the first test here fail with a
+    misleading "process.memory.usage not in names".
+
+    Note that the already-instrumented case is a standard-library
+    `logging` warning, not `warnings.warn`, so `filterwarnings = ["error"]`
+    gives no protection here at all — hence an explicit fixture.
     """
-    yield
     from opentelemetry.instrumentation.system_metrics import (
         SystemMetricsInstrumentor,
     )
 
+    SystemMetricsInstrumentor().uninstrument()
+    yield
     SystemMetricsInstrumentor().uninstrument()
 
 
@@ -2153,12 +2210,16 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
 
+import structlog
 from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
 from opentelemetry.metrics import CallbackOptions, Meter, Observation
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.observability.otel import OtelRuntime
+
+_logger = structlog.get_logger(__name__)
 
 METER_NAME = "reference_service.runtime"
 
@@ -2176,7 +2237,13 @@ DEFAULT_EVENT_LOOP_PROBE_INTERVAL_SECONDS = 2.0
 # this service — actively misleading in a container, where the host is
 # shared with everything else on the node.
 _PROCESS_METRICS_CONFIG: dict[str, list[str] | None] = {
-    "process.cpu.utilization": ["user", "system"],
+    # `process.cpu.time`, not `process.cpu.utilization`. Verified against a
+    # live stack: utilization is emitted with NO attributes at all — the
+    # ["user", "system"] value is accepted for that key and then ignored —
+    # so a panel doing `sum by (type)` over it collapses to one unlabelled
+    # series with an empty legend. process.cpu.time genuinely does carry
+    # `type=user` / `type=system`.
+    "process.cpu.time": ["user", "system"],
     "process.memory.usage": None,
     "process.memory.virtual": None,
     "process.open_file_descriptor.count": None,
@@ -2189,12 +2256,20 @@ _PROCESS_METRICS_CONFIG: dict[str, list[str] | None] = {
 
 @dataclass
 class RuntimeMetrics:
-    """Handle for the one thing here that needs stopping."""
+    """Handle for the things here that need stopping."""
 
     probe_task: asyncio.Task[None] | None
+    # Held so stop() can undo instrument(). SystemMetricsInstrumentor is a
+    # process-wide singleton: instrument it and never undo it, and the
+    # SECOND application built in the same process hits the
+    # already-instrumented guard, which logs a warning and returns None.
+    # No exception, no failure — just no process or garbage-collection
+    # metrics for the rest of the process. That bites any test suite that
+    # runs more than one lifespan, and production on an in-process restart.
+    instrumentor: SystemMetricsInstrumentor | None = None
 
     async def stop(self) -> None:
-        """Cancel the probe and wait for it to actually finish.
+        """Cancel the probe, report why it died if it did, and uninstrument.
 
         Awaiting the cancellation rather than firing and forgetting is
         what makes shutdown deterministic: an un-awaited cancelled task
@@ -2203,15 +2278,34 @@ class RuntimeMetrics:
         in exactly the logs someone is reading to find out why shutdown
         went wrong. Safe to call twice; lifespan's finally block may run
         after a startup that already failed.
+
+        `asyncio.wait` rather than `await self.probe_task` inside a
+        `try/except CancelledError`. That pattern catches the child's
+        cancellation, but it also swallows an OUTER one: if shutdown is
+        itself being cancelled — a lifespan timeout, an enclosing
+        `asyncio.timeout` — that CancelledError is delivered to THIS task
+        and then discarded, so the enclosing deadline never takes effect.
+        `wait` re-raises neither the child's cancellation nor its
+        exception, which is what lets the outcome be inspected explicitly
+        below instead of guessed at.
         """
-        if self.probe_task is None or self.probe_task.done():
-            return
-        self.probe_task.cancel()
-        try:
-            await self.probe_task
-        except asyncio.CancelledError:
-            # Ours, and expected: we asked for it one line above.
-            pass
+        if self.probe_task is not None:
+            self.probe_task.cancel()
+            await asyncio.wait([self.probe_task])
+            if not self.probe_task.cancelled():
+                # The task finished on its own, which for an infinite loop
+                # means it raised. Retrieving the exception is also what
+                # stops asyncio logging "Task exception was never
+                # retrieved" from a garbage collector much later, detached
+                # from anything that explains it.
+                error = self.probe_task.exception()
+                if error is not None:
+                    _logger.error("event_loop.lag.probe_died", exc_info=error)
+            self.probe_task = None
+
+        if self.instrumentor is not None:
+            self.instrumentor.uninstrument()
+            self.instrumentor = None
 
 
 def _register_service_info(meter: Meter, service_version: str) -> None:
@@ -2296,10 +2390,22 @@ async def _probe_event_loop_lag(histogram: Any, interval_seconds: float) -> None
         started = loop.time()
         await asyncio.sleep(interval_seconds)
         lag = loop.time() - started - interval_seconds
-        # Clamped: a clock adjustment can make this microscopically
-        # negative, and a negative observation on a histogram is an error
-        # the SDK logs rather than a number anyone can use.
-        histogram.record(max(lag, 0.0))
+        try:
+            # Clamped: a clock adjustment can make this microscopically
+            # negative, and a negative observation on a histogram is an
+            # error the SDK logs rather than a number anyone can use.
+            histogram.record(max(lag, 0.0))
+        except Exception:
+            # Without this the coroutine ends at the first failed record
+            # and the task stays done() forever. The symptom is the worst
+            # kind in this milestone: `event_loop.lag` simply stops
+            # producing points, the panel reads "No data", and a dead
+            # detector is indistinguishable from a healthy event loop.
+            #
+            # `except Exception` and not `BaseException`: CancelledError is
+            # a BaseException, so an ordinary shutdown still cancels this
+            # loop rather than being caught and logged here.
+            _logger.warning("event_loop.lag.record_failed", exc_info=True)
 
 
 def register_runtime_metrics(
@@ -2322,9 +2428,8 @@ def register_runtime_metrics(
     if engine is not None:
         _register_pool_metrics(meter, engine)
 
-    SystemMetricsInstrumentor(config=_PROCESS_METRICS_CONFIG).instrument(
-        meter_provider=runtime.meter_provider
-    )
+    instrumentor = SystemMetricsInstrumentor(config=_PROCESS_METRICS_CONFIG)
+    instrumentor.instrument(meter_provider=runtime.meter_provider)
 
     lag = meter.create_histogram(
         "event_loop.lag",
@@ -2335,13 +2440,18 @@ def register_runtime_metrics(
         probe_task=asyncio.create_task(
             _probe_event_loop_lag(lag, event_loop_probe_interval_seconds),
             name="event-loop-lag-probe",
-        )
+        ),
+        instrumentor=instrumentor,
     )
 ```
 
-Add `from typing import Any` to the imports for `_probe_event_loop_lag`'s
-histogram parameter — the SDK's `Histogram` type is not exported in a form
-mypy accepts cleanly here, and this module is outside the strict-mypy set.
+`Any` types `_probe_event_loop_lag`'s histogram parameter: the SDK's
+`Histogram` type is not exported in a form mypy accepts cleanly here, and
+this module is outside the strict-mypy set. Both it and `structlog` are in
+the import block above rather than described in prose — an instruction to
+"also add an import" sitting below a block meant to be copied verbatim is
+an instruction that gets skipped, and the symptom is a mypy failure at the
+end of the task rather than at the line that caused it.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
@@ -2403,7 +2513,7 @@ git commit -m "feat(observability): report pool saturation, event loop lag and s
 **Files:**
 - Create: `examples/reference-service/ops/prometheus/prometheus.yaml`
 - Create: `examples/reference-service/ops/prometheus/rules/slo.yml`
-- Create: `examples/reference-service/ops/prometheus/rules/slo_test.yml`
+- Create: `examples/reference-service/ops/prometheus/slo_test.yml`
 - Test: `examples/reference-service/tests/unit/test_slo_rules.py`
 
 **Interfaces:**
@@ -2448,6 +2558,21 @@ storage:
     out_of_order_time_window: 10m
 
 rule_files:
+  # A GLOB, so nothing that is not a rules file may live in that directory.
+  # This is not a style preference: promtool's test files use a completely
+  # different schema (top-level `tests:`, `evaluation_interval:`, and a
+  # `rule_files:` of their own), and Prometheus REFUSES TO START when the
+  # glob picks one up. Verified against grafana/otel-lgtm:0.11.11 with
+  # slo_test.yml in this directory — every other component reported "up and
+  # running" and Prometheus alone died with:
+  #
+  #   parse rules from file "/otel-lgtm/rules/slo_test.yml"
+  #     (pattern: "/otel-lgtm/rules/*.yml"): yaml: unmarshal errors:
+  #     field rule_files not found in type rulefmt.RuleGroups
+  #     field evaluation_interval not found in type rulefmt.RuleGroups
+  #     field tests not found in type rulefmt.RuleGroups
+  #
+  # which is why ops/prometheus/slo_test.yml sits OUTSIDE rules/.
   - /otel-lgtm/rules/*.yml
 ```
 
@@ -2475,6 +2600,15 @@ Create `ops/prometheus/rules/slo.yml`:
 # without that view this series does not exist and every latency rule
 # below silently evaluates to nothing.
 #
+# The `or <denominator> * 0` in each availability rule is not noise. A
+# service that has never returned a 5xx has no
+# http_server_request_duration_seconds_count{http_response_status_code=~"5.."}
+# series at all, and in PromQL an empty vector divided by anything is
+# empty — so a PERFECTLY HEALTHY service would report no availability
+# indicator whatsoever, and the SLO dashboard would read "No data" where
+# it should read 100%. `or` supplies a zero-valued fallback carrying the
+# same `job` label, so the healthy case is 0 rather than absent.
+#
 # /healthz, /readyz and /startupz are excluded from both indicators. An
 # orchestrator probes them every couple of seconds forever; counted, a
 # service serving ten real requests a minute beside eighteen hundred
@@ -2489,19 +2623,31 @@ groups:
     rules:
       - record: job:slo_availability_errors:ratio_rate5m
         expr: |
-          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[5m]))
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[5m]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[5m])) * 0
+          )
           /
           sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[5m]))
 
       - record: job:slo_availability_errors:ratio_rate30m
         expr: |
-          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[30m]))
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[30m]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30m])) * 0
+          )
           /
           sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30m]))
 
       - record: job:slo_availability_errors:ratio_rate1h
         expr: |
-          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[1h]))
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[1h]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[1h])) * 0
+          )
           /
           sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[1h]))
 
@@ -2537,19 +2683,31 @@ groups:
     rules:
       - record: job:slo_availability_errors:ratio_rate6h
         expr: |
-          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[6h]))
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[6h]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[6h])) * 0
+          )
           /
           sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[6h]))
 
       - record: job:slo_availability_errors:ratio_rate3d
         expr: |
-          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[3d]))
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[3d]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[3d])) * 0
+          )
           /
           sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[3d]))
 
       - record: job:slo_availability_errors:ratio_rate30d
         expr: |
-          sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[30d]))
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[30d]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30d])) * 0
+          )
           /
           sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30d]))
 
@@ -2658,6 +2816,23 @@ groups:
             Requests are returning, just not within 300ms. Check saturation
             first: pool usage and event loop lag move before this does.
 
+      - alert: SLOLatencySlowBurn
+        expr: |
+          job:slo_latency_errors:ratio_rate6h > (6 * 0.001)
+          and
+          job:slo_latency_errors:ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: page
+          slo: latency
+        annotations:
+          summary: "{{ $labels.job }} is burning its latency budget 6x too fast"
+          description: >-
+            Sustained slow responses. Present for both indicators on
+            purpose: without it a steady 6x latency burn sits below the
+            fast-burn threshold and only ever raises a ticket, while the
+            same burn on availability pages.
+
       - alert: SLOLatencyBudgetBleed
         expr: |
           job:slo_latency_errors:ratio_rate3d > (1 * 0.001)
@@ -2676,7 +2851,7 @@ groups:
 
 - [ ] **Step 3: Write the `promtool` rule unit tests**
 
-Create `ops/prometheus/rules/slo_test.yml`:
+Create `ops/prometheus/slo_test.yml`:
 
 ```yaml
 ---
@@ -2688,8 +2863,9 @@ Create `ops/prometheus/rules/slo_test.yml`:
 # notice if a future edit dropped it, and the symptom would be an
 # objective that reports 99.99% forever while users see failures.
 
+# Deliberately relative to THIS file, which sits one level above rules/.
 rule_files:
-  - slo.yml
+  - rules/slo.yml
 
 evaluation_interval: 1m
 
@@ -2711,6 +2887,23 @@ tests:
         exp_samples:
           - labels: 'job:slo_availability_errors:ratio_rate5m{job="reference-service"}'
             value: 0.1
+
+  # A service with no 5xx at all must report 0, not nothing. Without the
+  # `or <denominator> * 0` in the availability rules this test fails with
+  # "expected 1 result, got 0" — the healthy case produces an EMPTY vector
+  # rather than a zero, and the SLO dashboard reads "No data" for a service
+  # that is behaving perfectly.
+  - interval: 1m
+    name: a service with no errors reports zero, not nothing
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200"}'
+        values: "0+10x20"
+    promql_expr_test:
+      - expr: job:slo_availability_errors:ratio_rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'job:slo_availability_errors:ratio_rate5m{job="reference-service"}'
+            value: 0
 
   # Every request slower than the threshold: the latency indicator must
   # read 100% bad, not 0%. Gets the direction of the `1 - (...)` right.
@@ -2771,12 +2964,15 @@ tests:
 Run:
 
 ```bash
-cd examples/reference-service && docker run --rm -v "$PWD/ops/prometheus/rules:/rules" \
+cd examples/reference-service && docker run --rm -v "$PWD/ops/prometheus:/p" \
   --entrypoint sh grafana/otel-lgtm:0.11.11 \
-  -c 'cd /rules && /otel-lgtm/prometheus/promtool check rules slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
+  -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
 ```
 
-Expected: `SUCCESS: 17 rules found` then `SUCCESS` for the tests.
+The whole `ops/prometheus` directory is mounted, not just `rules/`, because
+the test file now sits above it and refers to `rules/slo.yml` relatively.
+
+Expected: `SUCCESS: 18 rules found` then `SUCCESS` for the tests.
 
 If the alert test fails on annotation text, `promtool` compares the
 *rendered* string. Copy the exact rendering out of the failure message
@@ -2830,10 +3026,12 @@ def _expressions(rules: list[dict[str, Any]]) -> list[str]:
 
 
 def test_the_rules_file_is_where_this_test_thinks_it_is() -> None:
-    """Guards the other tests: a moved file must fail loudly, not vacuously.
+    """Names the problem when ops/ moves.
 
-    Without this, relocating ops/ makes `rules` an empty list and every
-    assertion below passes by having nothing to check.
+    Without it a relocated file still fails every test in this module, but
+    as a `FileNotFoundError` raised inside the fixture — six errors whose
+    message is a path, rather than one assertion that says the rules file
+    is not where the gate expects it.
     """
     assert RULES_FILE.is_file(), f"{RULES_FILE} not found"
 
@@ -2855,6 +3053,19 @@ def test_every_latency_bucket_matcher_uses_the_python_threshold(
 
     assert found, "no le= matcher found at all; the latency rules are missing"
     assert set(found) == {SLO_LATENCY_THRESHOLD_SECONDS}
+
+    # Set equality alone is satisfied by ONE surviving matcher, so five of
+    # the six latency rules could lose theirs and this would still pass.
+    # A latency rule without `le=` sums every bucket, making the ratio far
+    # greater than 1 and the reported "error" fraction negative.
+    latency_rules = [
+        rule for rule in rules if "latency" in rule.get("record", "")
+    ]
+    assert len(latency_rules) == 6, f"expected 6 latency rules, got {len(latency_rules)}"
+    for rule in latency_rules:
+        assert rule["expr"].count('le="') == 1, (
+            f"{rule['record']} has no le= bucket matcher"
+        )
 
 
 def test_every_burn_rate_threshold_uses_the_python_error_budget(
@@ -2890,9 +3101,16 @@ def test_every_sli_rule_excludes_the_health_endpoints(
 
     assert recording_rules, "no recording rules found"
     for rule in recording_rules:
-        assert f'http_route!~"{pattern}"' in rule["expr"], (
-            f"{rule['record']} does not exclude the health endpoints"
-        )
+        expression = rule["expr"]
+        # EVERY rate() over the request counter must carry the exclusion,
+        # not merely one of them. `in` alone would accept a rule that had
+        # lost the matcher from its DENOMINATOR, which is the dangerous
+        # direction: probe traffic then inflates the denominator and the
+        # error ratio collapses towards zero, reporting a healthy
+        # objective for a service failing every real request.
+        assert expression.count("rate(") == expression.count(
+            f'http_route!~"{pattern}"'
+        ), f"{rule['record']}: not every rate() excludes the health endpoints"
 
 
 def test_every_window_an_alert_uses_has_a_recording_rule(
@@ -2916,6 +3134,26 @@ def test_every_window_an_alert_uses_has_a_recording_rule(
     assert referenced <= recorded, f"alerts reference missing rules: {referenced - recorded}"
 
 
+def test_each_rule_name_matches_the_window_in_its_expression(
+    rules: list[dict[str, Any]],
+) -> None:
+    """`ratio_rate5m` computing a `[1h]` rate would pass every other gate.
+
+    Nothing else here reads the range inside the expression, and no
+    promtool test would catch it either: the tests assert ratios, and a
+    ratio does not change when the window does. It is the same class of
+    silent divergence this whole file exists to close.
+    """
+    for rule in rules:
+        if "record" not in rule:
+            continue
+        window = rule["record"].rsplit("ratio_rate", 1)[1]
+        ranges = set(re.findall(r"\[(\w+)\]", rule["expr"]))
+        assert ranges == {window}, (
+            f"{rule['record']} computes {ranges} rather than [{window}]"
+        )
+
+
 def test_both_indicators_are_alerted_on(rules: list[dict[str, Any]]) -> None:
     """Spec 7.5 names two indicators; two objectives need two alerts."""
     slos = {rule["labels"]["slo"] for rule in rules if "alert" in rule}
@@ -2926,7 +3164,7 @@ def test_both_indicators_are_alerted_on(rules: list[dict[str, Any]]) -> None:
 - [ ] **Step 6: Run the gate**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_slo_rules.py -v`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 Then prove the gate actually bites: temporarily change
 `SLO_LATENCY_THRESHOLD_SECONDS` to `0.5`, re-run, and confirm
@@ -3001,7 +3239,8 @@ this plan was written and should match:
 | `event_loop.lag` | `event_loop_lag_seconds_bucket` / `_count` / `_sum` |
 | `process.memory.usage` | `process_memory_usage_bytes` |
 | `process.thread.count` | `process_thread_count` |
-| `cpython.gc.collections` | `cpython_gc_collections_total` |
+| `cpython.gc.collections` | `cpython_gc_collections_total` (carries `generation`) |
+| `process.cpu.time` | `process_cpu_time_seconds_total` (carries `type`) |
 
 If any row disagrees with what the command printed, **the command wins** —
 correct the dashboard, and correct this table in the plan so the next
@@ -3249,6 +3488,14 @@ Same skeleton — copy the `templating`, `annotations`, `timezone`,
 | 6 | `timeseries` | Latency burn rate | 8,12,12,6 | `short` | A: `job:slo_latency_errors:ratio_rate1h{job="$service"} / 0.001` legend `1h`; B: `job:slo_latency_errors:ratio_rate5m{job="$service"} / 0.001` legend `5m` | same thresholds |
 | 7 | `timeseries` | 30-day trend | 8,24,0,14 | `percentunit` | A: `1 - job:slo_availability_errors:ratio_rate30d{job="$service"}` legend `availability`; B: `1 - job:slo_latency_errors:ratio_rate30d{job="$service"}` legend `latency` | `min` 0.99, so the interesting range is not squashed against the top of the chart |
 
+**Every panel and every target additionally carries
+`"datasource": { "type": "prometheus", "uid": "prometheus" }`, and targets
+are lettered `refId` `A`, `B`, … exactly as in `service-health.json`.** The
+table lists only what VARIES between panels. Omit the datasource and
+`test_every_panel_targets_the_prometheus_datasource` fails with a bare
+`KeyError` instead of a readable message; omit `refId` and Grafana rejects
+the target.
+
 Give panel 3 and 4 the description: *"How much of the month's error budget
 is left. At zero the objective is missed for this window; the number
 recovers as the window rolls forward."* Give panel 5 and 6: *"1.0 means the
@@ -3268,7 +3515,11 @@ names Step 1 confirmed:
 | 4 | `timeseries` | Uncollectable objects | 8,12,12,8 | `short` | `sum(rate(cpython_gc_uncollectable_objects_total{job="$service"}[$__rate_interval]))` legend `uncollectable` |
 | 5 | `timeseries` | Threads | 8,8,0,16 | `short` | `process_thread_count{job="$service"}` legend `threads` |
 | 6 | `timeseries` | Open file descriptors | 8,8,8,16 | `short` | `process_open_file_descriptor_count{job="$service"}` legend `fds` |
-| 7 | `timeseries` | Process CPU | 8,8,16,16 | `percentunit` | `sum by (type) (process_cpu_utilization_ratio{job="$service"})` legend `{{type}}` |
+| 7 | `timeseries` | Process CPU | 8,8,16,16 | `percentunit` | `sum by (type) (rate(process_cpu_time_seconds_total{job="$service"}[$__rate_interval]))` legend `{{type}}` |
+
+**As in Step 4, every panel and every target additionally carries
+`"datasource": { "type": "prometheus", "uid": "prometheus" }` and a lettered
+`refId`.** The table lists only what varies.
 
 Give panel 4 the description: *"Objects the collector could not free.
 Steadily above zero means a reference cycle holding something the process
@@ -3301,36 +3552,40 @@ DASHBOARD_DIR = (
 EXPECTED_UIDS = {"pyfr-service-health", "pyfr-slo", "pyfr-runtime"}
 
 
-def _dashboards() -> list[tuple[str, dict[str, Any]]]:
-    return [
-        (path.name, json.loads(path.read_text()))
-        for path in sorted(DASHBOARD_DIR.glob("*.json"))
-    ]
+# Parametrise over PATHS, not parsed dictionaries. Two reasons, both real:
+# parametrising over the parsed dict puts the whole ~4KB JSON blob into
+# every test id, which makes `pytest -v` unreadable and `-k` unusable; and
+# parsing at COLLECTION time means one malformed file errors the entire
+# module — including the guard test that would otherwise have named it.
+def _dashboard_paths() -> list[Path]:
+    return sorted(DASHBOARD_DIR.glob("*.json"))
+
+
+def _load(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text())
 
 
 def test_all_three_dashboards_exist() -> None:
     assert DASHBOARD_DIR.is_dir(), f"{DASHBOARD_DIR} not found"
-    assert {dashboard["uid"] for _, dashboard in _dashboards()} == EXPECTED_UIDS
+    assert {_load(path)["uid"] for path in _dashboard_paths()} == EXPECTED_UIDS
 
 
-@pytest.mark.parametrize(("name", "dashboard"), _dashboards(), ids=lambda value: str(value))
-def test_dashboard_has_a_title_and_a_stable_uid(
-    name: str, dashboard: dict[str, Any]
-) -> None:
+@pytest.mark.parametrize("path", _dashboard_paths(), ids=lambda path: path.name)
+def test_dashboard_has_a_title_and_a_stable_uid(path: Path) -> None:
     """The uid is the permalink. Changing it breaks every saved link."""
+    name, dashboard = path.name, _load(path)
     assert dashboard.get("uid"), f"{name} has no uid"
     assert dashboard.get("title"), f"{name} has no title"
 
 
-@pytest.mark.parametrize(("name", "dashboard"), _dashboards(), ids=lambda value: str(value))
-def test_every_panel_targets_the_prometheus_datasource(
-    name: str, dashboard: dict[str, Any]
-) -> None:
+@pytest.mark.parametrize("path", _dashboard_paths(), ids=lambda path: path.name)
+def test_every_panel_targets_the_prometheus_datasource(path: Path) -> None:
     """`prometheus` is the datasource uid grafana/otel-lgtm provisions.
 
     A panel referencing any other uid renders "Datasource not found" —
     which looks like a broken dashboard rather than a broken reference.
     """
+    name, dashboard = path.name, _load(path)
     for panel in dashboard["panels"]:
         assert panel["datasource"]["uid"] == "prometheus", (
             f"{name}: panel {panel['title']!r} points at the wrong datasource"
@@ -3339,13 +3594,12 @@ def test_every_panel_targets_the_prometheus_datasource(
             assert target["datasource"]["uid"] == "prometheus"
 
 
-@pytest.mark.parametrize(("name", "dashboard"), _dashboards(), ids=lambda value: str(value))
-def test_no_panel_hard_codes_the_service_name(
-    name: str, dashboard: dict[str, Any]
-) -> None:
+@pytest.mark.parametrize("path", _dashboard_paths(), ids=lambda path: path.name)
+def test_no_panel_hard_codes_the_service_name(path: Path) -> None:
     """Spec 3.4: these files are copied verbatim into every generated
     project, never rendered. A hard-coded job name would ship every
     generated service a dashboard showing this one."""
+    name, dashboard = path.name, _load(path)
     for panel in dashboard["panels"]:
         for target in panel["targets"]:
             assert "reference-service" not in target["expr"], (
@@ -3353,10 +3607,9 @@ def test_no_panel_hard_codes_the_service_name(
             )
 
 
-@pytest.mark.parametrize(("name", "dashboard"), _dashboards(), ids=lambda value: str(value))
-def test_every_panel_has_a_title_and_at_least_one_target(
-    name: str, dashboard: dict[str, Any]
-) -> None:
+@pytest.mark.parametrize("path", _dashboard_paths(), ids=lambda path: path.name)
+def test_every_panel_has_a_title_and_at_least_one_target(path: Path) -> None:
+    name, dashboard = path.name, _load(path)
     for panel in dashboard["panels"]:
         assert panel.get("title"), f"{name}: a panel has no title"
         assert panel.get("targets"), f"{name}: panel {panel['title']!r} queries nothing"
@@ -3365,7 +3618,8 @@ def test_every_panel_has_a_title_and_at_least_one_target(
 def test_the_service_variable_is_declared_everywhere_it_is_used() -> None:
     """`$service` in a query with no matching variable silently matches
     nothing, and the panel just looks like a service with no traffic."""
-    for name, dashboard in _dashboards():
+    for path in _dashboard_paths():
+        name, dashboard = path.name, _load(path)
         variables = {
             variable["name"] for variable in dashboard["templating"]["list"]
         }
@@ -3419,6 +3673,13 @@ Add this service, and nothing else at the top level:
       - "3000:3000"  # Grafana
       - "4317:4317"  # OTLP over gRPC — what the app exports to
       - "4318:4318"  # OTLP over HTTP
+      # Prometheus. Published for the same reason as the rest — the image
+      # EXPOSEs nothing — and because the integration test in Step 4 queries
+      # /api/v1/rules on it from the host. Verified that Prometheus binds
+      # 0.0.0.0 inside the container, so the mapping is sufficient; without
+      # it there is also no way to run an ad-hoc PromQL query while
+      # developing a dashboard.
+      - "9090:9090"  # Prometheus
     volumes:
       # Replaces the image's own Prometheus config. Its copy has no
       # rule_files key at all, and there is no other way to load rules —
@@ -3483,9 +3744,9 @@ o11y-down:
 # out, which is the only thing standing between a dropped health-endpoint
 # exclusion and an objective that reports 99.99% forever.
 o11y-gates:
-    docker run --rm -v "$PWD/ops/prometheus/rules:/rules" \
+    docker run --rm -v "$PWD/ops/prometheus:/p" \
         --entrypoint sh grafana/otel-lgtm:0.11.11 \
-        -c 'cd /rules && /otel-lgtm/prometheus/promtool check rules slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
+        -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
 ```
 
 Change the `check-all` recipe's dependency list to include it:
@@ -3561,11 +3822,13 @@ def _get_json(url: str) -> Any:
 
 @pytest.fixture(scope="module")
 def stack() -> Iterator[DockerContainer]:
-    """The same image, mounts and ports the o11y compose profile uses.
+    """The same image and mounts the o11y compose profile uses.
 
     Kept in step with compose.yaml by hand. If a mount is added there and
     not here, this test stops covering it — which is why the mounts below
     name the same four paths in the same order as the compose service.
+    Ports are NOT the same: testcontainers maps to random host ports, so
+    they are read back through get_exposed_port rather than fixed.
     """
     container = (
         DockerContainer(LGTM_IMAGE)
@@ -3651,6 +3914,10 @@ def test_a_real_request_reaches_prometheus_with_the_stable_names(
         }
     )
     runtime = build_providers(enabled, "1.2.3")
+    # `settings`, not `enabled`, on purpose. `with TestClient(app)` runs the
+    # lifespan, and an enabled configuration would make create_app build a
+    # SECOND set of providers behind the one just built here and instrument
+    # the app twice. Do not "fix" this to `enabled`.
     app: FastAPI = create_app(settings)
     instrument_fastapi(app, runtime)
 
@@ -3921,8 +4188,10 @@ hardening work, as the exclusions table records.
 **Known gaps left open on purpose.** The dashboards are validated
 structurally and by provisioning successfully, not by asserting that every
 panel returns data — several legitimately return nothing until the stack
-has run for days (the 3-day and 30-day windows). The Prometheus names in
-Task 10's table were confirmed for the HTTP and `service_info` series but
-the process and garbage-collection ones were derived from the documented
-translation rule, which is why Task 10 opens with a step that reads the real
-names off a running stack and says the command wins over the table.
+has run for days (the 3-day and 30-day windows). Every Prometheus name in Task 10's
+table has now been confirmed against a live stack — the HTTP series, the
+process and garbage-collection series, and the three this milestone emits
+itself (`db_client_connection_count`, `db_client_connection_max`,
+`event_loop_lag_seconds_*`). Task 10 still opens with the step that reads
+the names off a running stack, because a table is a claim about one version
+of one image and the command is the truth.
