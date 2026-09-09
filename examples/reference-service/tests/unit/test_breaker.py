@@ -7,6 +7,8 @@ a constructor argument precisely so they are neither.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from reference_service.infrastructure.http.breaker import (
@@ -144,6 +146,63 @@ async def test_a_failed_probe_reopens_immediately() -> None:
     assert breaker.state is BreakerState.OPEN, "the window restarts from the probe"
 
 
+async def test_a_half_open_breaker_admits_only_one_concurrent_probe() -> None:
+    """The trickiest branch in the state machine: two coroutines call()
+    while the breaker is HALF_OPEN. Without the `_probe_in_flight` guard,
+    both would reach the dependency at once — the thundering herd the
+    breaker exists to prevent, delivered exactly when the dependency is
+    most fragile.
+
+    An `asyncio.Event` proves the two calls are genuinely in flight
+    together: the second `call()` is only attempted once the first has
+    provably entered its operation, rather than hoping the scheduler
+    interleaves them the right way by chance.
+    """
+    clock = FakeClock()
+    breaker = make_breaker(clock)
+    for _ in range(3):
+        with pytest.raises(Boom):
+            await breaker.call(fail)
+    clock.advance(30.0)
+    assert breaker.state is BreakerState.HALF_OPEN
+
+    probe_entered = asyncio.Event()
+    release_probe = asyncio.Event()
+    entered_count = 0
+
+    async def blocking_probe() -> str:
+        nonlocal entered_count
+        entered_count += 1
+        probe_entered.set()
+        await release_probe.wait()
+        return "ok"
+
+    async def unreachable() -> str:
+        raise AssertionError("a second probe must never reach the operation")
+
+    async def second_call_while_probe_is_in_flight() -> None:
+        await probe_entered.wait()
+        with pytest.raises(CircuitOpenError):
+            await breaker.call(unreachable)
+        release_probe.set()
+
+    first_result, _ = await asyncio.gather(
+        breaker.call(blocking_probe), second_call_while_probe_is_in_flight()
+    )
+
+    assert first_result == "ok"
+    assert entered_count == 1, "only the first caller may reach the dependency"
+    assert breaker.state is BreakerState.CLOSED
+
+
 async def test_a_threshold_below_one_is_refused() -> None:
     with pytest.raises(ValueError, match="failure_threshold"):
         CircuitBreaker(failure_threshold=0, reset_after_seconds=1.0)
+
+
+async def test_a_non_positive_reset_window_is_refused() -> None:
+    """Mirrors the threshold-validation test above. A regression that
+    weakened `<= 0` to `< 0` would let `reset_after_seconds=0` through,
+    which flips the breaker to HALF_OPEN on the very next call."""
+    with pytest.raises(ValueError, match="reset_after_seconds"):
+        CircuitBreaker(failure_threshold=1, reset_after_seconds=0.0)
