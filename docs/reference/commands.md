@@ -44,7 +44,7 @@ the objectives are defined.
 | Command | What it does |
 | --- | --- |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app. Read the diff before committing it — it is your API change, stated completely. |
-| `just test-contract` | The contract tier: the drift check and generated conformance testing over ASGI. Needs no Docker. |
+| `just test-contract` | The contract tier: generated conformance testing over ASGI (Schemathesis). Needs no Docker. The drift check runs in `just test` / `just check` instead. |
 | `just contract-gates` | `just test-contract`, then the breaking-change check (`oasdiff` against `openapi.baseline.json`, cross-checked against the version in `pyproject.toml`). Needs Docker, for the `oasdiff` image. |
 | `just contract-release` | Promote the current `openapi.json` to the baseline. Run this when cutting a release — never to make a red `contract-gates` pass. |
 

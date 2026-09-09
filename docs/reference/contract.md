@@ -11,8 +11,9 @@ silently.
 
 ## Gate 1 — the file matches the code (drift)
 
-`tests/contract/test_drift.py` renders the OpenAPI document from the live
-app and compares it, byte for byte, against the committed `openapi.json`.
+`tests/unit/test_contract_drift.py` renders the OpenAPI document from the
+live app and compares it, byte for byte, against the committed
+`openapi.json`.
 
 Byte comparison rather than a parsed comparison on purpose: a parsed check
 can only say "these differ", where a byte diff shows up in a pull request as
@@ -25,6 +26,12 @@ file left behind.
 **Fix:** `just openapi` regenerates it from the app. Read the diff before
 you commit it — it is your API change, stated completely, independent of
 what you meant to change.
+
+Lives in `tests/unit/`, and runs in the DEFAULT `just test` / `just check`
+tier, unlike gate 2 below. It builds the app inside the test function, not
+at import time, and calls only the synchronous `.openapi()` — no lifespan,
+no HTTP generation, no Docker — so none of the reasons gate 2 needs its own
+slower, separate tier apply to this one.
 
 ## Gate 2 — the app honours what it publishes (conformance)
 
@@ -107,10 +114,12 @@ version left alone fails the build.
 just contract-gates
 ```
 
-runs gates 1 and 2 (`pytest -m contract`, which covers both
-`test_drift.py` and `test_conformance.py`) and then this script. The script
-half needs Docker, for the oasdiff image, and the committed baseline —
-`just test-contract` alone needs neither.
+runs gate 2 (`pytest -m contract`, `test_conformance.py`) and then this
+script. Gate 1 is deliberately NOT part of `contract-gates` — it already ran
+as part of the default `just test` / `just check` tier, long before this
+command exists to be typed; see gate 1's own section above. The script half
+of `contract-gates` needs Docker, for the oasdiff image, and the committed
+baseline — `just test-contract` alone needs neither.
 
 `openapi.baseline.json` moves only at a release, never to silence a red
 gate:

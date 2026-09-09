@@ -2,9 +2,9 @@
 
 Over ASGI, in-process: no server, no socket, no network. The schema is
 read from the live app rather than from the committed openapi.json on
-purpose — test_drift.py already proves those two are identical, and
-reading the app means a failure here is never explained away as "the file
-is stale".
+purpose — tests/unit/test_contract_drift.py already proves those two are
+identical, and reading the app means a failure here is never explained
+away as "the file is stale".
 """
 
 from __future__ import annotations
@@ -16,8 +16,33 @@ import schemathesis
 from schemathesis.python.asgi import shutdown_lifespans
 
 from reference_service.main import create_app
+from reference_service.settings import Settings
+from tests.conftest import no_app_env_vars
 
-app = create_app()
+# `no_app_env_vars()` around an explicit, environment-free `Settings`,
+# never a bare `create_app()`. This module calls `create_app()` at IMPORT
+# time, before any fixture runs — including the session-scoped
+# `_no_developer_app_env_vars` fixture in tests/conftest.py, which strips
+# `APP_*` from the environment but only takes effect once pytest starts
+# running fixtures, well after collection has already imported this
+# module. A bare `create_app()` therefore calls `load_settings()`, which
+# reads `.env` and every `APP_*` variable already in the process
+# environment. Measured: with `APP_PAYMENT__BASE_URL` set — exactly what
+# `.env.example` and `compose.yaml` both encourage a developer to set —
+# Schemathesis generated a request that reached the real network and
+# failed after two `stamina.retry_scheduled` attempts and a
+# `ConnectError`, in direct violation of "no outbound request in a test
+# ever reaches the network."
+#
+# `Settings(_env_file=None)` ALONE does not fix this: it only stops
+# `Settings` reading a `.env` FILE, and pydantic-settings' environment-
+# variable source still reads `os.environ` regardless — confirmed
+# directly, `APP_PAYMENT__BASE_URL` still populated `settings.payment`
+# with that argument alone and nothing else. `no_app_env_vars()` is what
+# actually empties the `APP_*` namespace before `Settings` ever looks at
+# it; see its docstring in tests/conftest.py.
+with no_app_env_vars():
+    app = create_app(Settings(_env_file=None))  # type: ignore[call-arg]
 
 
 # `from_asgi` below starts the app's ASGI lifespan (real requests through a

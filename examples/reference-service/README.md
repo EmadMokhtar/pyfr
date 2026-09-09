@@ -52,7 +52,7 @@ is not there yet.
 | `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — what CI will run at M5, and what to run before a pull request that touches the schema, the adapter, the API contract, or observability |
 | `just up` / `just down` | Start / stop the container stack |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
-| `just test-contract` | The contract tier: the drift check and Schemathesis conformance testing over ASGI — see [Contract governance](#contract-governance) |
+| `just test-contract` | The contract tier: Schemathesis conformance testing over ASGI. The drift check runs in `just test` / `just check` instead — see [Contract governance](#contract-governance) |
 | `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |
 | `just contract-release` | Promote `openapi.json` to the baseline. Only at a release — never to silence a red `contract-gates` |
 | `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub — see [Outbound payments](#outbound-payments) |
@@ -71,7 +71,8 @@ is not there yet.
 
 ## Contract governance
 
-`openapi.json` is committed at the repository root, generated from the code
+`openapi.json` is committed at this service's own root (not the repository
+root — `examples/reference-service/openapi.json`), generated from the code
 and never hand-edited. Three gates keep it honest: a byte-for-byte drift
 check against the code, generated conformance testing against the running
 app (Schemathesis, over ASGI — no server, no socket), and a breaking-change
@@ -79,10 +80,14 @@ check (`oasdiff`) cross-checked against the version in `pyproject.toml`.
 
 ```
 just openapi           regenerate the contract from the code — read the diff before committing
-just test-contract     the drift check and conformance testing — no Docker needed
+just test-contract     conformance testing — no Docker needed
 just contract-gates    test-contract, plus the breaking-change check — needs Docker
 just contract-release  promote the current contract to the baseline — only at a release
 ```
+
+The drift check itself is not in this list: it needs no Docker and no
+generation, so it runs as an ordinary test in `just test` / `just check`
+instead — see `tests/unit/test_contract_drift.py`.
 
 Writing the conformance gate against code that already existed found five
 real defects — three of the service's own error responses silently

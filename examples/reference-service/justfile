@@ -28,10 +28,21 @@ test:
 # somebody else's response, so anything secret in it becomes public with
 # the repository. vcr_config's filter_headers strips the credential
 # headers we know about; a new upstream means a new entry there.
+#
+# A `#!`-shebang recipe, not three plain lines: a plain-line recipe stops
+# at the first failing line, so if pytest below failed, `docker compose
+# stop payment-stub` was never reached and the stub stayed running. `set
+# -euo pipefail` keeps that same "stop on failure" behaviour for genuine
+# script errors, and `trap ... EXIT` is what makes the stub stop
+# regardless — on a pytest failure, on success, or on Ctrl-C. `--wait`
+# added to `up -d` makes this wait for the healthcheck in compose.yaml
+# instead of racing WireMock's boot with the first recorded request.
 test-record:
-    docker compose up -d payment-stub
+    #!/usr/bin/env bash
+    set -euo pipefail
+    docker compose up -d --wait payment-stub
+    trap 'docker compose stop payment-stub' EXIT
     uv run pytest tests/recorded --record-mode=once
-    docker compose stop payment-stub
 
 # The container-backed tier. Needs a running Docker daemon; `just test` does not.
 test-integration:
@@ -115,8 +126,11 @@ mutants-gate: mutants
 test-all:
     uv run pytest -m ''
 
-# The two contract gates that need Docker or the committed baseline.
-# `test-contract` (Schemathesis) and the drift gate run without either.
+# Schemathesis conformance (`pytest -m contract`, no Docker) plus the
+# breaking-change gate against the committed baseline (needs Docker, for
+# the oasdiff image). The drift gate needs neither and does NOT run here:
+# it lives in the default `just test` / `just check` tier instead — see
+# tests/unit/test_contract_drift.py for why.
 contract-gates:
     uv run pytest -m contract
     uv run python scripts/check_contract_compatibility.py
@@ -131,7 +145,7 @@ contract-release:
 # Regenerate the committed contract from the code, then commit the result.
 # Read the diff before you do: it is your API change, in full.
 openapi:
-    uv run python -c "from tests.contract.test_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
+    uv run python -c "from tests.unit.test_contract_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
 
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
