@@ -79,7 +79,10 @@
             "uid": "prometheus"
           },
           "expr": "process_memory_usage_bytes{job=\"$service\"}",
-          "legendFormat": "rss"
+          "legendFormat": "rss",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     },
@@ -110,7 +113,10 @@
             "uid": "prometheus"
           },
           "expr": "process_memory_virtual_bytes{job=\"$service\"}",
-          "legendFormat": "vms"
+          "legendFormat": "vms",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     },
@@ -141,7 +147,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (generation) (rate(cpython_gc_collections_total{job=\"$service\"}[$__rate_interval]))",
-          "legendFormat": "gen {{generation}}"
+          "legendFormat": "gen {{generation}}",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     },
@@ -172,7 +181,10 @@
             "uid": "prometheus"
           },
           "expr": "sum(rate(cpython_gc_uncollectable_objects_total{job=\"$service\"}[$__rate_interval]))",
-          "legendFormat": "uncollectable"
+          "legendFormat": "uncollectable",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ],
       "description": "Objects the collector could not free. Steadily above zero means a reference cycle holding something the process cannot release \u2014 a memory leak with a name."
@@ -204,7 +216,10 @@
             "uid": "prometheus"
           },
           "expr": "process_thread_count{job=\"$service\"}",
-          "legendFormat": "threads"
+          "legendFormat": "threads",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     },
@@ -235,7 +250,10 @@
             "uid": "prometheus"
           },
           "expr": "process_open_file_descriptor_count{job=\"$service\"}",
-          "legendFormat": "fds"
+          "legendFormat": "fds",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     },
@@ -266,7 +284,10 @@
             "uid": "prometheus"
           },
           "expr": "sum by (type) (rate(process_cpu_time_seconds_total{job=\"$service\"}[$__rate_interval]))",
-          "legendFormat": "{{type}}"
+          "legendFormat": "{{type}}",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     }

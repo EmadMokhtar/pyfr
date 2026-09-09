@@ -96,6 +96,57 @@ def test_every_target_has_a_ref_id(path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize("path", _dashboard_paths(), ids=lambda path: path.name)
+def test_every_target_declares_range_or_instant(path: Path) -> None:
+    """Grafana runs neither kind of query unless the target says which.
+
+    A Prometheus target with neither `range` nor `instant` set renders
+    "No data" no matter how healthy the underlying series is — and
+    nothing outside Grafana can see it, because querying Prometheus
+    directly bypasses exactly the code that needs the flag. That is how
+    this shipped once already.
+
+    A stat or gauge shows one current number, so it takes an instant
+    query; a timeseries plots the window, so it takes a range query.
+    """
+    name, dashboard = path.name, _load(path)
+    for panel in dashboard["panels"]:
+        wants_instant = panel["type"] in ("stat", "gauge")
+        for target in panel["targets"]:
+            assert target.get("range") is not wants_instant, (
+                f"{name}: {panel['title']!r} target {target['refId']} "
+                f"has the wrong range flag for a {panel['type']}"
+            )
+            assert target.get("instant") is wants_instant, (
+                f"{name}: {panel['title']!r} target {target['refId']} "
+                f"has the wrong instant flag for a {panel['type']}"
+            )
+
+
+@pytest.mark.parametrize("path", _dashboard_paths(), ids=lambda path: path.name)
+def test_stat_and_gauge_panels_say_which_value_to_show(path: Path) -> None:
+    """A stat or gauge with no reduceOptions renders nothing at all.
+
+    The panel receives the data — Grafana's own /api/ds/query returns the
+    value — but has no instruction for which point of the series to
+    display, so it draws an empty box. Nothing outside a browser can see
+    this: the query succeeds, the API returns 200, and every check that
+    stops at "does the data exist" passes. That is how it shipped once.
+
+    A timeseries needs no such block, because plotting the whole series
+    is already its default.
+    """
+    name, dashboard = path.name, _load(path)
+    for panel in dashboard["panels"]:
+        if panel["type"] not in ("stat", "gauge"):
+            continue
+        options = panel.get("options", {})
+        assert options.get("reduceOptions", {}).get("calcs"), (
+            f"{name}: {panel['type']} panel {panel['title']!r} has no "
+            f"reduceOptions.calcs, so it will render empty"
+        )
+
+
 def test_every_dashboard_declares_the_service_variable() -> None:
     """`$service` in a query with no matching variable silently matches
     nothing, and the panel just looks like a service with no traffic."""

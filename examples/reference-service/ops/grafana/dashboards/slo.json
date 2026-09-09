@@ -92,9 +92,29 @@
             "uid": "prometheus"
           },
           "expr": "1 - job:slo_availability_errors:ratio_rate30d{job=\"$service\"}",
-          "legendFormat": "availability"
+          "legendFormat": "availability",
+          "editorMode": "code",
+          "range": false,
+          "instant": true
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      }
     },
     {
       "type": "stat",
@@ -136,9 +156,29 @@
             "uid": "prometheus"
           },
           "expr": "1 - job:slo_latency_errors:ratio_rate30d{job=\"$service\"}",
-          "legendFormat": "latency"
+          "legendFormat": "latency",
+          "editorMode": "code",
+          "range": false,
+          "instant": true
         }
-      ]
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      }
     },
     {
       "type": "gauge",
@@ -186,10 +226,28 @@
             "uid": "prometheus"
           },
           "expr": "1 - (job:slo_availability_errors:ratio_rate30d{job=\"$service\"} / 0.001)",
-          "legendFormat": "remaining"
+          "legendFormat": "remaining",
+          "editorMode": "code",
+          "range": false,
+          "instant": true
         }
       ],
-      "description": "How much of the month's error budget is left. At zero the objective is missed for this window; the number recovers as the window rolls forward."
+      "description": "How much of the month's error budget is left. At zero the objective is missed for this window; the number recovers as the window rolls forward.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "sizing": "auto"
+      }
     },
     {
       "type": "gauge",
@@ -237,10 +295,28 @@
             "uid": "prometheus"
           },
           "expr": "1 - (job:slo_latency_errors:ratio_rate30d{job=\"$service\"} / 0.001)",
-          "legendFormat": "remaining"
+          "legendFormat": "remaining",
+          "editorMode": "code",
+          "range": false,
+          "instant": true
         }
       ],
-      "description": "How much of the month's error budget is left. At zero the objective is missed for this window; the number recovers as the window rolls forward."
+      "description": "How much of the month's error budget is left. At zero the objective is missed for this window; the number recovers as the window rolls forward.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "sizing": "auto"
+      }
     },
     {
       "type": "timeseries",
@@ -286,7 +362,10 @@
             "uid": "prometheus"
           },
           "expr": "job:slo_availability_errors:ratio_rate1h{job=\"$service\"} / 0.001",
-          "legendFormat": "1h"
+          "legendFormat": "1h",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         },
         {
           "refId": "B",
@@ -295,7 +374,10 @@
             "uid": "prometheus"
           },
           "expr": "job:slo_availability_errors:ratio_rate5m{job=\"$service\"} / 0.001",
-          "legendFormat": "5m"
+          "legendFormat": "5m",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ],
       "description": "1.0 means the budget will be exactly spent over 30 days. 14.4 means it is gone in two."
@@ -344,7 +426,10 @@
             "uid": "prometheus"
           },
           "expr": "job:slo_latency_errors:ratio_rate1h{job=\"$service\"} / 0.001",
-          "legendFormat": "1h"
+          "legendFormat": "1h",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         },
         {
           "refId": "B",
@@ -353,7 +438,10 @@
             "uid": "prometheus"
           },
           "expr": "job:slo_latency_errors:ratio_rate5m{job=\"$service\"} / 0.001",
-          "legendFormat": "5m"
+          "legendFormat": "5m",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ],
       "description": "1.0 means the budget will be exactly spent over 30 days. 14.4 means it is gone in two."
@@ -386,7 +474,10 @@
             "uid": "prometheus"
           },
           "expr": "1 - job:slo_availability_errors:ratio_rate30d{job=\"$service\"}",
-          "legendFormat": "availability"
+          "legendFormat": "availability",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         },
         {
           "refId": "B",
@@ -395,7 +486,10 @@
             "uid": "prometheus"
           },
           "expr": "1 - job:slo_latency_errors:ratio_rate30d{job=\"$service\"}",
-          "legendFormat": "latency"
+          "legendFormat": "latency",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
         }
       ]
     }
