@@ -121,6 +121,30 @@ def test_place_order_line_rejects_a_quantity_above_int4_max() -> None:
         )
 
 
+def test_place_order_line_rejects_a_boolean_quantity() -> None:
+    """Mirrors domain.order.OrderLine's strict=True — see that test's
+    docstring, and api/v1/schemas.py's OrderLineIn.quantity comment for the
+    live Schemathesis failure this was found by.
+
+    A command must stand on its own for a non-HTTP caller: without
+    strict=True here, `bool` being an `int` subclass in Python would let
+    `PlaceOrderLine(quantity=True, ...)` validate as `quantity=1`, even
+    though api/v1/schemas.py already refuses the equivalent HTTP request —
+    exactly the asymmetry this module's own docstring says a command must
+    not have.
+    """
+    with pytest.raises(ValidationError):
+        # No `type: ignore` needed: `bool` is a subtype of `int`, so mypy
+        # accepts `True` for a parameter typed `int` — which is exactly
+        # the ambiguity `strict=True` closes at runtime.
+        PlaceOrderLine(
+            sku="sku-1",
+            quantity=True,
+            unit_amount=Decimal("1.00"),
+            currency="EUR",
+        )
+
+
 async def test_returns_a_stored_order() -> None:
     orders = FakeOrderRepository()
     placed = await PlaceOrder(orders)(

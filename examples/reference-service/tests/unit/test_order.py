@@ -90,6 +90,22 @@ def test_line_accepts_the_int4_boundary_quantity() -> None:
     assert line(quantity=2_147_483_647).quantity == 2_147_483_647
 
 
+def test_line_rejects_a_boolean_quantity() -> None:
+    """`bool` is an `int` subclass in Python, so without `strict=True` this
+    field would accept `True`/`False` as `1`/`0` instead of refusing them.
+    Mirrors api/v1/schemas.py's OrderLineIn.quantity and
+    services/order.py's PlaceOrderLine.quantity — see the api schema's
+    comment for the live Schemathesis failure this was found by. This is
+    the domain layer, so a non-HTTP caller constructing OrderLine directly
+    must be refused too, not only the HTTP edge.
+    """
+    with pytest.raises(ValidationError):
+        # No `type: ignore` needed: `bool` is a subtype of `int`, so mypy
+        # accepts `True` for a parameter typed `int` — which is exactly
+        # the ambiguity `strict=True` closes at runtime.
+        line(quantity=True)
+
+
 def test_order_requires_at_least_one_line() -> None:
     with pytest.raises(ValidationError):
         Order(

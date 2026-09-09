@@ -54,7 +54,14 @@ class PlaceOrderLine(BaseModel):
     # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
     # (PostgreSQL int4, max 2_147_483_647) — same reasoning as
     # domain.order.OrderLine.quantity and api/v1/schemas.py's OrderLineIn.
-    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
+    #
+    # strict=True mirrors the same two: `bool` is an `int` subclass in
+    # Python, so without it pydantic's default LAX int validation would
+    # accept quantity=True as quantity=1. A command is the service
+    # layer's own input type (see the class-level comment above) — it
+    # must refuse that on its own, not rely on api/v1/schemas.py having
+    # already filtered it out for HTTP callers.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
     unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 

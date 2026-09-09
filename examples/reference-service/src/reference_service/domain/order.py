@@ -54,12 +54,22 @@ class OrderLine(BaseModel):
     # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
     # (PostgreSQL int4, max 2_147_483_647), in
     # migrations/000001_create_orders_tables.up.sql — the same reason
-    # Money.amount below is bounded to mirror NUMERIC(14, 2). Without it, a
-    # quantity the column cannot hold passes every model in this codebase
-    # and fails only when asyncpg sends it to PostgreSQL, as
-    # DataError: value out of int32 range — a 500 for schema-valid input
-    # instead of a 422 at construction.
-    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
+    # Money.amount below is bounded to mirror NUMERIC(14, 2). Without this
+    # bound, a quantity the column cannot hold would pass this model and
+    # fail only when asyncpg sends it to PostgreSQL, as DataError: value
+    # out of int32 range — a 500 for schema-valid input instead of a 422
+    # at construction.
+    #
+    # strict=True closes a second, independent gap: `bool` is an `int`
+    # subclass in Python, so pydantic's default LAX int validation accepts
+    # `True`/`False` as `1`/`0`. This is the domain layer, so there is no
+    # published JSON Schema to compare against here — but a non-HTTP
+    # caller can construct this model directly, and the coercion would
+    # silently turn a caller's mistake into a valid order line. Mirrored
+    # in services/order.py's PlaceOrderLine and api/v1/schemas.py's
+    # OrderLineIn (which documents the same gap, found live by
+    # Schemathesis, in full); keep all three in step.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
     unit_price: Money
 
     @property
