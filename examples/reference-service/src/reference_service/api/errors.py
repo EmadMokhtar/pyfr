@@ -7,6 +7,7 @@ statement about a transport protocol and belongs here.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import structlog
@@ -15,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from reference_service.api.middleware import CORRELATION_HEADER, _route_template
 from reference_service.domain.errors import DomainError, OrderNotFoundError
@@ -76,6 +78,11 @@ def problem_response(description: str) -> dict[str, Any]:
 # some routes can actually produce it, so it is applied per-route instead,
 # where it is true — see api/v1/router.py's `get_order`.
 DEFAULT_PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
+    # 400 is reachable on EVERY route, not only ones with a body: it is
+    # what FastAPI raises when it cannot read the request at all.
+    status.HTTP_400_BAD_REQUEST: problem_response("Malformed request"),
+    status.HTTP_404_NOT_FOUND: problem_response("No such resource"),
+    status.HTTP_405_METHOD_NOT_ALLOWED: problem_response("Method not allowed"),
     status.HTTP_422_UNPROCESSABLE_CONTENT: problem_response(
         "Request validation failed"
     ),
@@ -97,11 +104,14 @@ def status_for(error: DomainError) -> int:
     return _DEFAULT_DOMAIN_STATUS
 
 
-def _problem_response(problem: ProblemDetail) -> JSONResponse:
+def _problem_response(
+    problem: ProblemDetail, headers: Mapping[str, str] | None = None
+) -> JSONResponse:
     return JSONResponse(
         status_code=problem.status,
         content=problem.model_dump(exclude_none=True),
         media_type=PROBLEM_MEDIA_TYPE,
+        headers=headers,
     )
 
 
@@ -126,6 +136,49 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail=str(exc),
                 instance=request.url.path,
             )
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_exception(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        """Problem Details for errors raised by the framework itself.
+
+        Starlette answers routing and body-reading failures by raising
+        HTTPException, and it handles that type before the catch-all
+        `Exception` handler below can ever see it. Without this handler its
+        default takes over and returns `{"detail": "..."}` as
+        `application/json` — so a service that documents RFC 9457
+        everywhere silently returns a different shape for three of its most
+        common responses: 405 on a wrong method, 404 on an unknown path,
+        and 400 when a request body is not decodable as UTF-8. Found by
+        Schemathesis, which reported the 400 as an undocumented status code.
+
+        `StarletteHTTPException`, not `fastapi.HTTPException`: FastAPI's is
+        a subclass, and the routing and body-reading failures raise the
+        Starlette one. Registering the subclass would miss exactly the
+        cases this exists for.
+
+        `exc.detail` is safe to echo. For these framework errors it is a
+        fixed string chosen by Starlette ("Not Found", "Method Not
+        Allowed"), never assembled from request content — contrast the
+        deliberate silence about exception messages in ReadinessRegistry.
+        """
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/http_error",
+                title=str(exc.detail),
+                status=exc.status_code,
+                instance=request.url.path,
+            ),
+            # Load-bearing, and easy to leave out. Starlette's own 405
+            # sets `Allow: POST`, which RFC 9110 REQUIRES on a 405, and it
+            # carries it on `exc.headers`. A handler built only from
+            # `detail` and `status_code` drops it. Verified: without this
+            # argument every operation failed Schemathesis's
+            # `unsupported_method` check with "TRACE returned 405 without
+            # required Allow header".
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
