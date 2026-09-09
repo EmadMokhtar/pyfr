@@ -50,7 +50,19 @@ UnitAmount = Annotated[
                 {
                     "type": "number",
                     "minimum": 0,
-                    "maximum": 999999999999.99,
+                    # float(MAX_MONEY), not the literal typed out a second
+                    # time: a hand-typed duplicate of MAX_MONEY is exactly
+                    # the kind of schema-versus-model drift this hand-
+                    # written block exists to prevent, and it is drift the
+                    # conformance gate cannot catch — a schema that is
+                    # STRICTER than the model only ever generates values
+                    # the model already accepts, so nothing here would
+                    # ever fail. `float()` is safe for this one value only
+                    # because MAX_MONEY has two decimal places and no
+                    # binary-float rounding changes it at this magnitude —
+                    # confirmed: float(MAX_MONEY) == 999999999999.99 in
+                    # Python's own double precision.
+                    "maximum": float(MAX_MONEY),
                     "multipleOf": 0.01,
                 },
                 {
