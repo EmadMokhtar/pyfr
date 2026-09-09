@@ -20,11 +20,28 @@ from reference_service.api.middleware import (
 from reference_service.api.v1.router import router as v1_router
 from reference_service.container import build_container, close_container
 from reference_service.observability.logging import configure_logging
+from reference_service.observability.otel import (
+    OtelRuntime,
+    configure_otel,
+    instrument_fastapi,
+)
 from reference_service.settings import Settings, load_settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings if settings is not None else load_settings()
+
+    # Before configure_logging, not after. configure_logging takes an
+    # optional logger_provider for OTLP log export, and that provider is
+    # built here — so this has to run first or logging would have to be
+    # configured twice. Nothing in configure_otel logs anything, so nothing
+    # is lost by the ordering: it is pure construction, and a failure
+    # inside it surfaces as a traceback on stderr exactly as a settings
+    # failure already does.
+    #
+    # Returns None when APP_OTEL__ENABLED is false, which is the default
+    # and the entire M0/M1 path.
+    otel_runtime: OtelRuntime | None = configure_otel(resolved, __version__)
 
     configure_logging(
         environment=resolved.environment,
@@ -46,6 +63,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # --timeout-graceful-shutdown bounds how long that may take.
             container.started = False
             await close_container(container)
+            if otel_runtime is not None:
+                # Last, and after close_container: shutting the providers
+                # down flushes whatever is still batched, and the lines and
+                # spans produced BY closing the database pool are exactly
+                # the ones you want when a shutdown goes wrong.
+                otel_runtime.shutdown()
 
     app = FastAPI(
         title=resolved.service_name,
@@ -62,4 +85,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(v1_router, prefix="/api/v1")
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
+    app.state.otel = otel_runtime
+    if otel_runtime is not None:
+        # Last, so the OpenTelemetry middleware ends up outermost — see
+        # instrument_fastapi's docstring for why the ordering is
+        # load-bearing rather than incidental.
+        instrument_fastapi(app, otel_runtime)
     return app
