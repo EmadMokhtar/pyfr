@@ -23,6 +23,7 @@ from reference_service.observability.logging import configure_logging
 from reference_service.observability.otel import (
     OtelRuntime,
     configure_otel,
+    instrument_database,
     instrument_fastapi,
 )
 from reference_service.settings import Settings, load_settings
@@ -55,6 +56,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         container = build_container(resolved)
         app.state.container = container
+        if otel_runtime is not None and container.engine is not None:
+            # Here rather than in create_app because the engine does not
+            # exist until the container is built, and here rather than in
+            # container.py because the composition root has no business
+            # importing an SDK — container.py stays a module about wiring
+            # adapters together.
+            instrument_database(container.engine, otel_runtime)
         container.started = True
         try:
             yield
