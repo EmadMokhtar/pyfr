@@ -40,8 +40,14 @@ test:
 test-record:
     #!/usr/bin/env bash
     set -euo pipefail
-    docker compose up -d --wait payment-stub
+    # The trap goes in BEFORE the container is started, not after: with
+    # `set -e`, a healthcheck timeout in `--wait` exits the recipe on the
+    # spot, and a trap installed on the next line would never have been
+    # armed — leaving the stub running, which is the one thing the trap
+    # exists to prevent. Stopping a container that was never started is a
+    # harmless no-op, so arming it early costs nothing.
     trap 'docker compose stop payment-stub' EXIT
+    docker compose up -d --wait payment-stub
     uv run pytest tests/recorded --record-mode=once
 
 # The container-backed tier. Needs a running Docker daemon; `just test` does not.

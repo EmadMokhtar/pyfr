@@ -224,6 +224,23 @@ def test_an_authorisation_is_a_frozen_value_object() -> None:
         )
 
 
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_an_authorisation_reference_may_not_be_blank(blank: str) -> None:
+    """A blank reference is proof of nothing.
+
+    A provider answering 201 with `{"id": ""}` would otherwise produce an
+    Authorisation that satisfies this model and cannot be used to
+    capture, reconcile or refund the payment it claims to prove — while
+    the order it belongs to is stored as paid.
+    """
+    with pytest.raises(ValidationError):
+        Authorisation(id=AuthorisationId(blank))
+
+
+def test_an_authorisation_reference_is_stored_stripped() -> None:
+    assert Authorisation(id=AuthorisationId("  auth_1  ")).id == "auth_1"
+
+
 def test_the_payment_gateway_port_is_structural() -> None:
     """Guard the decorator and the method name — nothing more.
 

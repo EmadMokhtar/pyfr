@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     Field,
     StringConstraints,
     WithJsonSchema,
@@ -76,6 +77,33 @@ UnitAmount = Annotated[
 ]
 
 
+def _integral_float_to_int(value: object) -> object:
+    """Accept a JSON number with a zero fractional part as the integer it is.
+
+    JSON Schema defines `integer` as any number whose fractional part is
+    zero, so `2.0` satisfies this field's published `"type": "integer"` —
+    and clients whose language serialises numbers as doubles send exactly
+    that. `strict=True` on the field below rejects a float outright, so
+    without this the API would refuse a request its own contract declares
+    valid: the same "rejected schema-compliant request" defect the
+    conformance gate exists to catch, reached from the other direction.
+    Confirmed against the committed contract with the same validator
+    Schemathesis uses: `{"type": "integer"}` accepts 2.0 and rejects 2.5.
+
+    `bool` is tested FIRST and returned untouched. `bool` is an `int`
+    subclass, so it never reaches the float branch anyway — but being
+    explicit is the point: `strict=True` exists to stop `True` being read
+    as `1`, and nothing here may weaken that. A non-integral float such as
+    2.5 is also returned untouched, so the strict validator rejects it,
+    which is right: the contract rejects it too.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
 class MoneyOut(BaseModel):
     amount: Decimal
     currency: str
@@ -106,7 +134,11 @@ class OrderLineIn(BaseModel):
     # from `model_json_schema()` with and without it) because it is a
     # pydantic validation-time behaviour, not a schema-shape one — so this
     # needs no `just openapi` regeneration.
-    quantity: Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
+    quantity: Annotated[
+        int,
+        Field(gt=0, le=2_147_483_647, strict=True),
+        BeforeValidator(_integral_float_to_int),
+    ]
     # Mirrors domain.order.Money.amount: without these bounds, a value the
     # domain rejects (e.g. "10.123", three decimal places) passes this
     # schema and blows up as an unhandled ValidationError deep inside the

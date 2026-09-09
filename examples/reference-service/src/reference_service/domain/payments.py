@@ -25,9 +25,9 @@ in api/errors.py.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Annotated, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from reference_service.domain.order import AuthorisationId, Money, OrderId
 
@@ -38,7 +38,20 @@ class Authorisation(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    id: AuthorisationId
+    # Non-blank, and stripped. A provider that answers 201 with
+    # `{"id": ""}` — a proxy rewriting the body, or a field that changed
+    # shape on their side — would otherwise hand back an Authorisation
+    # that satisfies this model and is useless: the order is stored as
+    # paid, carrying a reference nothing can capture, reconcile or refund
+    # against. The adapter already treats a MISSING id as an unreadable
+    # answer; a blank one is the same failure wearing a different shape,
+    # and the constraint here is what makes it land in the same place —
+    # the ValidationError it raises is a ValueError, which
+    # infrastructure/http/payment_gateway.py catches and reports as
+    # PaymentUnavailableError.
+    id: Annotated[
+        AuthorisationId, StringConstraints(strip_whitespace=True, min_length=1)
+    ]
 
 
 @runtime_checkable

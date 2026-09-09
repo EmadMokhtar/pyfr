@@ -244,6 +244,25 @@ async def test_a_response_missing_the_authorisation_id_is_reported_unavailable()
         await client.aclose()
 
 
+async def test_a_blank_authorisation_id_is_reported_unavailable() -> None:
+    """A 201 carrying `{"id": ""}` is as unusable as one carrying no id.
+
+    The domain refuses to build an Authorisation from a blank reference,
+    which raises a pydantic ValidationError — a ValueError — so it lands
+    in the same handler as every other unreadable answer.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"id": "", "status": "authorised"})
+
+    gateway, client = build_gateway(handler)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+
 async def test_a_wrongly_typed_authorisation_id_is_reported_unavailable() -> None:
     """A 201 whose `id` is a JSON number rather than a string. This is the
     dangerous row: `Authorisation(id=...)` raises pydantic's

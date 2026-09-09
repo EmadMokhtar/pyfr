@@ -161,6 +161,42 @@ def test_a_quantity_above_int4_max_is_refused_with_422_not_500(
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
+def test_a_quantity_sent_as_an_integral_json_number_is_accepted(
+    client: TestClient,
+) -> None:
+    """Regression test for a contract-versus-model gap.
+
+    The published schema declares `quantity` as `"type": "integer"`, and
+    JSON Schema defines that as any number with a zero fractional part —
+    so `2.0` is valid against the contract this service publishes, and a
+    client whose language serialises numbers as doubles sends exactly
+    that. `strict=True` on the field (which stops `true` being read as
+    `1`) rejected it, so the API refused a request its own contract
+    declared valid. The conformance gate did not catch this: it generates
+    Python integers, never `2.0`.
+    """
+    payload = a_payload()
+    payload["lines"][0]["quantity"] = 2.0  # type: ignore[index]
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 201
+
+
+def test_a_quantity_with_a_real_fractional_part_is_still_refused(
+    client: TestClient,
+) -> None:
+    """The other half of the rule: 2.5 is NOT an integer to JSON Schema
+    either, so accepting it would put the model back out of step with the
+    contract in the opposite direction."""
+    payload = a_payload()
+    payload["lines"][0]["quantity"] = 2.5  # type: ignore[index]
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 422
+
+
 def test_the_int4_boundary_value_itself_is_accepted(client: TestClient) -> None:
     """The bound is le, not lt: the column's own maximum must still work.
 
