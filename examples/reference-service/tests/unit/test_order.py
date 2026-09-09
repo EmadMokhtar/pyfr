@@ -79,11 +79,13 @@ def test_line_rejects_a_quantity_above_int4_max() -> None:
     """order_lines.quantity is INTEGER (PostgreSQL int4, max 2_147_483_647).
 
     Without this bound, a larger quantity passed construction here and
-    failed only when asyncpg sent it to PostgreSQL, as DataError: value out
-    of int32 range — a 500 for schema-valid input instead of a 422 at
-    construction. See tests/api/test_orders.py's
+    failed only once the adapter sent it to PostgreSQL, as DataError:
+    value out of int32 range — a storage failure raised from
+    infrastructure, mid-write, for a value this model had already declared
+    valid. See tests/api/test_orders.py's
     test_a_quantity_above_int4_max_is_refused_with_422_not_500 for the
-    live-database confirmation of that adapter failure.
+    live-database confirmation of that adapter failure, and for what the
+    api layer turns it into for a caller.
     """
     with pytest.raises(ValidationError):
         line(quantity=2_147_483_648)

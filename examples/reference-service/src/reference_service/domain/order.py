@@ -56,10 +56,14 @@ class OrderLine(BaseModel):
     # (PostgreSQL int4, max 2_147_483_647), in
     # migrations/000001_create_orders_tables.up.sql — the same reason
     # Money.amount below is bounded to mirror NUMERIC(14, 2). Without this
-    # bound, a quantity the column cannot hold would pass this model and
-    # fail only when asyncpg sends it to PostgreSQL, as DataError: value
-    # out of int32 range — a 500 for schema-valid input instead of a 422
-    # at construction.
+    # bound, a quantity the column cannot hold would pass construction
+    # here and fail only once the adapter sent it to PostgreSQL, as
+    # `DataError: value out of int32 range` — a storage failure raised
+    # from infrastructure, mid-write, for a value this model had already
+    # declared valid. Rejecting it here keeps the failure where the rule
+    # is: an OrderLine that cannot be stored is not a valid OrderLine.
+    # What that means for a caller over HTTP is api/errors.py's decision,
+    # not this module's.
     #
     # strict=True closes a second, independent gap: `bool` is an `int`
     # subclass in Python, so pydantic's default LAX int validation accepts
