@@ -66,7 +66,16 @@ async def test_an_authorised_payment_returns_its_reference() -> None:
 async def test_a_decline_is_an_answer_not_a_failure() -> None:
     """One request, no retry, and the breaker stays closed. Retrying a
     decline re-submits a payment; counting it as a failure would open the
-    circuit against a gateway that is working perfectly."""
+    circuit against a gateway that is working perfectly.
+
+    `failure_threshold=1`, not some larger number: with threshold 1, a
+    SINGLE failure opens the circuit, so if a future change made the
+    decline count against the breaker after all, `breaker.state` would be
+    `"open"` here and the assertion below would catch it. A higher
+    threshold would let exactly that regression through silently — one
+    call can never reach a threshold above 1, so the assertion would keep
+    passing whether or not the decline was ever counted, proving nothing.
+    """
     calls = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -74,7 +83,7 @@ async def test_a_decline_is_an_answer_not_a_failure() -> None:
         calls += 1
         return httpx.Response(402, json={"reason": "insufficient_funds"})
 
-    breaker = CircuitBreaker(failure_threshold=2, reset_after_seconds=30.0)
+    breaker = CircuitBreaker(failure_threshold=1, reset_after_seconds=30.0)
     gateway, client = build_gateway(handler, breaker=breaker)
     try:
         with pytest.raises(PaymentDeclinedError, match="insufficient_funds"):
@@ -84,6 +93,28 @@ async def test_a_decline_is_an_answer_not_a_failure() -> None:
 
     assert calls == 1
     assert breaker.state.value == "closed"
+
+
+async def test_a_decline_reason_is_bounded_to_200_characters() -> None:
+    """Relaying the provider's decline reason into a public 402 body is
+    deliberate (see test_a_decline_is_an_answer_not_a_failure above) —
+    but the provider puts no limit on that field's length, and it is the
+    least trustworthy input in this system. An unbounded relay would let
+    an arbitrarily long (or malicious) provider response become an
+    arbitrarily large response body from this service."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(402, json={"reason": "x" * 10_000})
+
+    breaker = CircuitBreaker(failure_threshold=1, reset_after_seconds=30.0)
+    gateway, client = build_gateway(handler, breaker=breaker)
+    try:
+        with pytest.raises(PaymentDeclinedError) as excinfo:
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert len(excinfo.value.reason) == 200
 
 
 async def test_a_retryable_failure_is_retried_and_counts_once() -> None:
@@ -270,3 +301,39 @@ async def test_the_request_carries_an_idempotency_key_and_the_amount() -> None:
     # binary double and can arrive as 42.000000000000004; money is sent as
     # text for the same reason MoneyOut renders it as text.
     assert b'"amount":"42.00"' in request.content.replace(b" ", b"")
+
+
+async def test_the_idempotency_key_is_the_same_on_every_retry() -> None:
+    """The one property the whole "safe to retry" argument in
+    infrastructure/http/client.py rests on: a gateway that honours
+    `Idempotency-Key` will not authorise the same order twice ONLY if
+    every retry of one logical call carries the SAME key. Nothing before
+    this test asserted that directly — every other retry test only counts
+    calls or checks the final outcome, never what the retried requests
+    actually carried.
+
+    Two 503s (retryable, per `RETRYABLE_STATUS` in client.py) then a
+    success: three requests reach the handler, one logical call to
+    `authorise`. If a future change generated a fresh key per HTTP attempt
+    instead of once per logical call — the exact regression this guards
+    against — the three captured headers would differ and the assertion
+    below would fail.
+    """
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if len(seen) < 3:
+            return httpx.Response(503, json={})
+        return httpx.Response(201, json={"id": "auth_abc123", "status": "authorised"})
+
+    order_id = OrderId(uuid4())
+    gateway, client = build_gateway(handler)
+    try:
+        await gateway.authorise(order_id=order_id, total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert len(seen) == 3, "the handler above only reaches the 201 on the third call"
+    keys = {request.headers["idempotency-key"] for request in seen}
+    assert keys == {str(order_id)}, f"every retry must carry the SAME key; saw {keys}"

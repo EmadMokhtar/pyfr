@@ -37,6 +37,19 @@ _ANSWER_STATUSES = frozenset({200, 201, 402})
 
 _AUTHORISATIONS_PATH = "/authorisations"
 
+# `stamina.AsyncRetryingCaller`'s own defaults for the two arguments below
+# that PaymentSettings has no field for. Named and passed explicitly in
+# `HttpPaymentGateway.__init__` rather than left implicit, for the same
+# reason client.py's `build_http_client` writes out all four
+# `httpx.Timeout` phases instead of calling `httpx.Timeout(5.0)`: an
+# explicit value is one a reviewer can see change; an implicit
+# third-party default is one that can change under a routine `stamina`
+# version bump with nobody noticing. Chosen to match stamina's current
+# defaults exactly, so this commit changes what is visible, not what the
+# service does.
+_RETRY_WALL_CLOCK_TIMEOUT_SECONDS = 45.0
+_RETRY_WAIT_JITTER_SECONDS = 1.0
+
 _logger = structlog.get_logger(__name__)
 
 
@@ -55,33 +68,53 @@ class HttpPaymentGateway:
         # Built once. A RetryingCaller rather than the @stamina.retry
         # decorator because the numbers come from settings at runtime, and
         # a decorator would have to close over them at import time.
+        #
+        # `timeout` and `wait_jitter` were left unpassed here until this
+        # comment was added, which meant they were silently
+        # `stamina.AsyncRetryingCaller`'s own defaults: `timeout=45.0`, a
+        # WALL-CLOCK budget for the whole retry loop that acts as a second
+        # stop condition alongside `attempts` — three attempts against a
+        # gateway with a generous `wait_max_seconds` could in principle
+        # stop on the clock rather than on the attempt count — and
+        # `wait_jitter=1.0`, meaning the real backoff ceiling was
+        # `wait_max_seconds` PLUS up to a further second of jitter, not
+        # `wait_max_seconds` alone. See docs/reference/configuration.md's
+        # row for `APP_PAYMENT__RETRY_MAX_WAIT_SECONDS` for the same
+        # correction on the documentation side.
         self._retrying = stamina.AsyncRetryingCaller(
             attempts=attempts,
             wait_initial=wait_initial_seconds,
             wait_max=wait_max_seconds,
+            timeout=_RETRY_WALL_CLOCK_TIMEOUT_SECONDS,
+            wait_jitter=_RETRY_WAIT_JITTER_SECONDS,
         )
 
     async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
+        # Two SEPARATE try blocks, not one, and that split is itself a fix
+        # for a bug this comment used to describe as a documented
+        # trade-off rather than what it actually was. The old single try
+        # wrapped `breaker.call` (which raises CircuitOpenError,
+        # httpx.HTTPError or httpx.InvalidURL) and the body-parsing below
+        # (which raises ValueError/KeyError/TypeError/AttributeError) under
+        # ONE except chain, on the unstated assumption that the second
+        # group could only ever be raised by CODE AFTER `response` was
+        # already bound. Nothing enforces that assumption: if `breaker.call`
+        # or anything inside `self._retrying(...)` ever raised one of
+        # ValueError/KeyError/TypeError/AttributeError itself — a plausible
+        # library-internal failure, not merely a hypothetical one — the
+        # handler below would run with `response` UNBOUND, and
+        # `response.status_code` on the logging line would raise
+        # `UnboundLocalError` from inside an exception handler, which is a
+        # worse failure than the one it was trying to report. Splitting the
+        # network call from the body-parsing into two tries removes the
+        # possibility structurally: by the time the second try's `except`
+        # can run, `response` is already bound, because the only way past
+        # the first try without an exception is for `response = await
+        # self._breaker.call(...)` to have already succeeded.
         try:
             response = await self._breaker.call(
                 lambda: self._retrying(is_retryable, self._send, order_id, total)
             )
-
-            # Body-parsing lives INSIDE this try, not after it. `_send`
-            # only promises that the status code is one it recognises as
-            # an answer (`_ANSWER_STATUSES`); it says nothing about
-            # whether the body is readable JSON, or has the shape we
-            # expect. Splitting parsing out of the protected region would
-            # let a malformed body escape as whatever raw exception
-            # `.json()` or field access happens to throw, uncaught by
-            # anything below and therefore uncaught by api/errors.py's
-            # DomainError/PaymentUnavailableError handlers too — see the
-            # `except` clause below for where each of those would land.
-            if response.status_code == httpx.codes.PAYMENT_REQUIRED:
-                reason = response.json().get("reason", "unknown")
-                raise PaymentDeclinedError(order_id, reason)
-
-            return Authorisation(id=AuthorisationId(response.json()["id"]))
         except CircuitOpenError as exc:
             # Not reaching the gateway at all still means "no answer" to
             # the caller, so it becomes the same error — but it is logged
@@ -98,6 +131,41 @@ class HttpPaymentGateway:
             raise PaymentUnavailableError(
                 f"payment provider did not answer: {type(exc).__name__}"
             ) from exc
+
+        # Body-parsing lives in its OWN try, not folded into the one above.
+        # `_send` only promises that the status code is one it recognises
+        # as an answer (`_ANSWER_STATUSES`); it says nothing about whether
+        # the body is readable JSON, or has the shape we expect. Splitting
+        # parsing out of a protected region entirely would let a malformed
+        # body escape as whatever raw exception `.json()` or field access
+        # happens to throw, uncaught by anything below and therefore
+        # uncaught by api/errors.py's DomainError/PaymentUnavailableError
+        # handlers too — see the `except` clause below for where each of
+        # those would land instead.
+        try:
+            if response.status_code == httpx.codes.PAYMENT_REQUIRED:
+                raw_reason = response.json().get("reason", "unknown")
+                # Bounded to 200 characters, and coerced to `str` first: the
+                # provider's JSON puts no constraint on either the type or
+                # the length of this field, and it is relayed into a PUBLIC
+                # 402 body below (via api/errors.py's `_domain_error`
+                # handler, `detail=str(exc)`). Relaying it AT ALL is
+                # deliberate here, and tested by
+                # test_a_decline_is_an_answer_not_a_failure: unlike the
+                # sibling `_payment_unavailable` handler in api/errors.py,
+                # which documents at length why provider text must NEVER
+                # reach a caller, a decline reason is meant for the
+                # customer whose OWN payment it describes ("insufficient
+                # funds"), not an operational detail about our
+                # infrastructure. That is a real distinction, not
+                # carelessness — but "safe to relay" was never "safe to
+                # relay unbounded": an arbitrarily long or malicious string
+                # from the least trustworthy input in this system has no
+                # business becoming an arbitrarily large response body.
+                reason = str(raw_reason)[:200]
+                raise PaymentDeclinedError(order_id, reason)
+
+            return Authorisation(id=AuthorisationId(response.json()["id"]))
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             # The gateway DID answer — `_send` already accepted the status
             # code as one of `_ANSWER_STATUSES` — but the body it sent is

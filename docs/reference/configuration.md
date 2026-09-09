@@ -40,7 +40,7 @@ cp .env.example .env
 | `APP_PAYMENT__HTTP__MAX_KEEPALIVE_CONNECTIONS` | integer, ≥ 0 | `10` | Idle connections kept open for reuse. |
 | `APP_PAYMENT__RETRY_ATTEMPTS` | integer, ≥ 1 | `3` | Attempts, not retries: `3` means one call and two further tries. |
 | `APP_PAYMENT__RETRY_INITIAL_WAIT_SECONDS` | float, > 0 | `0.1` | Wait before the first retry. Backs off from here. |
-| `APP_PAYMENT__RETRY_MAX_WAIT_SECONDS` | float, > 0 | `2.0` | The backoff's ceiling. |
+| `APP_PAYMENT__RETRY_MAX_WAIT_SECONDS` | float, > 0 | `2.0` | The backoff's ceiling *before* jitter. `stamina` adds up to a further second of random jitter on top (`wait_jitter`, fixed, not configured by this variable), and the whole retry loop separately stops at a fixed 45-second wall-clock budget regardless of this value — see the payment gateway's `infrastructure/http/payment_gateway.py`. |
 | `APP_PAYMENT__BREAKER_FAILURE_THRESHOLD` | integer, ≥ 1 | `5` | Consecutive failures before the circuit opens. |
 | `APP_PAYMENT__BREAKER_RESET_AFTER_SECONDS` | float, > 0 | `30.0` | How long the circuit stays open before admitting one probe. |
 
