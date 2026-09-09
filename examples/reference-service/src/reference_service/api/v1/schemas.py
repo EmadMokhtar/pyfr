@@ -78,7 +78,23 @@ class OrderLineIn(BaseModel):
     # blows up as asyncpg.exceptions.DataError deep inside the adapter
     # instead of a 422 at the edge — the same failure mode unit_amount's
     # bounds below exist to prevent for Money.amount / NUMERIC(14, 2).
-    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
+    #
+    # strict=True closes a gap the published schema never had: `type:
+    # integer` in the rendered JSON Schema already excludes JSON booleans
+    # (they are their own, disjoint type there), but pydantic's default
+    # LAX int validation does not — `bool` is an `int` subclass in Python,
+    # so without `strict=True` this field accepted `{"quantity": true}` as
+    # `1`, a 201 for a request the contract says must be rejected. Found
+    # by Schemathesis's negative-data check generating schema-violating
+    # `quantity: true` and getting 201 back instead of 422 — the same
+    # class of gap unit_amount's WithJsonSchema block exists to prevent,
+    # just in the other direction: here the schema was already exact and
+    # the model was too permissive, rather than the reverse. `strict=True`
+    # does not change the rendered JSON Schema (verified: identical output
+    # from `model_json_schema()` with and without it) because it is a
+    # pydantic validation-time behaviour, not a schema-shape one — so this
+    # needs no `just openapi` regeneration.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
     # Mirrors domain.order.Money.amount: without these bounds, a value the
     # domain rejects (e.g. "10.123", three decimal places) passes this
     # schema and blows up as an unhandled ValidationError deep inside the

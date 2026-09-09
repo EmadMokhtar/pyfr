@@ -119,6 +119,40 @@ def test_the_int4_boundary_value_itself_is_accepted(client: TestClient) -> None:
     assert response.status_code == 201
 
 
+def test_a_boolean_quantity_is_refused_not_coerced_to_an_integer(
+    client: TestClient,
+) -> None:
+    """Regression test for a real defect, found by Schemathesis.
+
+    Python's `bool` is an `int` subclass, so pydantic's default LAX int
+    validation accepted `{"quantity": true}` as `quantity=1` — a 201 for a
+    request the contract does not permit: `quantity`'s rendered JSON
+    Schema is a plain `type: integer`, and JSON Schema's `boolean` and
+    `integer` are disjoint types, so this request is schema-invalid and
+    must be refused. Confirmed against the unpatched model: `OrderLineIn`
+    parsed `quantity=True` without error. Found live by
+    tests/contract/test_conformance.py generating exactly this
+    schema-violating value and getting 201 back where the schema promises
+    a 4xx.
+    """
+    payload = {
+        "customer_id": str(uuid4()),
+        "lines": [
+            {
+                "sku": "sku-1",
+                "quantity": True,
+                "unit_amount": "10.00",
+                "currency": "EUR",
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
 def test_an_order_with_no_lines_is_refused(client: TestClient) -> None:
     payload = a_payload()
     payload["lines"] = []
