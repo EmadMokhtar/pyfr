@@ -12,7 +12,7 @@ placeholders. The [cookiecutter](https://cookiecutter.readthedocs.io/) tool
 asks you questions, substitutes your answers into the skeleton, and writes a
 new repository to disk.
 
-!!! warning "Status: M0 complete, M1–M8 to go"
+!!! warning "Status: M0, M1, M2 and M3 are done, M4–M8 to go"
 
     **The template itself does not exist yet.** What exists today is the
     *reference service* — the complete, running service that the template
@@ -26,8 +26,8 @@ new repository to disk.
     Jinja and Python at the same time. (Jinja is the placeholder language
     cookiecutter uses.)
 
-    M0 — the walking skeleton — is done. **PyFr becomes a usable template at
-    M7.** See the [roadmap](roadmap.md) for what each milestone delivers.
+    M0 through M3 are done. **PyFr becomes a usable template at M7.** See
+    the [roadmap](roadmap.md) for what each milestone delivers.
 
     Until then you can read the reference service, run it, and copy from it.
     Everything on this site describes code that exists and runs today.
