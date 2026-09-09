@@ -27,7 +27,14 @@ test:
 test-integration:
     uv run pytest -m integration
 
-# Everything: unit, api and integration.
+# The contract tier. Separate from `just test` because Schemathesis's ASGI
+# transport leaks anyio streams under filterwarnings=error and takes the
+# blame out on unrelated tests — see the `contract` marker's comment in
+# pyproject.toml.
+test-contract:
+    uv run pytest -m contract
+
+# Everything: unit, api, integration and contract.
 test-all:
     uv run pytest -m ''
 
