@@ -65,12 +65,33 @@ def _status_error(code: int) -> httpx.HTTPStatusError:
             "likewise: no connection, so nothing was submitted",
         ),
         (
+            httpx.PoolTimeout("timed out", request=None),
+            True,
+            "waiting for OUR OWN pool, before any socket opened: nothing submitted "
+            "either, even though PoolTimeout is not a subclass of ConnectTimeout",
+        ),
+        (
             httpx.ReadTimeout("timed out", request=None),
             False,
             "the gateway may have taken the payment and been slow to say so",
         ),
-        (_status_error(429), True, "the gateway asked us to come back"),
+        (
+            httpx.WriteTimeout("timed out", request=None),
+            False,
+            "partly or wholly on the wire; as unknowable as ReadTimeout",
+        ),
+        (_status_error(429), True, "rejected at the edge, never delivered"),
         (_status_error(503), True, "the gateway did not process it"),
+        (
+            _status_error(502),
+            False,
+            "delivered: the gateway forwarded it and got a bad response back",
+        ),
+        (
+            _status_error(504),
+            False,
+            "delivered, no timely answer — the same ambiguity as ReadTimeout",
+        ),
         (_status_error(500), False, "ambiguous: it may have processed it"),
         (_status_error(402), False, "a decline is an answer, not a failure"),
         (_status_error(400), False, "our request is wrong; repeating it will not help"),
