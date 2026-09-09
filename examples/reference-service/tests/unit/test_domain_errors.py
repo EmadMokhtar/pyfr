@@ -1,8 +1,13 @@
 from uuid import uuid4
 
-from reference_service.domain.errors import DomainError, OrderNotFoundError
+from reference_service.domain.errors import (
+    DomainError,
+    OrderNotFoundError,
+    PaymentDeclinedError,
+)
 from reference_service.domain.order import OrderId
 from reference_service.domain.repositories import OrderRepository
+from reference_service.infrastructure.errors import PaymentUnavailableError
 
 
 def test_order_not_found_carries_the_id_and_a_stable_code() -> None:
@@ -15,6 +20,37 @@ def test_order_not_found_carries_the_id_and_a_stable_code() -> None:
     assert error.code == "order_not_found"
     assert error.title == "Order not found"
     assert str(order_id) in str(error)
+
+
+def test_payment_declined_carries_the_id_the_reason_and_a_stable_code() -> None:
+    order_id = OrderId(uuid4())
+
+    error = PaymentDeclinedError(order_id, "insufficient funds")
+
+    assert isinstance(error, DomainError)
+    assert error.order_id == order_id
+    assert error.reason == "insufficient funds"
+    assert error.code == "payment_declined"
+    assert error.title == "Payment declined"
+    assert str(order_id) in str(error)
+    assert "insufficient funds" in str(error)
+
+
+def test_payment_unavailable_is_not_a_domain_error() -> None:
+    """The whole architectural point of infrastructure/errors.py.
+
+    `PaymentUnavailableError` says the gateway did not answer — our
+    dependency's fault, not the caller's, and the same request may well
+    succeed if tried again later. A `DomainError` says a business rule was
+    broken by the caller's request. Those are different claims, and a
+    future refactor that quietly made this a `DomainError` (e.g. by moving
+    it there "for consistency") would erase that distinction without any
+    import-linter contract noticing, since both modules are allowed to
+    import `domain.order`. This test is the one thing that would catch it.
+    """
+    assert not isinstance(
+        PaymentUnavailableError("payment provider timed out"), DomainError
+    )
 
 
 def test_domain_errors_carry_no_http_status() -> None:
@@ -30,7 +66,11 @@ def test_domain_errors_carry_no_http_status() -> None:
     subsumes the class-level check, since attribute lookup falls back to
     the class.
     """
-    for error in (DomainError("boom"), OrderNotFoundError(OrderId(uuid4()))):
+    for error in (
+        DomainError("boom"),
+        OrderNotFoundError(OrderId(uuid4())),
+        PaymentDeclinedError(OrderId(uuid4()), "insufficient funds"),
+    ):
         assert not hasattr(error, "status")
         assert not hasattr(error, "status_code")
         assert not hasattr(error, "http_status")

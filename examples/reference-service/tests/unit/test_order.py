@@ -223,13 +223,23 @@ def test_an_authorisation_is_a_frozen_value_object() -> None:
 
 
 def test_the_payment_gateway_port_is_structural() -> None:
-    """Anything with the right shape satisfies it — no base class, no
-    import of ours in the implementer. That is what makes the domain able
-    to name the operation without knowing who performs it."""
+    """Guard the decorator and the method name — nothing more.
+
+    `runtime_checkable` makes `isinstance` check only that an attribute
+    with this NAME exists. It does not check parameter types, return
+    types, or even that the method is async: `Stub.authorise` below could
+    take entirely different arguments and this would still pass. That is
+    deliberate here — the real signature conformance check is static,
+    performed by mypy at the call site that assigns an implementer to a
+    `PaymentGateway`-typed field. What this test does catch is a missing
+    `@runtime_checkable` decorator (isinstance would raise TypeError) and
+    a renamed or misspelled method — which is what makes the domain able
+    to name the operation without knowing who performs it: no base class,
+    no import of ours in the implementer.
+    """
 
     class Stub:
         async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
             return Authorisation(id=AuthorisationId("auth_123"))
 
-    gateway: PaymentGateway = Stub()
-    assert gateway is not None
+    assert isinstance(Stub(), PaymentGateway)
