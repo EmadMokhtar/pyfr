@@ -6,7 +6,7 @@
 
 **Architecture:** Observability is a *decorator on the edges*, never a layer the business logic knows about. `domain/` and `services/` gain no imports; the import-linter contracts grow `opentelemetry` to the forbidden list so this stays true. Everything OpenTelemetry lives under `observability/`, is constructed once in `create_app`/`lifespan`, and is entirely absent when `APP_OTEL__ENABLED` is false — which is the default, so the M0/M1 no-dependency path keeps working unchanged. The dashboards and alert rules are version-controlled files mounted into a single `grafana/otel-lgtm` container; the same JSON loads into a production Grafana.
 
-**Tech Stack:** OpenTelemetry Python SDK 1.44.0, instrumentation packages 0.65b0 (FastAPI, SQLAlchemy, system-metrics), OTLP over gRPC, `grafana/otel-lgtm:0.11.11` (Grafana 12.2.0, Prometheus, Tempo, Loki, an OpenTelemetry collector), `promtool` (shipped inside that image).
+**Tech Stack:** OpenTelemetry Python SDK 1.44.0, instrumentation packages 0.65b0 (FastAPI, SQLAlchemy, system-metrics), OTLP over gRPC, `grafana/otel-lgtm:0.32.1` (Grafana 13.2.0, Prometheus 3.14.0, Tempo, Loki, an OpenTelemetry collector), `promtool` (shipped inside that image).
 
 **Spec:** `docs/superpowers/specs/2026-08-28-pyfr-cookiecutter-template-design.md` — section 7 in full (7.1 scope boundary, 7.2 instrumentation, 7.3 local stack, 7.4 dashboards, 7.5 SLOs and alerting, 7.6 structured logging), decisions D4 and D15, and section 3.4's note that dashboard JSON is copied verbatim at templatisation time.
 
@@ -31,7 +31,7 @@ Every task's requirements implicitly include these. The first fourteen are inher
 - **Conventional Commits** for every commit: `<type>[scope]: <description>`, imperative, lowercase, no trailing period.
 - **Unit tests never need Docker.** `just test` runs `tests/unit` and `tests/api` only. Anything requiring a container lives in `tests/integration` and runs under `just test-integration`.
 - **`filterwarnings = ["error"]` stays.** Any new dependency emitting a `DeprecationWarning` on import fails the suite. This bites in M2 — see the note on `InMemoryLogExporter` in Verified Facts.
-- **Pinned images.** `grafana/otel-lgtm:0.11.11`, written in exactly one place and referenced from there.
+- **Pinned images.** `grafana/otel-lgtm:0.32.1`, written in exactly one place and referenced from there.
 - **Telemetry is off by default.** `APP_OTEL__ENABLED=false` is the default. With it false the process must import no exporter, open no socket, and start no background task. The entire M0/M1 test suite must keep passing untouched.
 - **Standard output stays the source of truth for logs (D15).** OTLP log export is additive and opt-in, never a replacement.
 - **The stable HTTP semantic conventions, not the legacy ones.** Metrics must be named `http.server.request.duration` in *seconds*, with attributes `http.route`, `http.request.method`, `http.response.status_code`. See Verified Facts item 2 — this does not happen by default.
@@ -87,7 +87,7 @@ The SDK's default boundaries for `http.server.request.duration` are:
 There is **no 0.3 boundary**. The latency SLI is "the fraction of requests faster than 300 ms", which in PromQL is a ratio against `..._bucket{le="0.3"}` — a series that simply would not exist. `histogram_quantile` is not a substitute: it interpolates *within* a bucket and answers a different question ("what latency is the 95th percentile") than an objective needs ("what fraction beat 300 ms"). A `View` with explicit boundaries fixes it, and the added boundary was confirmed to survive all the way into Prometheus as `le="0.3"`.
 
 **4. Exact Prometheus series and label names after OTLP ingestion.**
-Confirmed by exporting real metrics into `grafana/otel-lgtm:0.11.11` and querying its Prometheus. Dots become underscores, the unit is appended as a suffix:
+Confirmed by exporting real metrics into `grafana/otel-lgtm:0.32.1` and querying its Prometheus. Dots become underscores, the unit is appended as a suffix:
 
 ```
 http_server_request_duration_seconds_bucket / _count / _sum
@@ -110,8 +110,8 @@ error_type                   (present only on 5xx samples)
 
 Two consequences. `job` carries `service.name`, so spec 3.4's `{{ $labels.job }}` in an alert annotation is right. And the environment label is `deployment_environment_name`, **not** `deployment_environment` — see the next item.
 
-**5. `deployment.environment` alone will not become a Prometheus label.**
-The image's `prometheus.yaml` promotes a fixed list of resource attributes to labels, and that list contains `deployment.environment.name` (the current semantic convention), not the older `deployment.environment`. Spec 7.6's log field contract names `deployment.environment`, and `observability/logging.py` already emits it and is tested for it. Both are needed and both are cheap, so the OpenTelemetry `Resource` sets **both** keys to the same value: `deployment.environment` keeps the spec's log contract, `deployment.environment.name` is what actually becomes a Prometheus label. Confirmed: with both set, `deployment_environment_name="local"` appeared on every series.
+**5. Set both spellings of the environment attribute.**
+The image's `prometheus.yaml` promotes a fixed list of resource attributes to labels. In 0.32.1 that list carries **both** `deployment.environment.name` (the current semantic convention) and `deployment.environment` — the latter tagged `# backward compatibility` — so either spelling alone would work here. It did not always: in 0.11.11 only the `.name` form was promoted, and `deployment.environment` alone produced no label at all. Spec 7.6's log field contract names `deployment.environment`, and `observability/logging.py` already emits it and is tested for it. Setting **both** keys to the same value is therefore not redundancy, it is what makes the plan survive the promote list changing underneath it — as it just did. `deployment.environment` also keeps spec 7.6's log field contract, which names that spelling. Confirmed on 0.32.1: both `deployment_environment="local"` and `deployment_environment_name="local"` appear on every series.
 
 **6. Instrumenting an async SQLAlchemy engine goes through `sync_engine`.**
 `SQLAlchemyInstrumentor().instrument(engine=...)` does not accept an `AsyncEngine`. Pass `engine.sync_engine`. Confirmed to produce `connect` and `SELECT` spans carrying `db.system`, `db.statement` and `db.operation`.
@@ -128,13 +128,14 @@ Importing the former raises `DeprecationWarning`, which `filterwarnings = ["erro
 **10. Every import path used in this plan was checked.**
 All 24 of them resolve on the pinned versions, including the private-looking `from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter` (the underscore is upstream's, and it is the only public route to the gRPC log exporter) and `from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler`.
 
-**11. `grafana/otel-lgtm:0.11.11` internals.**
+**11. `grafana/otel-lgtm:0.32.1` internals.**
 
 - Grafana provisioning lives at `/otel-lgtm/grafana/conf/provisioning/{dashboards,datasources}/`.
 - The datasource UIDs are `prometheus`, `tempo`, `loki`, `pyroscope`. Dashboards must reference `prometheus` by that UID.
 - The Loki datasource already declares a derived field on the label `trace_id` that links to Tempo. Emitting `trace_id` on log records is therefore all that trace-to-log correlation requires; no extra configuration.
-- **The image declares no `EXPOSE`d ports.** Compose must publish 3000, 4317 and 4318 explicitly or nothing is reachable.
+- **The image declares `EXPOSE` for 3000, 3200, 4040, 4317, 4318 and 9090.** That does NOT publish them: `EXPOSE` is documentation inside the image, and a port still reaches the host only through a compose `ports:` entry or `docker run -p`. So compose must still list every port it wants, but the reason is how Docker works, not a gap in this image. (In 0.11.11 the image declared none at all — this changed with the bump.)
 - Anonymous access is enabled with the Admin role, so the Grafana HTTP API is usable from a test with no credentials. `GET /api/search?type=dash-db` lists provisioned dashboards.
+- Component versions inside 0.32.1: Grafana 13.2.0, Prometheus 3.14.0. Every fact in this section was re-confirmed against this tag; the datasource identifiers, the provisioning paths, the Loki `trace_id` derived field and the `promtool` path are all unchanged from the tag this plan originally pinned.
 
 **12. The bundled Prometheus has no `rule_files`, and mounting one over it works.**
 `run-prometheus.sh` starts Prometheus with `--config.file=./prometheus.yaml`, and that shipped file contains only `otlp:` and `storage:` blocks — no scrape configs and **no rule files at all**. Recording and alerting rules therefore need a replacement config mounted over `/otel-lgtm/prometheus.yaml` that keeps those two blocks and adds `rule_files`. Confirmed end to end: with a replacement config and a rules directory mounted, `GET /api/v1/rules` reported both groups loaded and every recording rule `health=ok`.
@@ -2533,28 +2534,67 @@ Create `ops/prometheus/prometheus.yaml`:
 
 ```yaml
 ---
-# Replaces the copy inside grafana/otel-lgtm, which is started with
-# --config.file=./prometheus.yaml and ships with NO rule_files key at all.
-# The otlp and storage blocks below are that file's, kept verbatim: drop
-# them and resource attributes stop becoming labels, which silently breaks
-# every `job=` and `service_version=` matcher in the rules and dashboards.
+# The image's OWN /otel-lgtm/prometheus.yaml, copied verbatim, plus one
+# added key: rule_files.
+#
+# Verbatim matters. Prometheus is started with --config.file=./prometheus.yaml
+# and the shipped file has NO rule_files key at all, so replacing the whole
+# file is the only way to load rules — there is no scrape config to attach
+# to and no directory it already watches. But replacing it means everything
+# else in it is now OUR responsibility, and the part that matters most is
+# promote_resource_attributes: that list is what turns resource attributes
+# into Prometheus LABELS. A hand-picked subset silently drops the rest, and
+# the symptom is a dashboard filter that matches nothing in production —
+# every k8s.* label, in particular, is how anyone running this in a cluster
+# tells one pod from another.
+#
+# WHEN BUMPING THE IMAGE, REGENERATE THIS FILE. Do not hand-merge:
+#
+#   docker run --rm --entrypoint cat grafana/otel-lgtm:<tag> \
+#     /otel-lgtm/prometheus.yaml > ops/prometheus/prometheus.yaml
+#   printf '\nrule_files:\n  - /otel-lgtm/rules/*.yml\n' \
+#     >> ops/prometheus/prometheus.yaml
+#
+# The 0.32.1 list below promotes 27 attributes. The 0.11.11 list promoted
+# 18, and an earlier draft of this plan shipped a hand-written 5 — which
+# would have dropped every cloud.*, container.*, host.* and k8s.* label
+# without a word.
+global:
+  scrape_native_histograms: true
 otlp:
   keep_identifying_resource_attributes: true
+  # Recommended attributes to be promoted to labels.
   promote_resource_attributes:
     - service.instance.id
     - service.name
     - service.namespace
     - service.version
-    # NOT `deployment.environment`. The current semantic convention is the
-    # `.name` form and this promotion list is what decides which resource
-    # attributes become labels — which is why observability/otel.py's
-    # build_resource sets both spellings.
+    - cloud.availability_zone
+    - cloud.region
+    - container.name
+    - deployment.environment # backward compatibility
     - deployment.environment.name
-
+    - k8s.cluster.name
+    - k8s.container.name
+    - k8s.cronjob.name
+    - k8s.daemonset.name
+    - k8s.deployment.name
+    - k8s.job.name
+    - k8s.namespace.name
+    - k8s.node.name
+    - k8s.pod.name
+    - k8s.replicaset.name
+    - k8s.statefulset.name
+    - host.name
+    - postgresql.database.name
+    - postgresql.schema.name
+    - postgresql.table.name
+    - postgresql.index.name
+    - database # used by otelcol/receiver/mongodb
+    - kafka.cluster.alias
 storage:
   tsdb:
-    # Absorbs export retries and network delay. A metric arriving a few
-    # minutes late is still worth having.
+    # A 10min time window is enough because it can easily absorb retries and network delays.
     out_of_order_time_window: 10m
 
 rule_files:
@@ -2562,9 +2602,9 @@ rule_files:
   # This is not a style preference: promtool's test files use a completely
   # different schema (top-level `tests:`, `evaluation_interval:`, and a
   # `rule_files:` of their own), and Prometheus REFUSES TO START when the
-  # glob picks one up. Verified against grafana/otel-lgtm:0.11.11 with
-  # slo_test.yml in this directory — every other component reported "up and
-  # running" and Prometheus alone died with:
+  # glob picks one up. Verified against grafana/otel-lgtm with slo_test.yml
+  # in this directory — every other component reported "up and running" and
+  # Prometheus alone died with:
   #
   #   parse rules from file "/otel-lgtm/rules/slo_test.yml"
   #     (pattern: "/otel-lgtm/rules/*.yml"): yaml: unmarshal errors:
@@ -2574,6 +2614,7 @@ rule_files:
   #
   # which is why ops/prometheus/slo_test.yml sits OUTSIDE rules/.
   - /otel-lgtm/rules/*.yml
+
 ```
 
 - [ ] **Step 2: Write the SLO rules**
@@ -2965,7 +3006,7 @@ Run:
 
 ```bash
 cd examples/reference-service && docker run --rm -v "$PWD/ops/prometheus:/p" \
-  --entrypoint sh grafana/otel-lgtm:0.11.11 \
+  --entrypoint sh grafana/otel-lgtm:0.32.1 \
   -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
 ```
 
@@ -3208,7 +3249,7 @@ appends the unit and replaces dots, and the details differ per instrument
 type. Get the list from the running stack:
 
 ```bash
-docker rm -f pyfr-names >/dev/null 2>&1; docker run -d --name pyfr-names -p 4317:4317 grafana/otel-lgtm:0.11.11
+docker rm -f pyfr-names >/dev/null 2>&1; docker run -d --name pyfr-names -p 4317:4317 grafana/otel-lgtm:0.32.1
 ```
 
 Wait about 30 seconds, then run the reference service against it:
@@ -3666,7 +3707,7 @@ Add this service, and nothing else at the top level:
   # default on a laptop.
   lgtm:
     profiles: ["o11y"]
-    image: grafana/otel-lgtm:0.11.11
+    image: grafana/otel-lgtm:0.32.1
     ports:
       # The image declares no EXPOSE at all, so every port has to be
       # published explicitly or nothing here is reachable.
@@ -3745,7 +3786,7 @@ o11y-down:
 # exclusion and an objective that reports 99.99% forever.
 o11y-gates:
     docker run --rm -v "$PWD/ops/prometheus:/p" \
-        --entrypoint sh grafana/otel-lgtm:0.11.11 \
+        --entrypoint sh grafana/otel-lgtm:0.32.1 \
         -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
 ```
 
@@ -3810,7 +3851,7 @@ from reference_service.settings import Settings
 
 pytestmark = pytest.mark.integration
 
-LGTM_IMAGE = "grafana/otel-lgtm:0.11.11"
+LGTM_IMAGE = "grafana/otel-lgtm:0.32.1"
 OPS = Path(__file__).resolve().parents[2] / "ops"
 EXPECTED_DASHBOARD_UIDS = {"pyfr-service-health", "pyfr-slo", "pyfr-runtime"}
 
@@ -3975,7 +4016,7 @@ The `wait_for_logs` string above must match what the image actually prints.
 Confirm it:
 
 ```bash
-docker run --rm --name lgtm-probe grafana/otel-lgtm:0.11.11 2>&1 | head -40
+docker run --rm --name lgtm-probe grafana/otel-lgtm:0.32.1 2>&1 | head -40
 ```
 
 Use the last line printed once everything is up, and adjust `wait_for_logs`.
