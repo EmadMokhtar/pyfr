@@ -74,7 +74,9 @@ def test_every_latency_bucket_matcher_uses_the_python_threshold(
     # A latency rule without `le=` sums every bucket, making the ratio far
     # greater than 1 and the reported "error" fraction negative.
     latency_rules = [rule for rule in rules if "latency" in rule.get("record", "")]
-    assert len(latency_rules) == 6, f"expected 6 latency rules, got {len(latency_rules)}"
+    assert len(latency_rules) == 6, (
+        f"expected 6 latency rules, got {len(latency_rules)}"
+    )
     for rule in latency_rules:
         assert rule["expr"].count('le="') == 1, (
             f"{rule['record']} has no le= bucket matcher"
