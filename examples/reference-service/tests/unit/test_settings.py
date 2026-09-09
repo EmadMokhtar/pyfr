@@ -18,13 +18,25 @@ def test_defaults_are_usable_with_no_environment() -> None:
 
 
 def test_nested_delimiter_fills_sub_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`APP_<model>__<field>` reaches a field inside a sub-model.
+
+    All three OTel variables are set together, not just LOGS_ENABLED. On
+    its own that one is now an invalid configuration — OTLP log export
+    rides on the providers APP_OTEL__ENABLED builds, so enabling it alone
+    silently configures nothing, and OtelSettings rejects it. This test is
+    about the `__` delimiter reaching into a sub-model, so it uses a
+    combination that is actually valid.
+    """
     monkeypatch.setenv("APP_LOG__LEVEL", "debug")
+    monkeypatch.setenv("APP_OTEL__ENABLED", "true")
+    monkeypatch.setenv("APP_OTEL__ENDPOINT", "http://localhost:4317")
     monkeypatch.setenv("APP_OTEL__LOGS_ENABLED", "true")
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert settings.log.level == "debug"
     assert settings.otel.logs_enabled is True
+    assert settings.otel.endpoint == "http://localhost:4317"
 
 
 def test_per_logger_levels_parse_from_json(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -289,3 +301,54 @@ def test_a_malformed_dsn_s_password_never_reaches_stderr(
     # Still useful, not merely silent: names the field and the constraint.
     assert "dsn" in stderr
     assert "url_scheme" in stderr
+
+
+def test_otel_is_off_by_default() -> None:
+    """The M0/M1 no-dependency path must survive M2 untouched."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.otel.enabled is False
+    assert settings.otel.logs_enabled is False
+    assert settings.otel.endpoint is None
+    assert settings.otel.sample_ratio == 1.0
+
+
+def test_enabling_otel_without_an_endpoint_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Silently dropping every span is worse than refusing to start.
+
+    With no endpoint the SDK still builds, still samples, still batches —
+    and then fails to connect on a background thread, where the failure is
+    a log line nobody reads rather than a startup error.
+    """
+    monkeypatch.setenv("APP_OTEL__ENABLED", "true")
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert "APP_OTEL__ENDPOINT" in str(caught.value)
+
+
+def test_otlp_logs_cannot_be_enabled_on_their_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """logs_enabled rides on the same providers `enabled` builds."""
+    monkeypatch.setenv("APP_OTEL__LOGS_ENABLED", "true")
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert "APP_OTEL__ENABLED" in str(caught.value)
+
+
+@pytest.mark.parametrize("ratio", ["-0.1", "1.1"])
+def test_sample_ratio_outside_zero_to_one_is_rejected(
+    monkeypatch: pytest.MonkeyPatch, ratio: str
+) -> None:
+    monkeypatch.setenv("APP_OTEL__ENABLED", "true")
+    monkeypatch.setenv("APP_OTEL__ENDPOINT", "http://localhost:4317")
+    monkeypatch.setenv("APP_OTEL__SAMPLE_RATIO", ratio)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]

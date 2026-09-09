@@ -20,6 +20,7 @@ forbidden_modules =
     starlette
     sqlalchemy
     asyncpg
+    opentelemetry
 
 [importlinter:contract:services-independence]
 name = Services import neither api nor infrastructure
@@ -35,3 +36,4 @@ forbidden_modules =
     starlette
     sqlalchemy
     asyncpg
+    opentelemetry
