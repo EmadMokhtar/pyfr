@@ -230,7 +230,7 @@ examples/reference-service/README.md   MODIFIED — points at `just o11y`
 - Consumes: nothing from earlier tasks.
 - Produces: `OtelSettings` with fields `enabled: bool`, `logs_enabled: bool`, `endpoint: str | None`, `sample_ratio: float`, `metric_export_interval_ms: int`. Every later task reads these off `settings.otel`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/test_settings.py`:
 
@@ -288,12 +288,12 @@ def test_sample_ratio_outside_zero_to_one_is_rejected(
 
 `ValidationError` is already imported at the top of `test_settings.py` by M1's tests; confirm it is, and add `from pydantic import ValidationError` if not.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_settings.py -k otel -v`
 Expected: FAIL. `test_otel_is_off_by_default` fails on `AttributeError`/`assert` for `sample_ratio`; the three validation tests fail with `DID NOT RAISE ValidationError`.
 
-- [ ] **Step 3: Add the dependencies**
+- [x] **Step 3: Add the dependencies**
 
 In `pyproject.toml`, add to `[project].dependencies`:
 
@@ -327,7 +327,7 @@ and to `[dependency-groups].dev`:
 
 Then run `uv sync` and commit `uv.lock`.
 
-- [ ] **Step 4: Replace `OtelSettings` in `settings.py`**
+- [x] **Step 4: Replace `OtelSettings` in `settings.py`**
 
 ```python
 class OtelSettings(BaseModel):
@@ -387,12 +387,12 @@ class OtelSettings(BaseModel):
 
 Add `model_validator` to the existing `from pydantic import (...)` block.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_settings.py -v`
 Expected: PASS, including every M1 settings test.
 
-- [ ] **Step 6: Forbid `opentelemetry` in the pure layers**
+- [x] **Step 6: Forbid `opentelemetry` in the pure layers**
 
 In `.importlinter`, add `opentelemetry` to `forbidden_modules` in **both** contracts, under the existing `asyncpg` line:
 
@@ -406,7 +406,7 @@ The reasoning is the same one that keeps SQLAlchemy out: a domain rule that reac
 Run: `cd examples/reference-service && uv run lint-imports`
 Expected: both contracts kept.
 
-- [ ] **Step 7: Update `.env.example`**
+- [x] **Step 7: Update `.env.example`**
 
 Replace the `APP_OTEL__*` block (which currently says "OpenTelemetry arrives in M2") with:
 
@@ -439,12 +439,12 @@ APP_OTEL__METRIC_EXPORT_INTERVAL_MS=60000
 APP_OTEL__LOGS_ENABLED=false
 ```
 
-- [ ] **Step 8: Run the full fast suite**
+- [x] **Step 8: Run the full fast suite**
 
 Run: `cd examples/reference-service && uv run pytest && uv run mypy && uv run lint-imports && uv run ruff check .`
 Expected: all pass. The M0/M1 tests are unaffected because every new setting defaults to off.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add examples/reference-service/pyproject.toml examples/reference-service/uv.lock examples/reference-service/src/reference_service/settings.py examples/reference-service/.env.example examples/reference-service/.importlinter examples/reference-service/tests/unit/test_settings.py
@@ -465,7 +465,7 @@ git commit -m "feat(observability): add opentelemetry dependencies and validated
 
 This module deliberately imports nothing. Task 9's gate reads it in a process that has the rules YAML but does not care about the SDK, and M7 will replace these six literals with cookiecutter variables — both are easier when the file has no dependencies.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/unit/test_slo.py`:
 
@@ -533,12 +533,12 @@ def test_the_exclusion_pattern_is_anchored_promql() -> None:
     assert pattern == "/healthz|/readyz|/startupz"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_slo.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'reference_service.observability.slo'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `src/reference_service/observability/slo.py`:
 
@@ -622,12 +622,12 @@ def excluded_routes_pattern() -> str:
     return "|".join(SLI_EXCLUDED_ROUTES)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_slo.py -v`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/slo.py examples/reference-service/tests/unit/test_slo.py
@@ -653,7 +653,7 @@ git commit -m "feat(observability): define the slo constants shared by code and 
   - `class OtelRuntime` with `.tracer_provider`, `.meter_provider`, `.logger_provider`, `.shutdown()`
 - Task 4 calls `configure_otel` and `OtelRuntime.shutdown`; Task 5 and Task 8 take an `OtelRuntime`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_otel.py`:
 
@@ -789,12 +789,12 @@ def test_configure_otel_returns_none_when_disabled() -> None:
     assert configure_otel(settings, "1.2.3") is None
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_otel.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'reference_service.observability.otel'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `src/reference_service/observability/otel.py`:
 
@@ -1055,7 +1055,7 @@ def configure_otel(settings: Settings, service_version: str) -> OtelRuntime | No
     return runtime
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_otel.py -v`
 Expected: PASS, 10 tests — the sampler-range case is parametrised three ways.
@@ -1066,12 +1066,12 @@ versions. Print `vars(views[0])` and adjust the two `_`-prefixed reads;
 do not weaken the assertion to "a view exists", because the boundary
 being present is the entire point of the test.
 
-- [ ] **Step 5: Check types and imports**
+- [x] **Step 5: Check types and imports**
 
 Run: `cd examples/reference-service && uv run mypy && uv run lint-imports && uv run ruff check .`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/otel.py examples/reference-service/tests/unit/test_otel.py
@@ -1091,7 +1091,7 @@ git commit -m "feat(observability): build opentelemetry providers, sampler and s
 - Consumes: `OtelRuntime`, `build_providers`, `configure_otel` (Task 3).
 - Produces: `instrument_fastapi(app: FastAPI, runtime: OtelRuntime) -> None`. `create_app` stores the runtime on `app.state.otel` and shuts it down in `lifespan`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/api/test_instrumentation.py`:
 
@@ -1286,12 +1286,12 @@ def test_create_app_instruments_and_shuts_down_when_otel_is_on(
     assert runtime._shut_down is True, "lifespan must flush telemetry on exit"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd examples/reference-service && uv run pytest tests/api/test_instrumentation.py -v`
 Expected: FAIL with `ImportError: cannot import name 'instrument_fastapi'`.
 
-- [ ] **Step 3: Add `instrument_fastapi` to `observability/otel.py`**
+- [x] **Step 3: Add `instrument_fastapi` to `observability/otel.py`**
 
 Add the import at the top:
 
@@ -1336,7 +1336,7 @@ def instrument_fastapi(app: FastAPI, runtime: OtelRuntime) -> None:
     )
 ```
 
-- [ ] **Step 4: Wire it into `main.py`**
+- [x] **Step 4: Wire it into `main.py`**
 
 Add the imports:
 
@@ -1393,17 +1393,17 @@ At the end of `create_app`, after both `add_middleware` calls and before `return
     return app
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd examples/reference-service && uv run pytest tests/api/test_instrumentation.py -v`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 6: Run the whole fast suite and the checks**
+- [x] **Step 6: Run the whole fast suite and the checks**
 
 Run: `cd examples/reference-service && uv run pytest && uv run mypy && uv run lint-imports && uv run ruff check .`
 Expected: all pass. Every M0/M1 test still passes untouched, because `configure_otel` returns `None` under the default settings.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/otel.py examples/reference-service/src/reference_service/main.py examples/reference-service/tests/api/test_instrumentation.py
@@ -1425,13 +1425,13 @@ git commit -m "feat(observability): instrument fastapi with stable http semantic
 
 This task's test lives in the integration tier because a database span needs a database. The existing `tests/integration/conftest.py` already provides a migrated PostgreSQL container; reuse its fixtures rather than adding another.
 
-- [ ] **Step 1: Read the existing integration fixtures**
+- [x] **Step 1: Read the existing integration fixtures**
 
 Run: `cd examples/reference-service && sed -n '1,80p' tests/integration/conftest.py`
 
 Note the fixture that yields a configured `AsyncEngine` or a DSN, and its scope. The test below assumes a fixture named `engine`; rename to match what is actually there.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/integration/test_db_instrumentation.py`:
 
@@ -1493,12 +1493,12 @@ async def test_a_query_produces_a_database_span(
         SQLAlchemyInstrumentor().uninstrument()
 ```
 
-- [ ] **Step 3: Run the test to verify it fails**
+- [x] **Step 3: Run the test to verify it fails**
 
 Run: `cd examples/reference-service && uv run pytest tests/integration/test_db_instrumentation.py -v -m integration`
 Expected: FAIL with `ImportError: cannot import name 'instrument_database'`. Docker must be running.
 
-- [ ] **Step 4: Add `instrument_database`**
+- [x] **Step 4: Add `instrument_database`**
 
 In `observability/otel.py`, add the imports:
 
@@ -1531,7 +1531,7 @@ def instrument_database(engine: AsyncEngine, runtime: OtelRuntime) -> None:
     )
 ```
 
-- [ ] **Step 5: Call it from `lifespan` in `main.py`**
+- [x] **Step 5: Call it from `lifespan` in `main.py`**
 
 Inside `lifespan`, after `app.state.container = container` and before `container.started = True`:
 
@@ -1545,17 +1545,17 @@ Inside `lifespan`, after `app.state.container = container` and before `container
             instrument_database(container.engine, otel_runtime)
 ```
 
-- [ ] **Step 6: Run the test to verify it passes**
+- [x] **Step 6: Run the test to verify it passes**
 
 Run: `cd examples/reference-service && uv run pytest tests/integration/test_db_instrumentation.py -v -m integration`
 Expected: PASS.
 
-- [ ] **Step 7: Run everything**
+- [x] **Step 7: Run everything**
 
 Run: `cd examples/reference-service && uv run pytest && uv run pytest -m integration && uv run mypy && uv run lint-imports`
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/otel.py examples/reference-service/src/reference_service/main.py examples/reference-service/tests/integration/test_db_instrumentation.py
@@ -1574,7 +1574,7 @@ git commit -m "feat(observability): trace sqlalchemy statements through the asyn
 - Consumes: nothing from earlier tasks — the processor reads the *ambient* span from the OpenTelemetry context, so it works whatever built the provider.
 - Produces: two new keys, `trace_id` and `span_id`, on every record emitted inside a span. Completes spec 7.6's field contract, whose only missing rows these were.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/unit/test_logging.py`:
 
@@ -1640,12 +1640,12 @@ def test_a_standard_library_record_inside_a_span_is_correlated_too(
     assert payload["trace_id"] == format(context.trace_id, "032x")
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_logging.py -k "span" -v`
 Expected: FAIL — `KeyError: 'trace_id'` on the first and third; the second passes already but must keep passing.
 
-- [ ] **Step 3: Add the processor**
+- [x] **Step 3: Add the processor**
 
 In `observability/logging.py`, add the import:
 
@@ -1697,12 +1697,12 @@ what makes the third test pass: `_shared_processors` is also the
 `foreign_pre_chain`, so a record from uvicorn or SQLAlchemy is correlated
 on the same terms as one of ours.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_logging.py -v`
 Expected: PASS — the three new tests plus every M0/M1 logging test.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/logging.py examples/reference-service/tests/unit/test_logging.py
@@ -1725,7 +1725,7 @@ git commit -m "feat(observability): stamp trace and span ids onto every log reco
 This is D15 in code: standard output stays the source of truth and OTLP is
 added *beside* it, never instead of it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_otel_logs.py`:
 
@@ -1851,12 +1851,12 @@ def test_a_third_party_record_is_exported_too(
     assert json.loads(body)["logger"] == "some.library"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_otel_logs.py -v`
 Expected: FAIL with `TypeError: configure_logging() got an unexpected keyword argument 'logger_provider'` on three of the four.
 
-- [ ] **Step 3: Extend `configure_logging`**
+- [x] **Step 3: Extend `configure_logging`**
 
 In `observability/logging.py`, add the imports:
 
@@ -1914,12 +1914,12 @@ and before the per-logger levels loop — add:
         root.addHandler(otlp_handler)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_otel_logs.py tests/unit/test_logging.py -v`
 Expected: PASS.
 
-- [ ] **Step 5: Pass the provider from `main.py`**
+- [x] **Step 5: Pass the provider from `main.py`**
 
 In `create_app`, change the `configure_logging(...)` call to add one argument:
 
@@ -1931,12 +1931,12 @@ In `create_app`, change the `configure_logging(...)` call to add one argument:
 
 This is why Task 4 placed `configure_otel` above `configure_logging`.
 
-- [ ] **Step 6: Run everything**
+- [x] **Step 6: Run everything**
 
 Run: `cd examples/reference-service && uv run pytest && uv run mypy && uv run lint-imports && uv run ruff check .`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/logging.py examples/reference-service/src/reference_service/main.py examples/reference-service/tests/unit/test_otel_logs.py
@@ -1965,7 +1965,7 @@ signals that *predict* outages rather than describe them: a pool at its
 ceiling and an event loop that has stopped keeping up both show minutes
 before the error rate moves.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/unit/test_metrics.py`:
 
@@ -2165,12 +2165,12 @@ async def test_process_and_gc_metrics_are_present_but_not_the_host_ones(
         await metrics.stop()
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_metrics.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'reference_service.observability.metrics'`.
 
-- [ ] **Step 3: Add a view for the lag histogram**
+- [x] **Step 3: Add a view for the lag histogram**
 
 In `observability/otel.py`, extend `build_views` to return two views:
 
@@ -2192,7 +2192,7 @@ In `observability/otel.py`, extend `build_views` to return two views:
 
 Task 3's test filters views by instrument name, so it keeps passing.
 
-- [ ] **Step 4: Write `observability/metrics.py`**
+- [x] **Step 4: Write `observability/metrics.py`**
 
 ```python
 """Instruments this service reports about itself.
@@ -2454,12 +2454,12 @@ the import block above rather than described in prose — an instruction to
 an instruction that gets skipped, and the symptom is a mypy failure at the
 end of the task rather than at the line that caused it.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_metrics.py -v`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 6: Start and stop them from `lifespan`**
+- [x] **Step 6: Start and stop them from `lifespan`**
 
 In `main.py`, add the import:
 
@@ -2495,12 +2495,12 @@ and in the `finally` block, before the `otel_runtime.shutdown()` call:
                 await runtime_metrics.stop()
 ```
 
-- [ ] **Step 7: Run everything**
+- [x] **Step 7: Run everything**
 
 Run: `cd examples/reference-service && uv run pytest && uv run mypy && uv run lint-imports && uv run ruff check .`
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add examples/reference-service/src/reference_service/observability/metrics.py examples/reference-service/src/reference_service/observability/otel.py examples/reference-service/src/reference_service/main.py examples/reference-service/tests/unit/test_metrics.py
@@ -2528,7 +2528,7 @@ There is no other way in — no scrape config to attach to, no rules
 directory it already watches. So the config is replaced wholesale, keeping
 the two blocks it already had.
 
-- [ ] **Step 1: Write the Prometheus configuration**
+- [x] **Step 1: Write the Prometheus configuration**
 
 Create `ops/prometheus/prometheus.yaml`:
 
@@ -2617,7 +2617,7 @@ rule_files:
 
 ```
 
-- [ ] **Step 2: Write the SLO rules**
+- [x] **Step 2: Write the SLO rules**
 
 Create `ops/prometheus/rules/slo.yml`:
 
@@ -2890,7 +2890,7 @@ groups:
             growing rather than anything that broke.
 ```
 
-- [ ] **Step 3: Write the `promtool` rule unit tests**
+- [x] **Step 3: Write the `promtool` rule unit tests**
 
 Create `ops/prometheus/slo_test.yml`:
 
@@ -3000,7 +3000,7 @@ tests:
                 two days. Something is broken now, not drifting.
 ```
 
-- [ ] **Step 4: Run `promtool` and iterate until green**
+- [x] **Step 4: Run `promtool` and iterate until green**
 
 Run:
 
@@ -3019,7 +3019,7 @@ If the alert test fails on annotation text, `promtool` compares the
 *rendered* string. Copy the exact rendering out of the failure message
 rather than guessing how the YAML folded block collapsed its newlines.
 
-- [ ] **Step 5: Write the drift gate**
+- [x] **Step 5: Write the drift gate**
 
 Create `tests/unit/test_slo_rules.py`:
 
@@ -3202,7 +3202,7 @@ def test_both_indicators_are_alerted_on(rules: list[dict[str, Any]]) -> None:
     assert slos == {"availability", "latency"}
 ```
 
-- [ ] **Step 6: Run the gate**
+- [x] **Step 6: Run the gate**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_slo_rules.py -v`
 Expected: PASS, 7 tests.
@@ -3212,7 +3212,7 @@ Then prove the gate actually bites: temporarily change
 `test_every_latency_bucket_matcher_uses_the_python_threshold` fails.
 Change it back. A gate nobody has watched fail is a gate nobody knows works.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add examples/reference-service/ops examples/reference-service/tests/unit/test_slo_rules.py
@@ -3241,7 +3241,7 @@ That only works if the JSON is already service-agnostic — one hard-coded
 `job="reference-service"` and every generated project ships a dashboard
 showing somebody else's service.
 
-- [ ] **Step 1: Discover the real Prometheus names first**
+- [x] **Step 1: Discover the real Prometheus names first**
 
 Do not write a PromQL expression against a series name you have not seen.
 The translation from an OpenTelemetry metric name to a Prometheus one
@@ -3287,7 +3287,7 @@ If any row disagrees with what the command printed, **the command wins** —
 correct the dashboard, and correct this table in the plan so the next
 reader is not misled. Then `docker rm -f pyfr-names`.
 
-- [ ] **Step 2: Write the provisioning file**
+- [x] **Step 2: Write the provisioning file**
 
 Create `ops/grafana/provisioning/dashboards/pyfr-dashboards.yaml`:
 
@@ -3315,7 +3315,7 @@ providers:
       foldersFromFilesStructure: false
 ```
 
-- [ ] **Step 3: Write `service-health.json`**
+- [x] **Step 3: Write `service-health.json`**
 
 This is the worked example; the other two follow its shape exactly.
 Create `ops/grafana/dashboards/service-health.json`:
@@ -3512,7 +3512,7 @@ Create `ops/grafana/dashboards/service-health.json`:
 }
 ```
 
-- [ ] **Step 4: Write `slo.json`**
+- [x] **Step 4: Write `slo.json`**
 
 Same skeleton — copy the `templating`, `annotations`, `timezone`,
 `schemaVersion`, `version` and `refresh` blocks verbatim from
@@ -3542,7 +3542,7 @@ is left. At zero the objective is missed for this window; the number
 recovers as the window rolls forward."* Give panel 5 and 6: *"1.0 means the
 budget will be exactly spent over 30 days. 14.4 means it is gone in two."*
 
-- [ ] **Step 5: Write `runtime.json`**
+- [x] **Step 5: Write `runtime.json`**
 
 Same skeleton, `"uid": "pyfr-runtime"`, `"title": "Runtime"`,
 `"time": { "from": "now-1h", "to": "now" }`, and these panels — using the
@@ -3566,7 +3566,7 @@ Give panel 4 the description: *"Objects the collector could not free.
 Steadily above zero means a reference cycle holding something the process
 cannot release — a memory leak with a name."*
 
-- [ ] **Step 6: Write the dashboard test**
+- [x] **Step 6: Write the dashboard test**
 
 Create `tests/unit/test_dashboards.py`:
 
@@ -3667,12 +3667,12 @@ def test_the_service_variable_is_declared_everywhere_it_is_used() -> None:
         assert "service" in variables, f"{name} uses $service without declaring it"
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `cd examples/reference-service && uv run pytest tests/unit/test_dashboards.py -v`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add examples/reference-service/ops/grafana examples/reference-service/tests/unit/test_dashboards.py
@@ -3692,7 +3692,7 @@ git commit -m "feat(observability): add service health, slo and runtime dashboar
 - Consumes: `ops/` (Tasks 9 and 10), `instrument_fastapi` and `build_providers` (Tasks 3 and 4).
 - Produces: `just o11y`, `just o11y-down`, `just o11y-gates`. `check-all` gains `o11y-gates`.
 
-- [ ] **Step 1: Add the profile to `compose.yaml`**
+- [x] **Step 1: Add the profile to `compose.yaml`**
 
 Add this service, and nothing else at the top level:
 
@@ -3760,7 +3760,7 @@ break plain `just up` entirely. It is also unnecessary: the OTLP exporters
 batch and retry, so an app that starts before the collector loses at most
 the first few seconds of telemetry rather than failing.
 
-- [ ] **Step 2: Add the recipes to the `justfile`**
+- [x] **Step 2: Add the recipes to the `justfile`**
 
 ```just
 # Everything `up` starts, plus Grafana, Prometheus, Tempo and Loki with the
@@ -3796,7 +3796,7 @@ Change the `check-all` recipe's dependency list to include it:
 check-all: check test-integration gates o11y-gates
 ```
 
-- [ ] **Step 3: Verify the stack by hand once**
+- [x] **Step 3: Verify the stack by hand once**
 
 Run: `cd examples/reference-service && just o11y`
 
@@ -3815,7 +3815,7 @@ Do this before writing the automated test. The test asserts what you have
 already seen work; debugging both at once is how a whole afternoon
 disappears.
 
-- [ ] **Step 4: Write the end-to-end test**
+- [x] **Step 4: Write the end-to-end test**
 
 Create `tests/integration/test_observability_stack.py`:
 
@@ -4010,7 +4010,7 @@ def test_the_slo_latency_bucket_exists_in_prometheus(prometheus_url: str) -> Non
     assert payload["data"]["result"], 'no bucket with le="0.3"'
 ```
 
-- [ ] **Step 5: Find the real readiness log line**
+- [x] **Step 5: Find the real readiness log line**
 
 The `wait_for_logs` string above must match what the image actually prints.
 Confirm it:
@@ -4025,18 +4025,18 @@ If no such line is stable, replace that call with a polling loop against
 do not replace it with a fixed sleep, which is slow when it is too long and
 flaky when it is too short.
 
-- [ ] **Step 6: Run the integration test**
+- [x] **Step 6: Run the integration test**
 
 Run: `cd examples/reference-service && uv run pytest tests/integration/test_observability_stack.py -v -m integration`
 Expected: PASS, 4 tests. Allow a minute or two on the first run while the
 image is pulled.
 
-- [ ] **Step 7: Run every gate**
+- [x] **Step 7: Run every gate**
 
 Run: `cd examples/reference-service && just check-all`
 Expected: all pass, `o11y-gates` included.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add examples/reference-service/compose.yaml examples/reference-service/justfile examples/reference-service/tests/integration/test_observability_stack.py
@@ -4062,7 +4062,7 @@ The site describes what is true now. Four pages stop being true the moment
 Task 11 merges, and M2 owes them. The Diátaxis restructure, the *generated*
 configuration reference and the on-call runbook remain M5's.
 
-- [ ] **Step 1: Write `docs/reference/observability.md`**
+- [x] **Step 1: Write `docs/reference/observability.md`**
 
 Cover, in this order, and in the voice the existing reference pages use —
 short sentences, a reason for every default:
@@ -4096,7 +4096,7 @@ short sentences, a reason for every default:
    substance: OTLP log export in production *alongside* a platform log
    agent means every line is ingested twice and the bill doubles.
 
-- [ ] **Step 2: Add the settings to `docs/reference/configuration.md`**
+- [x] **Step 2: Add the settings to `docs/reference/configuration.md`**
 
 Follow the existing table format exactly. Six rows:
 
@@ -4110,14 +4110,14 @@ Follow the existing table format exactly. Six rows:
 
 Add the warning admonition the page uses elsewhere for the last row.
 
-- [ ] **Step 3: Add the recipes to `docs/reference/commands.md`**
+- [x] **Step 3: Add the recipes to `docs/reference/commands.md`**
 
 Three rows, matching the page's existing format: `just o11y`,
 `just o11y-down`, `just o11y-gates`. For `o11y-gates`, say what it validates
 and that `promtool` comes from inside the pinned image rather than being a
 separate install.
 
-- [ ] **Step 4: Extend `docs/reference/logging.md`**
+- [x] **Step 4: Extend `docs/reference/logging.md`**
 
 Add two rows to the "Fields on every record" table, immediately after
 `deployment.environment`:
@@ -4136,7 +4136,7 @@ error page. The trace identifier is OpenTelemetry's, exists only when
 telemetry is on and only inside a span, and is what Tempo indexes. Both are
 worth having; neither replaces the other.
 
-- [ ] **Step 5: Update `docs/roadmap.md`**
+- [x] **Step 5: Update `docs/roadmap.md`**
 
 Change the **M1** row's state from `Planned` to `**Done**` — it merged in
 `fec06bb` and the roadmap was never updated — and the **M2** row likewise.
@@ -4144,7 +4144,7 @@ Then update the line under the table, which currently reads "**M0 is done.**
 Everything on this site describes code that exists today.", to name M0, M1
 and M2.
 
-- [ ] **Step 6: Add the page to `mkdocs.yml`**
+- [x] **Step 6: Add the page to `mkdocs.yml`**
 
 In `nav:`, under `Reference:`, after `Logging: reference/logging.md`:
 
@@ -4152,19 +4152,19 @@ In `nav:`, under `Reference:`, after `Logging: reference/logging.md`:
       - Observability: reference/observability.md
 ```
 
-- [ ] **Step 7: Update the reference service README**
+- [x] **Step 7: Update the reference service README**
 
 Add a short section pointing at `just o11y` and the documentation page. Keep
 it to a paragraph; the README orients, the site explains.
 
-- [ ] **Step 8: Build the site strictly**
+- [x] **Step 8: Build the site strictly**
 
 Run: `uv run mkdocs build --strict`
 Expected: builds with no warnings. `--strict` turns a broken link or a page
 missing from the nav into a failure, so this is the check that the new page
 is actually reachable.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add docs mkdocs.yml examples/reference-service/README.md
@@ -4236,3 +4236,28 @@ itself (`db_client_connection_count`, `db_client_connection_max`,
 `event_loop_lag_seconds_*`). Task 10 still opens with the step that reads
 the names off a running stack, because a table is a claim about one version
 of one image and the command is the truth.
+
+---
+
+## Execution record
+
+**Executed and merged.** All twelve tasks are implemented in
+`examples/reference-service/`; every step above is ticked. The fast tier,
+the container tier, all five schema gates, the SLO rule gates and a strict
+docs build are green, and the tree is clean after the pre-commit hooks.
+
+Five things differed from the plan as written. Each is recorded in the
+commit that made it.
+
+| Plan said | Reality | Why |
+|---|---|---|
+| Use `LoggingHandler` from `opentelemetry-sdk` | Use it from `opentelemetry-instrumentation-logging` | The SDK's own class is deprecated as of 1.44.0 and warns when constructed, which `filterwarnings = ["error"]` turned into a test failure. The SDK's deprecation message names this package as the replacement. One dependency added. |
+| `wait_for_logs(container, line)` in the stack test | `LogMessageWaitStrategy` | The string-predicate form of `wait_for_logs` is deprecated in the installed testcontainers and warns. Same strict-warnings setting, same outcome. |
+| Read `engine.pool.checkedout()` directly | Narrow to `QueuePool` first | `AsyncEngine.pool` is typed as the base `Pool`, which does not expose the counters. The guard is also behaviourally right: an engine on `NullPool` has no ceiling to saturate, so it now reports no pool gauges rather than inventing them. |
+| "Every M0/M1 test is unaffected" | One M1 test needed updating | `test_nested_delimiter_fills_sub_models` used `APP_OTEL__LOGS_ENABLED` alone to demonstrate the `__` delimiter. That combination is now invalid, so the test sets a valid trio and still proves what it was written to prove. The rule was not weakened to accommodate it. |
+| A `tests/integration/conftest.py` fixture named `engine` | No such fixture exists | The conftest exposes `database_url` and `sessionmaker`, and builds its engine internally. The database instrumentation test builds its own engine instead, which is better isolation anyway: `SQLAlchemyInstrumentor` is a process-wide singleton and would otherwise leak spans into later tests. |
+
+Two claims the plan makes were confirmed by watching them fail on purpose:
+the SLO drift gate breaks when the Python threshold is changed to 0.5, and
+the health-endpoint exclusion is covered by a `promtool` test in which 1000
+probes per minute do not dilute a 10% error ratio.
