@@ -66,6 +66,22 @@ class HttpPaymentGateway:
             response = await self._breaker.call(
                 lambda: self._retrying(is_retryable, self._send, order_id, total)
             )
+
+            # Body-parsing lives INSIDE this try, not after it. `_send`
+            # only promises that the status code is one it recognises as
+            # an answer (`_ANSWER_STATUSES`); it says nothing about
+            # whether the body is readable JSON, or has the shape we
+            # expect. Splitting parsing out of the protected region would
+            # let a malformed body escape as whatever raw exception
+            # `.json()` or field access happens to throw, uncaught by
+            # anything below and therefore uncaught by api/errors.py's
+            # DomainError/PaymentUnavailableError handlers too — see the
+            # `except` clause below for where each of those would land.
+            if response.status_code == httpx.codes.PAYMENT_REQUIRED:
+                reason = response.json().get("reason", "unknown")
+                raise PaymentDeclinedError(order_id, reason)
+
+            return Authorisation(id=AuthorisationId(response.json()["id"]))
         except CircuitOpenError as exc:
             # Not reaching the gateway at all still means "no answer" to
             # the caller, so it becomes the same error — but it is logged
@@ -82,12 +98,52 @@ class HttpPaymentGateway:
             raise PaymentUnavailableError(
                 f"payment provider did not answer: {type(exc).__name__}"
             ) from exc
-
-        if response.status_code == httpx.codes.PAYMENT_REQUIRED:
-            reason = response.json().get("reason", "unknown")
-            raise PaymentDeclinedError(order_id, reason)
-
-        return Authorisation(id=AuthorisationId(response.json()["id"]))
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            # The gateway DID answer — `_send` already accepted the status
+            # code as one of `_ANSWER_STATUSES` — but the body it sent is
+            # not one we can use: not JSON at all (`response.json()`
+            # raises `json.JSONDecodeError`, a `ValueError` subclass), a
+            # 402 whose body is not even a mapping so `.get` fails
+            # (`AttributeError`), or a 201 missing the `id` field
+            # (`KeyError`) or carrying it as the wrong type (pydantic's
+            # `ValidationError` on `Authorisation(...)`, also a
+            # `ValueError` subclass). `TypeError` covers the same family
+            # from a different angle: a top-level JSON array instead of
+            # an object makes `response.json()["id"]` fail with "list
+            # indices must be integers", since a body can be malformed
+            # by having the wrong shape even when it parses as valid
+            # JSON.
+            #
+            # This is deliberately treated as "unavailable", the same as
+            # a connection failure, and NOT as a bug on our side: a
+            # `KeyError` here means the payment provider's contract broke,
+            # not that our code has a defect. A payment gateway is the
+            # least trustworthy input in this system — a proxy returning
+            # an HTML error page, or a field changing shape on their end,
+            # is ordinary, not exotic. Treating it as OUR bug would be
+            # doubly wrong: it would mislabel their fault as ours, and (if
+            # this exception were left to propagate instead) it would let
+            # a raw `pydantic.ValidationError` reach api/errors.py's
+            # registered `PydanticValidationError` handler, which reports
+            # a 422 "Request validation failed" to the CALLER — telling
+            # them their request was invalid, when the actual problem is
+            # the gateway's response. See task-10-findings.md for the
+            # measured escape routes this closes.
+            #
+            # The message stays body-free on purpose: log the status code,
+            # which is diagnostic and not sensitive, never the body, which
+            # could contain gateway-side account or transaction detail we
+            # have no business relaying into our own logs or a caller's
+            # response.
+            _logger.warning(
+                "payment.unreadable_response",
+                order_id=str(order_id),
+                status_code=response.status_code,
+                error_type=type(exc).__name__,
+            )
+            raise PaymentUnavailableError(
+                "payment provider returned an unreadable answer"
+            ) from exc
 
     async def _send(self, order_id: OrderId, total: Money) -> httpx.Response:
         response = await self._client.post(

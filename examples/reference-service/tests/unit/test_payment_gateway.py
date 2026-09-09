@@ -170,6 +170,86 @@ async def test_a_read_timeout_is_not_retried() -> None:
     assert calls == 1
 
 
+async def test_an_unparseable_body_is_reported_unavailable() -> None:
+    """A 200 whose body is not JSON at all — e.g. a proxy's own HTML error
+    page slipped in front of the real gateway. `response.json()` raises
+    `json.JSONDecodeError` (a `ValueError`), which must become
+    `PaymentUnavailableError`, not escape uncaught."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<html>proxy error</html>")
+
+    breaker = CircuitBreaker(failure_threshold=2, reset_after_seconds=30.0)
+    gateway, client = build_gateway(handler, breaker=breaker)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    # The HTTP exchange itself succeeded — the breaker only sees
+    # `breaker.call`'s callable return without raising, before this body
+    # is ever parsed — so this must not count as a breaker failure any
+    # more than a decline does.
+    assert breaker.state.value == "closed"
+
+
+async def test_a_response_missing_the_authorisation_id_is_reported_unavailable() -> (
+    None
+):
+    """A 201 with a body that parses as JSON but has no `id` field.
+    `response.json()["id"]` raises `KeyError`, which must become
+    `PaymentUnavailableError` — a `KeyError` here is the provider's
+    contract breaking, not evidence of a bug on our side."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"status": "authorised"})
+
+    gateway, client = build_gateway(handler)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+
+async def test_a_wrongly_typed_authorisation_id_is_reported_unavailable() -> None:
+    """A 201 whose `id` is a JSON number rather than a string. This is the
+    dangerous row: `Authorisation(id=...)` raises pydantic's
+    `ValidationError`, and api/errors.py has a registered handler for
+    exactly that type — one that reports a 422 "Request validation
+    failed" to the CALLER. Left unmapped, an upstream fault would look to
+    the client like their own request was invalid. It must become
+    `PaymentUnavailableError` instead."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"id": 123, "status": "authorised"})
+
+    gateway, client = build_gateway(handler)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+
+async def test_a_malformed_decline_body_is_reported_unavailable_not_declined() -> None:
+    """A 402 whose body is valid JSON but not a mapping — `.get("reason", ...)`
+    raises `AttributeError` on a list. Only a MALFORMED 402 becomes
+    unavailable; a well-formed one still raises `PaymentDeclinedError`,
+    covered by test_a_decline_is_an_answer_not_a_failure above."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(402, json=[])
+
+    gateway, client = build_gateway(handler)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+
 async def test_the_request_carries_an_idempotency_key_and_the_amount() -> None:
     seen: list[httpx.Request] = []
 
