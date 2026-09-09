@@ -1,0 +1,22 @@
+# Documented conformance exceptions. Spec 8.2 asks for exactly this: a
+# reviewed list, not a disabled check. Every entry needs a reason that
+# survives being read by someone who was not here.
+
+[[operations]]
+include-name = "POST /api/v1/orders"
+
+# Two rules on this operation are relationships BETWEEN fields, and JSON
+# Schema has no way to state either:
+#
+#   1. every line must share one currency
+#   2. the sum of quantity x unit_amount must fit in NUMERIC(14, 2)
+#
+# So a generator working from the contract will always eventually produce
+# a schema-valid request that breaks one of them, and 422 is the correct
+# answer. Adding 422 here says "this operation has cross-field rules",
+# which is true and specific.
+#
+# What is NOT relaxed: `not_a_server_error` stays on, so the 500 this
+# operation used to return for an overflowing total would still fail the
+# gate. That is the check that matters, and it is untouched.
+checks.positive_data_acceptance.expected-statuses = ["2xx", "422"]
