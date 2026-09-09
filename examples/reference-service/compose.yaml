@@ -65,6 +65,17 @@ services:
       # Host `postgres` is the compose service name. No driver suffix and no
       # sslmode — see settings.py's DatabaseSettings.dsn.
       APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
+      # Defaulted rather than hardcoded so one compose file serves both
+      # `just up` (telemetry off) and `just o11y` (telemetry on), which
+      # sets these two in its own environment.
+      APP_OTEL__ENABLED: ${APP_OTEL__ENABLED:-false}
+      APP_OTEL__LOGS_ENABLED: ${APP_OTEL__LOGS_ENABLED:-false}
+      # `lgtm` is the compose service name below. Harmless when telemetry
+      # is off — settings only require an endpoint when enabled.
+      APP_OTEL__ENDPOINT: http://lgtm:4317
+      # 60s is the SDK default and far too slow to iterate against: you
+      # make a request and wait a minute to see the panel move.
+      APP_OTEL__METRIC_EXPORT_INTERVAL_MS: 10000
     # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
     # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
     # (and Docker's) own default kill deadline is 10s, so without raising
@@ -78,6 +89,54 @@ services:
     # APP_HTTP_PORT is overridden — Compose applies the image's own
     # healthcheck automatically, so duplicating it just to hardcode the
     # port both drifts and repeats the same instruction twice.
+
+  # The whole local observability stack in one container: Grafana,
+  # Prometheus, Tempo, Loki and an OpenTelemetry collector. One image
+  # rather than five services, with OUR dashboards and rules mounted in —
+  # the same portable JSON that loads into a production Grafana.
+  #
+  # Behind a profile, so `just up` stays a database and an API. This image
+  # is around 2.5GB and runs six processes; nobody wants it started by
+  # default on a laptop.
+  #
+  # Deliberately NO `depends_on` from `app` to here. Compose would either
+  # refuse to start app without this profile active, or auto-enable the
+  # profile and pull the whole image for a plain `just up` — both worse
+  # than the alternative, which costs nothing: the OTLP exporters batch
+  # and retry, so an app that starts first loses a few seconds of
+  # telemetry rather than failing.
+  lgtm:
+    profiles: ["o11y"]
+    image: grafana/otel-lgtm:0.32.1
+    ports:
+      # The image does declare EXPOSE for these, but EXPOSE only documents
+      # a port — it does not publish one. Every port that must be reachable
+      # from the host has to be listed here.
+      - "3000:3000"  # Grafana
+      - "4317:4317"  # OTLP over gRPC — what the app exports to
+      - "4318:4318"  # OTLP over HTTP
+      # Prometheus. Published so `just o11y` can be queried ad hoc while
+      # developing a dashboard, and so the integration test can read
+      # /api/v1/rules from the host.
+      - "9090:9090"
+    volumes:
+      # Replaces the image's own Prometheus config. Its copy has no
+      # rule_files key at all, and there is no other way to load rules —
+      # no scrape config to attach to, no directory it already watches.
+      - ./ops/prometheus/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
+      # ONLY the rules directory. ops/prometheus/slo_test.yml deliberately
+      # sits outside it: the rule_files glob would pick a promtool test
+      # file up as a rules file and Prometheus would refuse to start.
+      - ./ops/prometheus/rules:/otel-lgtm/rules:ro
+      # Added ALONGSIDE the image's own dashboard provider file rather
+      # than over it, so the bundled RED and JVM dashboards survive.
+      - ./ops/grafana/provisioning/dashboards/pyfr-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/pyfr-dashboards.yaml:ro
+      - ./ops/grafana/dashboards:/otel-lgtm/pyfr-dashboards:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
 volumes:
   postgres-data:

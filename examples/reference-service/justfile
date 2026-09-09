@@ -148,10 +148,39 @@ check: lint typecheck imports test precommit
 # and usable without Docker.
 #
 # Everything `check` does, plus the container tier and all five gates.
-check-all: check test-integration gates
+check-all: check test-integration gates o11y-gates
 
 up:
     docker compose up --build
+
+# Everything `up` starts, plus Grafana, Prometheus, Tempo and Loki with the
+# dashboards and SLO rules from ops/ mounted in. Grafana is on
+# http://localhost:3000 with anonymous admin access — no login.
+#
+# The two variables are set here rather than in compose.yaml so that one
+# compose file serves both this and plain `up`.
+o11y:
+    APP_OTEL__ENABLED=true APP_OTEL__LOGS_ENABLED=true docker compose --profile o11y up --build
+
+# Stop it and delete the volumes, telemetry included.
+o11y-down:
+    docker compose --profile o11y down -v
+
+# Validate the SLO rules with promtool, which ships inside the pinned
+# grafana/otel-lgtm image — so this needs no separate Prometheus install
+# and can never drift from the version that actually evaluates the rules.
+#
+# `check rules` is syntax. `test rules` is the one that matters: it feeds
+# synthetic series through the real rules and asserts the numbers that come
+# out, which is the only thing standing between a dropped health-endpoint
+# exclusion and an objective that reports 99.99% forever.
+#
+# The whole ops/prometheus directory is mounted, not just rules/, because
+# slo_test.yml sits above it and refers to rules/slo.yml relatively.
+o11y-gates:
+    docker run --rm -v "$PWD/ops/prometheus:/p" \
+        --entrypoint sh grafana/otel-lgtm:0.32.1 \
+        -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
 
 down:
     docker compose down -v
