@@ -29,6 +29,7 @@ from reference_service.observability.otel import (
     configure_otel,
     instrument_database,
     instrument_fastapi,
+    instrument_http_client,
 )
 from reference_service.settings import Settings, load_settings
 
@@ -74,6 +75,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # than in container.py because the composition root has no
                 # business importing an SDK.
                 instrument_database(container.engine, otel_runtime)
+            if container.http_client is not None:
+                # Only when a real payment provider is configured. The
+                # in-memory gateway makes no HTTP request, so there is no
+                # client and nothing to instrument.
+                instrument_http_client(container.http_client, otel_runtime)
             # Here, not in create_app: the probe task needs a running
             # event loop, and create_app runs before there is one.
             runtime_metrics = register_runtime_metrics(

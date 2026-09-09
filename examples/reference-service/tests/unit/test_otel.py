@@ -8,6 +8,7 @@ it in the same run.
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation
@@ -15,6 +16,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 from opentelemetry.sdk.trace.sampling import ParentBased
+from opentelemetry.trace import SpanKind
 
 from reference_service.observability.otel import (
     build_providers,
@@ -22,6 +24,7 @@ from reference_service.observability.otel import (
     build_sampler,
     build_views,
     configure_otel,
+    instrument_http_client,
 )
 from reference_service.observability.slo import (
     HTTP_DURATION_BUCKET_BOUNDARIES,
@@ -131,3 +134,40 @@ def test_configure_otel_returns_none_when_disabled() -> None:
     settings = Settings(_env_file=None, environment="production")  # type: ignore[call-arg]
 
     assert configure_otel(settings, "1.2.3") is None
+
+
+async def test_an_instrumented_client_produces_a_client_span() -> None:
+    """A request through an instrumented client is a CLIENT span, and its
+    method attribute uses the STABLE convention.
+
+    `SimpleSpanProcessor` is what `build_providers` attaches when an
+    exporter is injected (see its own comment), so the span is visible in
+    the exporter as soon as the request completes — no force_flush needed,
+    matching test_db_instrumentation.py's pattern for the same reason.
+
+    `http.request.method`, not `http.method`: matching every other span
+    this service emits (see the M2 plan's Verified Fact 2). Were the
+    legacy attribute to leak in here, outbound spans could not be queried
+    alongside the inbound ones that FastAPIInstrumentor already emits
+    under the stable convention.
+    """
+    span_exporter = InMemorySpanExporter()
+    runtime = build_providers(_enabled_settings(), "1.2.3", span_exporter=span_exporter)
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(201, json={})),
+        base_url="http://gateway",
+    )
+    instrument_http_client(client, runtime)
+
+    try:
+        await client.post("/authorisations", json={})
+    finally:
+        await client.aclose()
+        runtime.shutdown()
+
+    spans = span_exporter.get_finished_spans()
+    assert [span.kind for span in spans] == [SpanKind.CLIENT]
+    attributes = spans[0].attributes
+    assert attributes is not None
+    assert attributes["http.request.method"] == "POST"
+    assert "http.method" not in attributes
