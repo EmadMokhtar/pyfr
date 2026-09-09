@@ -88,6 +88,9 @@ addopts = "-q --strict-markers --strict-config -m 'not integration and not contr
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
+    # Anything needing a container. Excluded from the default run by the `-m`
+    # in addopts above, so `just test` stays a few seconds and needs no Docker.
+    # `just test-integration` selects them back in with `-m integration`.
     "integration: requires a running Docker daemon",
     # Schemathesis over ASGI. Deselected by default for the same reason
     # `integration` is — it is slow — and for one worse reason that is
