@@ -1,0 +1,192 @@
+"""The adapter's decisions: what is an answer, what is a failure, and
+which of those the breaker is allowed to count."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from decimal import Decimal
+from uuid import uuid4
+
+import httpx
+import pytest
+import stamina
+
+from reference_service.domain.errors import PaymentDeclinedError
+from reference_service.domain.order import Money, OrderId
+from reference_service.infrastructure.errors import PaymentUnavailableError
+from reference_service.infrastructure.http.breaker import CircuitBreaker
+from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
+
+TOTAL = Money(amount=Decimal("42.00"), currency="EUR")
+
+
+@pytest.fixture(autouse=True)
+def _no_backoff() -> Iterator[None]:
+    """Keep the configured attempt count, drop the waiting.
+
+    NOT a plain `set_testing(True)`: that sets attempts to 1, which would
+    make `test_a_retryable_failure_is_one_logical_failure` below pass
+    while proving nothing. `cap=True` keeps the smaller configured value.
+    """
+    with stamina.set_testing(True, attempts=100, cap=True):
+        yield
+
+
+def build_gateway(
+    handler: object, *, breaker: CircuitBreaker | None = None
+) -> tuple[HttpPaymentGateway, httpx.AsyncClient]:
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),  # type: ignore[arg-type]
+        base_url="http://gateway",
+    )
+    gateway = HttpPaymentGateway(
+        client,
+        breaker=breaker
+        or CircuitBreaker(failure_threshold=2, reset_after_seconds=30.0),
+        attempts=3,
+        wait_initial_seconds=0.01,
+        wait_max_seconds=0.02,
+    )
+    return gateway, client
+
+
+async def test_an_authorised_payment_returns_its_reference() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"id": "auth_abc123", "status": "authorised"})
+
+    gateway, client = build_gateway(handler)
+    try:
+        authorisation = await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert authorisation.id == "auth_abc123"
+
+
+async def test_a_decline_is_an_answer_not_a_failure() -> None:
+    """One request, no retry, and the breaker stays closed. Retrying a
+    decline re-submits a payment; counting it as a failure would open the
+    circuit against a gateway that is working perfectly."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(402, json={"reason": "insufficient_funds"})
+
+    breaker = CircuitBreaker(failure_threshold=2, reset_after_seconds=30.0)
+    gateway, client = build_gateway(handler, breaker=breaker)
+    try:
+        with pytest.raises(PaymentDeclinedError, match="insufficient_funds"):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert calls == 1
+    assert breaker.state.value == "closed"
+
+
+async def test_a_retryable_failure_is_retried_and_counts_once() -> None:
+    """Three upstream requests, ONE logical failure. The breaker counts
+    logical calls; nested the other way round it would open three times
+    faster than its threshold says."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, json={})
+
+    breaker = CircuitBreaker(failure_threshold=2, reset_after_seconds=30.0)
+    gateway, client = build_gateway(handler, breaker=breaker)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert calls == 3
+    assert breaker.state.value == "closed", "one logical failure, threshold is two"
+
+
+async def test_an_open_circuit_reports_unavailable_without_calling() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503, json={})
+
+    breaker = CircuitBreaker(failure_threshold=1, reset_after_seconds=30.0)
+    gateway, client = build_gateway(handler, breaker=breaker)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+        calls_after_first = calls
+
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert calls == calls_after_first, "an open circuit must not reach the gateway"
+
+
+async def test_a_connect_failure_is_retried_then_reported_unavailable() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("connection refused", request=request)
+
+    gateway, client = build_gateway(handler)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert calls == 3
+
+
+async def test_a_read_timeout_is_not_retried() -> None:
+    """The gateway may have taken the payment and been slow to say so.
+    Retrying that is a double charge — see is_retryable's docstring."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ReadTimeout("too slow", request=request)
+
+    gateway, client = build_gateway(handler)
+    try:
+        with pytest.raises(PaymentUnavailableError):
+            await gateway.authorise(order_id=OrderId(uuid4()), total=TOTAL)
+    finally:
+        await client.aclose()
+
+    assert calls == 1
+
+
+async def test_the_request_carries_an_idempotency_key_and_the_amount() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={"id": "auth_abc123", "status": "authorised"})
+
+    order_id = OrderId(uuid4())
+    gateway, client = build_gateway(handler)
+    try:
+        await gateway.authorise(order_id=order_id, total=TOTAL)
+    finally:
+        await client.aclose()
+
+    request = seen[0]
+    assert request.headers["idempotency-key"] == str(order_id)
+    # A string, never a float. 42.00 as JSON number round-trips through a
+    # binary double and can arrive as 42.000000000000004; money is sent as
+    # text for the same reason MoneyOut renders it as text.
+    assert b'"amount":"42.00"' in request.content.replace(b" ", b"")
