@@ -159,3 +159,64 @@ def test_local_environment_uses_the_console_renderer(
     with pytest.raises(json.JSONDecodeError):
         json.loads(out.strip())
     assert "order.placed" in out
+
+
+def test_a_record_inside_a_span_carries_the_trace_and_span_ids(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The last two rows of spec 7.6's field contract.
+
+    This is the whole point of trace-to-log correlation: given a slow
+    trace in Tempo you can pivot straight to the log lines that request
+    produced, and given an alarming log line you can pivot to its trace.
+    """
+    from opentelemetry.sdk.trace import TracerProvider
+
+    configure_logging(environment="production", level="info", levels={})
+    tracer = TracerProvider().get_tracer("test")
+
+    with tracer.start_as_current_span("unit") as span:
+        structlog.get_logger().info("order.placed")
+        context = span.get_span_context()
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["trace_id"] == format(context.trace_id, "032x")
+    assert payload["span_id"] == format(context.span_id, "016x")
+
+
+def test_a_record_outside_any_span_carries_neither_key(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Not a cosmetic choice.
+
+    Outside a span the context is the invalid one, whose trace_id is
+    literally zero. Formatting it anyway would stamp
+    trace_id="00000000000000000000000000000000" on every startup and
+    shutdown line — a value that looks like a real identifier, matches
+    nothing in Tempo, and groups every unrelated record in the service
+    under one enormous fake trace.
+    """
+    configure_logging(environment="production", level="info", levels={})
+
+    structlog.get_logger().info("app.starting")
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert "trace_id" not in payload
+    assert "span_id" not in payload
+
+
+def test_a_standard_library_record_inside_a_span_is_correlated_too(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """uvicorn and SQLAlchemy lines must be pivotable, not just ours."""
+    from opentelemetry.sdk.trace import TracerProvider
+
+    configure_logging(environment="production", level="info", levels={})
+    tracer = TracerProvider().get_tracer("test")
+
+    with tracer.start_as_current_span("unit") as span:
+        logging.getLogger("some.library").warning("connection retried")
+        context = span.get_span_context()
+
+    payload = json.loads(capsys.readouterr().out.strip())
+    assert payload["trace_id"] == format(context.trace_id, "032x")

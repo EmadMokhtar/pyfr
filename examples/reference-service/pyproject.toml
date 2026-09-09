@@ -26,6 +26,12 @@ dependencies = [
     # `process.runtime.cpython.*` duplicates plus whole-host `system.*`
     # series; observability/metrics.py passes an explicit config instead.
     "opentelemetry-instrumentation-system-metrics>=0.65b0",
+    # Supplies the LoggingHandler that bridges the standard logging
+    # module to OTLP. The one in opentelemetry-sdk is deprecated as of
+    # 1.44.0 and warns on construction, which filterwarnings=["error"]
+    # turns into a test failure; the SDK's own message names this
+    # package as the replacement.
+    "opentelemetry-instrumentation-logging>=0.65b0",
 ]
 
 [dependency-groups]

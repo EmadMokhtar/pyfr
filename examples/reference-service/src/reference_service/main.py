@@ -50,6 +50,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         levels=resolved.log.levels,
         service_name=resolved.service_name,
         service_version=__version__,
+        logger_provider=(
+            otel_runtime.logger_provider if otel_runtime is not None else None
+        ),
     )
 
     @asynccontextmanager
