@@ -10,7 +10,7 @@ is stale".
 from __future__ import annotations
 
 import gc
-import sys
+import warnings
 
 import schemathesis
 from schemathesis.python.asgi import shutdown_lifespans
@@ -43,34 +43,50 @@ app = create_app()
 # `contract` marker deselects every test below — but pytest still
 # COLLECTS this module to know that, so `from_asgi` still runs, and the
 # object it leaves behind still gets reaped mid-suite. Verified directly:
-# without the three lines below, `just test` failed
+# without the fix below, `just test` failed
 # tests/api/test_errors.py::test_a_domain_error_becomes_problem_details —
 # a test with nothing to do with contracts — reproducibly, every run.
 #
-# `shutdown_lifespans()` plus `gc.collect()` reap it deterministically
-# here instead, during this module's own import, which is the one moment
-# neither this directory's conftest.py nor pyproject.toml's global
-# `filterwarnings` needs to cover. The `sys.unraisablehook` swap is what
-# makes that safe: CPython calls the hook synchronously from inside
-# `__del__`, before the `warnings` filtering machinery ever sees anything,
-# so a plain `warnings.catch_warnings()` here would not catch it — pytest
-# installs its OWN hook at `pytest_configure`, before collection starts,
-# specifically to queue these for later and re-raise them as a warning
-# next to whatever test is then running. Swapping in a no-op for this one,
-# narrow, known cause and putting pytest's hook straight back afterwards
-# empties that queue before it can be filled with something unrelated.
-def _discard_unraisable(_: sys.UnraisableHookArgs) -> None:
-    pass
-
-
-_pytest_hook = sys.unraisablehook
-sys.unraisablehook = _discard_unraisable
-try:
+# `shutdown_lifespans()` plus `gc.collect()` force that GC pass here
+# instead, during this module's own import — the one moment neither this
+# directory's conftest.py nor pyproject.toml's global `filterwarnings`
+# needs to cover. This does NOT fix the leak: the streams are still
+# reported `Unclosed` at the instant they are reaped here, because
+# `shutdown_lifespans()` cancels the lifespan task without closing the two
+# anyio memory-object streams behind it — that is a gap in Schemathesis's
+# ASGI transport, not in this codebase, and it stays open. What this
+# controls is only WHEN the resulting warning fires: here, at import time,
+# rather than at an unpredictable later point blamed on an unrelated test.
+#
+# `warnings.catch_warnings()` scoped to these three statements, with
+# `ResourceWarning` filtered to "ignore", is what makes that safe. Verified
+# directly (see the fix-round-1 section of this task's report for the
+# experiment): CPython's `__del__` machinery calls `warnings.warn(...)`
+# through the ordinary warnings-filter chain FIRST; only when the active
+# filter says "error" — which pyproject.toml's `filterwarnings = ["error"]`
+# does, session-wide — does that call raise, and only THEN, because
+# raising out of `__del__` is not allowed, does CPython reroute the
+# resulting exception to `sys.unraisablehook` (which is where pytest's own
+# hook, installed at `pytest_configure`, queues it for later and blames
+# whichever test's setup/call/teardown boundary is running when the queue
+# is next drained). Filtering `ResourceWarning` to "ignore" for the
+# duration of this block intercepts it at the FIRST step: `warnings.warn`
+# returns without raising, so no exception is ever produced, so nothing
+# ever reaches `sys.unraisablehook` — pytest's queue stays empty and no
+# later, unrelated test can be blamed. A previous version of this comment
+# claimed the opposite — that `warnings.catch_warnings()` could not reach
+# this because the hook fires "before the warnings filtering machinery
+# ever sees anything." That claim was disproven by direct experiment: with
+# only the ini-level `filterwarnings = ["error"]` active and no further
+# suppression, these three statements produce four `sys.unraisablehook`
+# calls (two `MemoryObjectSendStream` / `MemoryObjectReceiveStream` pairs);
+# wrapped in this `catch_warnings()` block instead, they produce zero,
+# every time.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", ResourceWarning)
     schema = schemathesis.openapi.from_asgi("/openapi.json", app)
     shutdown_lifespans()
     gc.collect()
-finally:
-    sys.unraisablehook = _pytest_hook
 
 
 @schema.parametrize()
