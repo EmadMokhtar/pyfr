@@ -75,16 +75,24 @@ only that your code called the method you told it to call. When the real
 adapter's behaviour changes, the fake is wrong in a way a test can catch, and
 the mock is wrong in a way nothing can catch.
 
-## What is not measured yet
-
-Coverage thresholds and mutation testing arrive in later milestones.
+## Mutation testing
 
 Mutation testing introduces small deliberate bugs into the source — `>` becomes
 `>=`, `True` becomes `False` — and re-runs the tests. A mutation that survives
 proves the tests never actually checked that behaviour. It measures whether
 tests *assert*, where coverage measures only whether lines *executed*. It is
-the stronger of the two signals, and the documentation says so plainly
-wherever both are reported.
+the stronger of the two signals.
+
+M3 shipped it, over `domain/` and `services/` — the two layers where a
+surviving mutant means a business rule nothing actually checks, not a line of
+routing or wiring. Run it with `just mutants`; see
+[Commands](../reference/commands.md#outbound-http-and-mutation-testing) for
+the full set (`mutants-changed`, `mutants-gate`).
+
+## What is not measured yet
+
+Coverage thresholds are not implemented, and are not in M3's scope. Nothing
+in this repository fails a build for a line that never ran.
 
 ## Your `.env` is kept out of the tests
 

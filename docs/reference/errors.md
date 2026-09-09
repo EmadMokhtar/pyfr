@@ -39,12 +39,18 @@ publishes.
 
 | Status | `type` suffix | When |
 | --- | --- | --- |
+| 402 | `payment_declined` | The payment provider declined the card. |
 | 404 | `order_not_found` | No order has that id. |
 | 422 | `validation_error` | The request body broke a rule. |
 | 500 | `internal_error` | An unhandled failure. |
+| 503 | `payment_unavailable` | The payment provider could not be reached, or its circuit breaker is open. Carries a `Retry-After` header. |
 
 422 is used for a request that is well-formed JSON but breaks a rule —
 a quantity of zero, a currency of `eur`, two lines in different currencies.
+
+402 and 503 are specific to `POST /api/v1/orders`, the only route that talks
+to a payment provider — see [HTTP API](http-api.md#post-apiv1orders) and
+[Outbound HTTP calls](../guides/outbound-http.md).
 
 ### A 500 tells you nothing about the internals
 
