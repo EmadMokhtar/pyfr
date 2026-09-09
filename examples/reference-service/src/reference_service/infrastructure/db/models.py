@@ -50,6 +50,7 @@ class OrderRow(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     total_currency: Mapped[str] = mapped_column(CHAR(3), nullable=False)
     internal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    authorisation_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class OrderLineRow(Base):

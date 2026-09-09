@@ -19,16 +19,27 @@ from pydantic import ValidationError as PydanticValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from reference_service.api.middleware import CORRELATION_HEADER, _route_template
-from reference_service.domain.errors import DomainError, OrderNotFoundError
+from reference_service.domain.errors import (
+    DomainError,
+    OrderNotFoundError,
+    PaymentDeclinedError,
+)
+from reference_service.infrastructure.errors import PaymentUnavailableError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 PROBLEM_TYPE_BASE = "https://errors.example.com"
 
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     OrderNotFoundError: status.HTTP_404_NOT_FOUND,
+    PaymentDeclinedError: status.HTTP_402_PAYMENT_REQUIRED,
 }
 
 _DEFAULT_DOMAIN_STATUS = status.HTTP_422_UNPROCESSABLE_CONTENT
+
+# Matches PaymentSettings.breaker_reset_after_seconds's own default in
+# settings.py. Telling a client to come back before the circuit could
+# possibly have closed just wastes both sides' time.
+RETRY_AFTER_SECONDS = 30
 
 _logger = structlog.get_logger(__name__)
 
@@ -136,6 +147,31 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail=str(exc),
                 instance=request.url.path,
             )
+        )
+
+    @app.exception_handler(PaymentUnavailableError)
+    async def _payment_unavailable(
+        request: Request, exc: PaymentUnavailableError
+    ) -> JSONResponse:
+        """503, not 500. The caller did nothing wrong and the same request
+        may well succeed later — which is exactly what 503 means and 500
+        does not.
+
+        `detail` is a fixed string, never `str(exc)`: the exception
+        carries the provider's name and sometimes its URL, and this
+        response is public. The full exception goes to the log instead,
+        the same division ReadinessRegistry already makes.
+        """
+        _logger.warning("request.payment_unavailable", exc_info=exc)
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/payment_unavailable",
+                title="Payment provider unavailable",
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The payment provider could not be reached. Try again.",
+                instance=request.url.path,
+            ),
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
         )
 
     @app.exception_handler(StarletteHTTPException)

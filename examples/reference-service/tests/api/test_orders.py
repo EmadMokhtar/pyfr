@@ -1,13 +1,32 @@
 import json
+from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
+from reference_service.api.deps import get_payments
 from reference_service.api.v1.schemas import OrderResponse
 from reference_service.domain.order import Order
 from reference_service.main import create_app
 from reference_service.settings import Settings
+from tests.fakes import DecliningPaymentGateway, UnavailablePaymentGateway
+
+
+@pytest.fixture
+def client_with_declining_gateway(settings: Settings) -> Iterator[TestClient]:
+    app = create_app(settings)
+    app.dependency_overrides[get_payments] = DecliningPaymentGateway
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def client_with_unavailable_gateway(settings: Settings) -> Iterator[TestClient]:
+    app = create_app(settings)
+    app.dependency_overrides[get_payments] = UnavailablePaymentGateway
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def a_payload(quantity: int = 2, amount: str = "10.00") -> dict[str, object]:
@@ -46,6 +65,34 @@ def test_a_placed_order_can_be_fetched(client: TestClient) -> None:
 
     assert fetched.status_code == 200
     assert fetched.json() == created
+
+
+def test_a_declined_payment_is_a_402_problem_details(
+    client_with_declining_gateway: TestClient,
+) -> None:
+    response = client_with_declining_gateway.post("/api/v1/orders", json=a_payload())
+
+    assert response.status_code == 402
+    assert response.headers["content-type"] == "application/problem+json"
+    problem = response.json()
+    assert problem["type"].endswith("/payment_declined")
+    # The provider's reason reaches the client: it is the one thing that
+    # tells them whether retrying could ever work.
+    assert "insufficient_funds" in problem["detail"]
+
+
+def test_an_unavailable_gateway_is_a_503_with_retry_after(
+    client_with_unavailable_gateway: TestClient,
+) -> None:
+    response = client_with_unavailable_gateway.post("/api/v1/orders", json=a_payload())
+
+    assert response.status_code == 503
+    assert response.headers["content-type"] == "application/problem+json"
+    # A 503 without Retry-After tells a client nothing about when to come
+    # back, so every client invents its own answer and they all pick "now".
+    assert response.headers["retry-after"] == "30"
+    # And it must NOT leak which provider, at what URL, refused us.
+    assert "http" not in response.json().get("detail", "").lower()
 
 
 def test_fetching_an_unknown_order_is_problem_details_404(

@@ -19,6 +19,12 @@ router = APIRouter(prefix="/orders", tags=["orders"])
     "",
     response_model=OrderResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_402_PAYMENT_REQUIRED: problem_response("Payment declined"),
+        status.HTTP_503_SERVICE_UNAVAILABLE: problem_response(
+            "Payment provider unavailable"
+        ),
+    },
 )
 async def place_order(
     request: PlaceOrderRequest,

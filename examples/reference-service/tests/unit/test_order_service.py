@@ -5,15 +5,21 @@ import pytest
 from pydantic import ValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.domain.errors import OrderNotFoundError
+from reference_service.domain.errors import OrderNotFoundError, PaymentDeclinedError
 from reference_service.domain.order import OrderId
+from reference_service.infrastructure.errors import PaymentUnavailableError
 from reference_service.services.order import (
     GetOrder,
     PlaceOrder,
     PlaceOrderCommand,
     PlaceOrderLine,
 )
-from tests.fakes import FakeOrderRepository
+from tests.fakes import (
+    DecliningPaymentGateway,
+    FakeOrderRepository,
+    FakePaymentGateway,
+    UnavailablePaymentGateway,
+)
 
 
 def a_command(quantity: int = 2, amount: str = "10.00") -> PlaceOrderCommand:
@@ -33,7 +39,9 @@ def a_command(quantity: int = 2, amount: str = "10.00") -> PlaceOrderCommand:
 async def test_placing_an_order_computes_the_total() -> None:
     orders = FakeOrderRepository()
 
-    order = await PlaceOrder(orders)(a_command(quantity=3, amount="10.00"))
+    order = await PlaceOrder(orders, FakePaymentGateway())(
+        a_command(quantity=3, amount="10.00")
+    )
 
     assert order.total.amount == Decimal("30.00")
     assert order.total.currency == "EUR"
@@ -42,19 +50,52 @@ async def test_placing_an_order_computes_the_total() -> None:
 async def test_placing_an_order_persists_it() -> None:
     orders = FakeOrderRepository()
 
-    order = await PlaceOrder(orders)(a_command())
+    order = await PlaceOrder(orders, FakePaymentGateway())(a_command())
 
     assert orders.saved == [order]
 
 
 async def test_each_order_gets_a_distinct_identity() -> None:
     orders = FakeOrderRepository()
-    place = PlaceOrder(orders)
+    place = PlaceOrder(orders, FakePaymentGateway())
 
     first = await place(a_command())
     second = await place(a_command())
 
     assert first.id != second.id
+
+
+async def test_an_order_is_authorised_before_it_is_saved() -> None:
+    """Order matters. Saving first would persist orders nobody paid for
+    every time the gateway declines."""
+    orders = FakeOrderRepository()
+    payments = FakePaymentGateway()
+
+    order = await PlaceOrder(orders, payments)(a_command())
+
+    assert payments.calls, "the gateway was never asked"
+    _, total = payments.calls[0]
+    assert total == order.total, "the authorised amount must be the order total"
+    assert order.authorisation_id == "auth_fake_0001"
+    assert orders.saved == [order]
+
+
+async def test_a_declined_payment_saves_nothing() -> None:
+    orders = FakeOrderRepository()
+
+    with pytest.raises(PaymentDeclinedError):
+        await PlaceOrder(orders, DecliningPaymentGateway())(a_command())
+
+    assert orders.saved == []
+
+
+async def test_an_unavailable_gateway_saves_nothing() -> None:
+    orders = FakeOrderRepository()
+
+    with pytest.raises(PaymentUnavailableError):
+        await PlaceOrder(orders, UnavailablePaymentGateway())(a_command())
+
+    assert orders.saved == []
 
 
 async def test_a_command_with_no_lines_is_refused() -> None:
@@ -147,7 +188,7 @@ def test_place_order_line_rejects_a_boolean_quantity() -> None:
 
 async def test_returns_a_stored_order() -> None:
     orders = FakeOrderRepository()
-    placed = await PlaceOrder(orders)(
+    placed = await PlaceOrder(orders, FakePaymentGateway())(
         PlaceOrderCommand(
             customer_id=uuid4(),
             lines=(
@@ -199,7 +240,7 @@ async def test_a_use_case_defect_is_not_reported_as_client_error(
         lambda lines: Money(amount=Decimal("999.99"), currency="EUR"),
     )
 
-    place_order = PlaceOrder(FakeOrderRepository())
+    place_order = PlaceOrder(FakeOrderRepository(), FakePaymentGateway())
     command = PlaceOrderCommand(
         customer_id=uuid4(),
         lines=(
@@ -233,7 +274,7 @@ async def test_a_use_case_defect_does_not_reach_the_repository(
     )
 
     repository = FakeOrderRepository()
-    place_order = PlaceOrder(repository)
+    place_order = PlaceOrder(repository, FakePaymentGateway())
     command = PlaceOrderCommand(
         customer_id=uuid4(),
         lines=(

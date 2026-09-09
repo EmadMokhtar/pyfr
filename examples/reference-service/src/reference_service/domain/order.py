@@ -119,6 +119,11 @@ class Order(BaseModel):
     # Deliberately never exposed over HTTP. Task 12 asserts that the API
     # response omits it — the demonstration of why api schemas are separate.
     internal_note: str | None = None
+    # Set once the payment provider has authorised the total, and never
+    # after. `None` is not "unpaid": it is an order placed while no
+    # payment provider was configured at all, which is the in-memory
+    # gateway's case and the default `just dev` experience.
+    authorisation_id: AuthorisationId | None = None
 
     @model_validator(mode="after")
     def total_must_match_lines(self) -> Self:

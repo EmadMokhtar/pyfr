@@ -33,6 +33,7 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
+from reference_service.domain.payments import PaymentGateway
 from reference_service.domain.repositories import OrderRepository
 from reference_service.services.errors import ServiceDefectError
 
@@ -109,10 +110,17 @@ class PlaceOrderCommand(BaseModel):
 
 
 class PlaceOrder:
-    def __init__(self, orders: OrderRepository) -> None:
+    def __init__(self, orders: OrderRepository, payments: PaymentGateway) -> None:
         self._orders = orders
+        self._payments = payments
 
     async def __call__(self, command: PlaceOrderCommand) -> Order:
+        # Generated BEFORE the try below, not inside it: the payment
+        # gateway's idempotency key (infrastructure/http/payment_gateway.py)
+        # is this same id, so it must exist even if line assembly below
+        # were ever to fail before reaching the gateway.
+        order_id = OrderId(uuid4())
+
         # The boundary. Everything below this point works from a command that
         # has ALREADY validated, so any validation failure here means this use
         # case assembled the aggregate wrongly — a server defect. Letting the
@@ -127,12 +135,7 @@ class PlaceOrder:
                 )
                 for item in command.lines
             )
-            order = Order(
-                id=OrderId(uuid4()),
-                customer_id=CustomerId(command.customer_id),
-                lines=lines,
-                total=total_of(lines),
-            )
+            total = total_of(lines)
         except (PydanticValidationError, ValueError) as exc:
             # ValueError as well as ValidationError: total_of raises a plain
             # ValueError on mixed currencies. PlaceOrderCommand already rejects
@@ -142,9 +145,44 @@ class PlaceOrder:
                 "failed to build a valid Order from a valid PlaceOrderCommand"
             ) from exc
 
-        # Outside the try: a repository failure is not a validation problem,
+        # Authorise BEFORE saving. The other order — save, then authorise —
+        # persists an order for every declined card and leaves someone to
+        # clean them up later.
+        #
+        # Neither error is caught here. PaymentDeclinedError is a
+        # DomainError and api/errors.py turns it into a 402;
+        # PaymentUnavailableError has its own handler and becomes a 503.
+        # Wrapping either in ServiceDefectError would relabel a working
+        # gateway's "no" as a bug in this service.
+        authorisation = await self._payments.authorise(order_id=order_id, total=total)
+
+        try:
+            order = Order(
+                id=order_id,
+                customer_id=CustomerId(command.customer_id),
+                lines=lines,
+                total=total,
+                authorisation_id=authorisation.id,
+            )
+        except (PydanticValidationError, ValueError) as exc:
+            # Same defect class as the try above (see its comment): a
+            # command that validated but produced an Order whose total
+            # disagrees with its lines is this use case's bug, not the
+            # caller's — even though it is only reachable here because the
+            # payment has, by this point, already been authorised.
+            raise ServiceDefectError(
+                "failed to build a valid Order from a valid PlaceOrderCommand"
+            ) from exc
+
+        # Outside any try: a repository failure is not a validation problem,
         # and wrapping it here would relabel a database outage as a defect in
         # this use case. It propagates to the catch-all handler as itself.
+        #
+        # The window: if this raises, the payment above is authorised and no
+        # order exists. Deliberately not "cleaned up" here with a call that
+        # voids the authorisation — that call can fail too, and then there
+        # are two windows instead of one. See the note at the head of Task
+        # 12's brief; closing this properly is Task 15's job, not this one's.
         await self._orders.save(order)
         return order
 
