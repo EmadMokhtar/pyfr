@@ -33,6 +33,7 @@ from pydantic import (
     PostgresDsn,
     ValidationError,
     field_validator,
+    model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -72,11 +73,53 @@ class OtelSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     enabled: bool = False
-    # Standard output is the source of truth for logs. Enabling this in
-    # production alongside a platform log agent doubles ingest volume and
-    # cost. The local compose profile turns it on; nothing else should.
+    # Standard output is the source of truth for logs (spec D15). Enabling
+    # this in production alongside a platform log agent doubles ingest
+    # volume and cost. The local compose profile turns it on; nothing else
+    # should.
     logs_enabled: bool = False
     endpoint: str | None = None
+    # Parent-based sampling: a request already carrying a sampled parent is
+    # always recorded, and this ratio decides only for requests that start
+    # here. 1.0 locally so a developer sees the request they just made;
+    # lower in production, where recording every span costs real money.
+    sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    # How often metrics are pushed. The SDK default is 60s, which matches
+    # the Grafana datasource's own 60s timeInterval; the o11y compose
+    # profile lowers it so a developer is not waiting a minute to see a
+    # panel move.
+    metric_export_interval_ms: int = Field(default=60_000, ge=1_000)
+
+    @model_validator(mode="after")
+    def _exporting_requires_somewhere_to_export_to(self) -> OtelSettings:
+        """Refuse to start rather than drop telemetry on a background thread.
+
+        With `enabled` true and no endpoint the SDK builds happily, samples
+        happily, batches happily, and then fails to connect from its own
+        exporter thread — where the failure is a log line nobody is reading
+        at 3am, and the symptom is "the dashboards are empty" a week later.
+        Failing here makes it exit 78 with the variable named, like every
+        other bad setting (see load_settings).
+
+        `logs_enabled` is checked against `enabled` rather than against
+        `endpoint` because the log exporter shares the providers `enabled`
+        builds: on its own it would configure nothing at all, which is the
+        same silent-nothing failure in a second costume.
+        """
+        if self.enabled and not self.endpoint:
+            raise ValueError(
+                "APP_OTEL__ENABLED is true but APP_OTEL__ENDPOINT is not "
+                "set: the SDK would start and then drop every span, metric "
+                "and log record from its own exporter thread. Set the "
+                "collector endpoint, or set APP_OTEL__ENABLED=false."
+            )
+        if self.logs_enabled and not self.enabled:
+            raise ValueError(
+                "APP_OTEL__LOGS_ENABLED is true but APP_OTEL__ENABLED is "
+                "false: OTLP log export uses the providers APP_OTEL__ENABLED "
+                "builds, so on its own this setting does nothing."
+            )
+        return self
 
 
 # Parameters libpq accepts and asyncpg does not — see the field_validator

@@ -24,9 +24,20 @@ Run these from `examples/reference-service/`.
 | `just imports` | import-linter: verify the [dependency rule](../explanation/layers.md). |
 | `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
-| `just check-all` | Everything `just check` does, plus the container tier and all five schema gates. Needs Docker. |
+| `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the SLO rule gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. |
 | `just down` | Stop the stack and remove its volumes. |
+
+## Observability
+
+| Command | What it does |
+| --- | --- |
+| `just o11y` | Everything `just up` starts, plus Grafana, Prometheus, Tempo and Loki in one container, with the dashboards and SLO rules from `ops/` mounted in. Grafana is on <http://localhost:3000> with anonymous admin access — no login. |
+| `just o11y-down` | Stop that stack and remove its volumes, telemetry included. |
+| `just o11y-gates` | Validate the SLO rules with `promtool`: syntax first, then unit tests that feed synthetic series through the real rules and assert the numbers that come out. `promtool` runs from inside the pinned `grafana/otel-lgtm` image, so it needs no separate Prometheus install and can never drift from the version that actually evaluates the rules. |
+
+See [Observability](observability.md) for what the dashboards show and how
+the objectives are defined.
 
 ## The database
 

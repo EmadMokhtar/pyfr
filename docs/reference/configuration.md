@@ -25,9 +25,11 @@ cp .env.example .env
 | `APP_DATABASE__DSN` | PostgreSQL URL | unset | Where to store orders. **Leave it unset to run with no database at all** — the service starts on an in-memory repository and serves normally. See the rules below. |
 | `APP_DATABASE__POOL_SIZE` | integer, ≥ 1 | `10` | Connections held open to PostgreSQL. This is a true ceiling: `max_overflow` is pinned to 0, so an eleventh concurrent checkout waits rather than opening a further connection, and gives up after SQLAlchemy's 30-second `pool_timeout`. |
 | `APP_DATABASE__STATEMENT_TIMEOUT_MS` | integer, ≥ 0 | `5000` | Applied by the server per connection. A statement running longer is cancelled, so one pathological query cannot hold a pooled connection indefinitely. |
-| `APP_OTEL__ENABLED` | boolean | `false` | Reserved for M2's OpenTelemetry support. Does nothing yet. |
-| `APP_OTEL__LOGS_ENABLED` | boolean | `false` | Reserved for M2. See the warning below. |
-| `APP_OTEL__ENDPOINT` | string | unset | Reserved for M2. The collector address telemetry would be sent to. |
+| `APP_OTEL__ENABLED` | boolean | `false` | Turn on traces and metrics. Off by default: with it off the process builds no providers, opens no socket and starts no background task. |
+| `APP_OTEL__ENDPOINT` | string | unset | Where traces and metrics go, over OTLP/gRPC. **Required** when `APP_OTEL__ENABLED` is true — enabling the SDK with nowhere to send data stops the process at startup rather than dropping every span from a background thread. |
+| `APP_OTEL__SAMPLE_RATIO` | float | `1.0` | Fraction of *new* traces recorded, 0.0 to 1.0. Sampling is parent-based, so a request arriving with a sampled parent is always recorded whatever this says. |
+| `APP_OTEL__METRIC_EXPORT_INTERVAL_MS` | integer | `60000` | How often metrics are pushed. `just o11y` lowers it to 10000 so panels move while you watch. |
+| `APP_OTEL__LOGS_ENABLED` | boolean | `false` | Export logs over OTLP **in addition to** standard output. Requires `APP_OTEL__ENABLED`. See the warning below. |
 
 ### The database URL carries no driver and no `sslmode`
 

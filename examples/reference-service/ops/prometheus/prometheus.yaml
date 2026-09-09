@@ -1,0 +1,81 @@
+---
+# The image's OWN /otel-lgtm/prometheus.yaml, copied verbatim, plus one
+# added key: rule_files.
+#
+# Verbatim matters. Prometheus is started with --config.file=./prometheus.yaml
+# and the shipped file has NO rule_files key at all, so replacing the whole
+# file is the only way to load rules — there is no scrape config to attach
+# to and no directory it already watches. But replacing it means everything
+# else in it is now OUR responsibility, and the part that matters most is
+# promote_resource_attributes: that list is what turns resource attributes
+# into Prometheus LABELS. A hand-picked subset silently drops the rest, and
+# the symptom is a dashboard filter that matches nothing in production —
+# every k8s.* label, in particular, is how anyone running this in a cluster
+# tells one pod from another.
+#
+# WHEN BUMPING THE IMAGE, REGENERATE THIS FILE. Do not hand-merge:
+#
+#   docker run --rm --entrypoint cat grafana/otel-lgtm:<tag> \
+#     /otel-lgtm/prometheus.yaml > ops/prometheus/prometheus.yaml
+#   printf '\nrule_files:\n  - /otel-lgtm/rules/*.yml\n' \
+#     >> ops/prometheus/prometheus.yaml
+#
+# The 0.32.1 list below promotes 27 attributes. The 0.11.11 list promoted
+# 18, and an earlier draft of this plan shipped a hand-written 5 — which
+# would have dropped every cloud.*, container.*, host.* and k8s.* label
+# without a word.
+global:
+  scrape_native_histograms: true
+otlp:
+  keep_identifying_resource_attributes: true
+  # Recommended attributes to be promoted to labels.
+  promote_resource_attributes:
+    - service.instance.id
+    - service.name
+    - service.namespace
+    - service.version
+    - cloud.availability_zone
+    - cloud.region
+    - container.name
+    - deployment.environment # backward compatibility
+    - deployment.environment.name
+    - k8s.cluster.name
+    - k8s.container.name
+    - k8s.cronjob.name
+    - k8s.daemonset.name
+    - k8s.deployment.name
+    - k8s.job.name
+    - k8s.namespace.name
+    - k8s.node.name
+    - k8s.pod.name
+    - k8s.replicaset.name
+    - k8s.statefulset.name
+    - host.name
+    - postgresql.database.name
+    - postgresql.schema.name
+    - postgresql.table.name
+    - postgresql.index.name
+    - database # used by otelcol/receiver/mongodb
+    - kafka.cluster.alias
+storage:
+  tsdb:
+    # A 10min time window is enough because it can easily absorb retries and network delays.
+    out_of_order_time_window: 10m
+
+rule_files:
+  # A GLOB, so nothing that is not a rules file may live in that directory.
+  # This is not a style preference: promtool's test files use a completely
+  # different schema (top-level `tests:`, `evaluation_interval:`, and a
+  # `rule_files:` of their own), and Prometheus REFUSES TO START when the
+  # glob picks one up. Verified against grafana/otel-lgtm with slo_test.yml
+  # in this directory — every other component reported "up and running" and
+  # Prometheus alone died with:
+  #
+  #   parse rules from file "/otel-lgtm/rules/slo_test.yml"
+  #     (pattern: "/otel-lgtm/rules/*.yml"): yaml: unmarshal errors:
+  #     field rule_files not found in type rulefmt.RuleGroups
+  #     field evaluation_interval not found in type rulefmt.RuleGroups
+  #     field tests not found in type rulefmt.RuleGroups
+  #
+  # which is why ops/prometheus/slo_test.yml sits OUTSIDE rules/.
+  - /otel-lgtm/rules/*.yml

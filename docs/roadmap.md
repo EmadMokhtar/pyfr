@@ -4,7 +4,7 @@ PyFr is built in nine milestones, M0 through M8. Every milestone ends with
 something that runs and is tested — there is no stage where the project is
 half-converted and nothing works.
 
-**M0 is done.** Everything on this site describes code that exists today.
+**M0, M1 and M2 are done.** Everything on this site describes code that exists today.
 
 The last row of the table, M9, is not one of the nine. It is a holding place
 for extras deliberately deferred out of the first plan, with no schedule
@@ -13,8 +13,8 @@ attached.
 | | Milestone | State | What exists at the end |
 | --- | --- | --- | --- |
 | **M0** | Walking skeleton | **Done** | The application factory and lifespan, validated settings, structured logging, three health endpoints, Problem Details errors, correlation identifiers, graceful shutdown, one example domain slice on an in-memory repository, unit tests with property-based testing, the `justfile`, ruff, mypy, import-linter, pre-commit, the Dockerfile and compose. `just up` serves a working API. |
-| **M1** | Persistence | Planned | Database migrations end to end, SQLAlchemy async models, the PostgreSQL adapter, integration tests against a real database in Docker, and four schema governance gates. |
-| **M2** | Observability | Planned | OpenTelemetry and automatic instrumentation, trace-to-log correlation, a local Grafana stack behind a compose profile, three dashboards, and service level objective alerts. |
+| **M1** | Persistence | **Done** | Database migrations end to end, SQLAlchemy async models, the PostgreSQL adapter, integration tests against a real database in Docker, and four schema governance gates. |
+| **M2** | Observability | **Done** | OpenTelemetry and automatic instrumentation, trace-to-log correlation, a local Grafana stack behind a compose profile, three dashboards, and service level objective alerts. |
 | **M3** | Contract and test depth | Planned | A committed OpenAPI document with a drift gate, generated conformance testing, a breaking-change gate, the shared outbound HTTP client, recorded HTTP cassettes, and mutation testing. |
 | **M4** | Cache and object storage | Planned | The Redis adapter, the S3-compatible adapter, MinIO in compose, and integration tests for both. |
 | **M5** | Docs and release | Planned | The Diátaxis documentation structure, a *generated* configuration reference, decision records, an on-call runbook, all four documentation hygiene checks, and automated releases. |

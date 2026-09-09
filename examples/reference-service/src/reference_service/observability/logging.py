@@ -15,6 +15,16 @@ from typing import Any
 
 import orjson
 import structlog
+from opentelemetry import trace
+
+# The handler comes from opentelemetry-instrumentation-logging, NOT from
+# opentelemetry-sdk. The SDK's own LoggingHandler is deprecated as of
+# 1.44.0 and emits a DeprecationWarning the moment it is constructed,
+# which this project's filterwarnings = ["error"] turns into a test
+# failure. The SDK's deprecation message names this handler as the
+# replacement.
+from opentelemetry.instrumentation.logging.handler import LoggingHandler
+from opentelemetry.sdk._logs import LoggerProvider
 from structlog.types import Processor
 
 
@@ -50,6 +60,36 @@ def _bind_resource_attributes(
     return add_resource_attributes
 
 
+def _add_otel_context(
+    logger: Any, method_name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """Stamp the active trace and span identifiers onto the record.
+
+    Reads the AMBIENT span from the OpenTelemetry context rather than any
+    provider, so this works no matter who configured the SDK — and costs
+    almost nothing when nobody did, because with telemetry off there is
+    never a valid span and the function returns after one check.
+
+    The `is_valid` guard is load-bearing. Outside a span the context is
+    the invalid one, whose trace_id is the integer zero: formatting it
+    regardless would put
+    trace_id="00000000000000000000000000000000" on every record emitted
+    at startup, shutdown, or from a background task. That value looks
+    exactly like a real identifier, matches nothing in Tempo, and files
+    every uncorrelated line in the service under a single enormous
+    fictional trace.
+
+    The 32- and 16-hex-digit formats are the W3C Trace Context wire
+    formats, which is what Tempo indexes and what the Loki datasource in
+    the local stack already has a derived-field link configured for.
+    """
+    context = trace.get_current_span().get_span_context()
+    if context.is_valid:
+        event_dict["trace_id"] = format(context.trace_id, "032x")
+        event_dict["span_id"] = format(context.span_id, "016x")
+    return event_dict
+
+
 def _shared_processors(
     *, service_name: str, service_version: str, environment: str
 ) -> list[Processor]:
@@ -61,6 +101,7 @@ def _shared_processors(
             service_version=service_version,
             environment=environment,
         ),
+        _add_otel_context,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
@@ -81,6 +122,7 @@ def configure_logging(
     levels: Mapping[str, str],
     service_name: str = "reference-service",
     service_version: str = "0.0.0",
+    logger_provider: LoggerProvider | None = None,
 ) -> None:
     """Configure structlog and route the standard library through it."""
     shared = _shared_processors(
@@ -138,6 +180,46 @@ def configure_logging(
         uvicorn_logger = logging.getLogger(uvicorn_logger_name)
         uvicorn_logger.handlers.clear()
         uvicorn_logger.propagate = True
+
+    if logger_provider is not None:
+        # A SECOND handler on the same root logger, so every record goes to
+        # standard output AND to OTLP. Standard output is the source of
+        # truth (spec D15): it survives a collector outage and captures
+        # crashes and any failure happening before the SDK initialised.
+        # This leg exists so that locally a developer sees log lines beside
+        # the matching trace in Grafana without wiring up a log scraper.
+        #
+        # Its own ProcessorFormatter instance, not the one above, for two
+        # reasons. The renderer differs — a backend has no use for the
+        # colourised console output `local` gets on stdout, so this leg is
+        # always JSON — and two handlers formatting the same record through
+        # one shared formatter object is a needless shared-mutation risk
+        # for the sake of saving an allocation made once per process.
+        #
+        # No `level=` argument, deliberately. The stdout handler above sets
+        # none either, so both legs pass whatever their LOGGER allowed and
+        # the per-logger `levels` mapping below governs both identically.
+        # Pinning this handler to the global level would silently drop the
+        # records that mapping exists to let through — set
+        # APP_LOG__LEVELS='{"sqlalchemy.engine":"debug"}' under a global
+        # `info` and those lines would reach stdout but never OTLP,
+        # contradicting this function's "one pipeline for every record".
+        #
+        # trace_id and span_id are set on the OTLP record automatically by
+        # LoggingHandler from the active span; the copies inside the JSON
+        # body come from _add_otel_context and are for whoever reads the
+        # body directly.
+        otlp_handler = LoggingHandler(logger_provider=logger_provider)
+        otlp_handler.setFormatter(
+            structlog.stdlib.ProcessorFormatter(
+                foreign_pre_chain=shared,
+                processors=[
+                    structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                    structlog.processors.JSONRenderer(serializer=_json_dumps),
+                ],
+            )
+        )
+        root.addHandler(otlp_handler)
 
     for logger_name, logger_level in levels.items():
         logging.getLogger(logger_name).setLevel(logger_level.upper())

@@ -20,11 +20,33 @@ from reference_service.api.middleware import (
 from reference_service.api.v1.router import router as v1_router
 from reference_service.container import build_container, close_container
 from reference_service.observability.logging import configure_logging
+from reference_service.observability.metrics import (
+    RuntimeMetrics,
+    register_runtime_metrics,
+)
+from reference_service.observability.otel import (
+    OtelRuntime,
+    configure_otel,
+    instrument_database,
+    instrument_fastapi,
+)
 from reference_service.settings import Settings, load_settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings if settings is not None else load_settings()
+
+    # Before configure_logging, not after. configure_logging takes an
+    # optional logger_provider for OTLP log export, and that provider is
+    # built here — so this has to run first or logging would have to be
+    # configured twice. Nothing in configure_otel logs anything, so nothing
+    # is lost by the ordering: it is pure construction, and a failure
+    # inside it surfaces as a traceback on stderr exactly as a settings
+    # failure already does.
+    #
+    # Returns None when APP_OTEL__ENABLED is false, which is the default
+    # and the entire M0/M1 path.
+    otel_runtime: OtelRuntime | None = configure_otel(resolved, __version__)
 
     configure_logging(
         environment=resolved.environment,
@@ -32,12 +54,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         levels=resolved.log.levels,
         service_name=resolved.service_name,
         service_version=__version__,
+        logger_provider=(
+            otel_runtime.logger_provider if otel_runtime is not None else None
+        ),
     )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         container = build_container(resolved)
         app.state.container = container
+        # Bound before the try below, because the finally block reads it:
+        # assigned inside the try, an exception raised earlier would make
+        # the finally hit an unbound name and mask the real startup error.
+        runtime_metrics: RuntimeMetrics | None = None
+        if otel_runtime is not None:
+            if container.engine is not None:
+                # Here rather than in create_app because the engine does
+                # not exist until the container is built, and here rather
+                # than in container.py because the composition root has no
+                # business importing an SDK.
+                instrument_database(container.engine, otel_runtime)
+            # Here, not in create_app: the probe task needs a running
+            # event loop, and create_app runs before there is one.
+            runtime_metrics = register_runtime_metrics(
+                otel_runtime,
+                service_version=__version__,
+                engine=container.engine,
+            )
         container.started = True
         try:
             yield
@@ -46,6 +89,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # --timeout-graceful-shutdown bounds how long that may take.
             container.started = False
             await close_container(container)
+            if runtime_metrics is not None:
+                # Before the providers shut down, so the final collection
+                # still has instruments to read.
+                await runtime_metrics.stop()
+            if otel_runtime is not None:
+                # Last, and after close_container: shutting the providers
+                # down flushes whatever is still batched, and the lines and
+                # spans produced BY closing the database pool are exactly
+                # the ones you want when a shutdown goes wrong.
+                otel_runtime.shutdown()
 
     app = FastAPI(
         title=resolved.service_name,
@@ -62,4 +115,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(v1_router, prefix="/api/v1")
     app.add_middleware(AccessLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
+    app.state.otel = otel_runtime
+    if otel_runtime is not None:
+        # Last, so the OpenTelemetry middleware ends up outermost — see
+        # instrument_fastapi's docstring for why the ordering is
+        # load-bearing rather than incidental.
+        instrument_fastapi(app, otel_runtime)
     return app

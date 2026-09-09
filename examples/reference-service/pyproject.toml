@@ -13,6 +13,25 @@ dependencies = [
     "orjson>=3.10",
     "sqlalchemy[asyncio]>=2.0.52",
     "asyncpg>=0.31",
+    # Traces, metrics and logs. The API/SDK/exporter line and the
+    # instrumentation line version SEPARATELY and always will: 1.44 for the
+    # first, 0.65b0 for the second. The `b` is upstream's, not a typo — the
+    # instrumentation packages are permanently beta-versioned.
+    "opentelemetry-sdk>=1.44,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.44,<2",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+    # Garbage collection, memory and thread counts for the runtime dashboard.
+    # Its defaults emit both the current metric names and their deprecated
+    # `process.runtime.cpython.*` duplicates plus whole-host `system.*`
+    # series; observability/metrics.py passes an explicit config instead.
+    "opentelemetry-instrumentation-system-metrics>=0.65b0",
+    # Supplies the LoggingHandler that bridges the standard logging
+    # module to OTLP. The one in opentelemetry-sdk is deprecated as of
+    # 1.44.0 and warns on construction, which filterwarnings=["error"]
+    # turns into a test failure; the SDK's own message names this
+    # package as the replacement.
+    "opentelemetry-instrumentation-logging>=0.65b0",
 ]
 
 [dependency-groups]
@@ -33,6 +52,13 @@ dev = [
     # this dependency silently removes that gate. See Task 9 of the M1 plan.
     "alembic>=1.19",
     "testcontainers[postgres]>=4.15",
+    # Reads ops/prometheus/rules/*.yml in the SLO gate (tests/unit/
+    # test_slo_rules.py), so the PromQL and the Python constants cannot
+    # drift. Available transitively through pre-commit today; depended on
+    # explicitly because a gate must not rest on someone else's transitive
+    # dependency.
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0",
 ]
 
 [build-system]

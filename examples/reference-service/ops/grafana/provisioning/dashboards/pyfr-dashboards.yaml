@@ -1,0 +1,21 @@
+---
+# Grafana scans the directory below on start and on an interval, so
+# editing a dashboard JSON on the host shows up without restarting the
+# container.
+#
+# This is the ONLY file in ops/grafana that M7 renders through Jinja. The
+# dashboards themselves are copied verbatim — they contain Grafana's own
+# {{ }} legend syntax, which Jinja would eat (spec 3.4).
+apiVersion: 1
+
+providers:
+  - name: "pyfr"
+    orgId: 1
+    folder: "PyFr"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /otel-lgtm/pyfr-dashboards
+      foldersFromFilesStructure: false

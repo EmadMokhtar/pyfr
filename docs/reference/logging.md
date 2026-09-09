@@ -35,6 +35,8 @@ Anything else gives one JSON object per line:
 | `service.name` | From `APP_SERVICE_NAME`. Without it you cannot separate one service's records in a shared backend. |
 | `service.version` | The package version. Tells you which release produced a line during a rollout. |
 | `deployment.environment` | From `APP_ENVIRONMENT`. |
+| `trace_id` | The active trace, as 32 hexadecimal digits. Present only on records emitted inside a span, which is why a startup line does not carry one. Links a log line to its trace in Tempo. |
+| `span_id` | The active span, as 16 hexadecimal digits. Same condition. |
 | `correlation_id` | Present on every record emitted during a request. |
 
 The three `service.*` and `deployment.*` names follow OpenTelemetry's

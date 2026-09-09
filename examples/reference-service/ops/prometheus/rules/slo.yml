@@ -1,0 +1,266 @@
+---
+# Service level objectives for the reference service.
+#
+# EVERY NUMBER BELOW IS ALSO A PYTHON CONSTANT in
+# src/reference_service/observability/slo.py, and
+# tests/unit/test_slo_rules.py fails if the two disagree. Change one, change
+# the other, or the gate stops the commit.
+#
+#   availability target  99.9% of requests do not return 5xx
+#   latency target       99.9% of requests finish within 300ms
+#   window               rolling 30 days
+#   error budget         0.001 of requests
+#
+# The `le="0.3"` matcher in the latency rules only works because
+# observability/otel.py adds an explicit 0.3 histogram bucket boundary.
+# The OpenTelemetry default boundaries step from 0.25 straight to 0.5, and
+# without that view this series does not exist and every latency rule
+# below silently evaluates to nothing.
+#
+# The `or <denominator> * 0` in each availability rule is not noise. A
+# service that has never returned a 5xx has no
+# http_server_request_duration_seconds_count{http_response_status_code=~"5.."}
+# series at all, and in PromQL an empty vector divided by anything is
+# empty — so a PERFECTLY HEALTHY service would report no availability
+# indicator whatsoever, and the SLO dashboard would read "No data" where
+# it should read 100%. `or` supplies a zero-valued fallback carrying the
+# same `job` label, so the healthy case is 0 rather than absent.
+#
+# /healthz, /readyz and /startupz are excluded from both indicators. An
+# orchestrator probes them every couple of seconds forever; counted, a
+# service serving ten real requests a minute beside eighteen hundred
+# probes reports a healthy objective while failing every request a user
+# actually makes.
+
+groups:
+  # Short windows: the fast half of each burn-rate pair, evaluated often
+  # because they are what makes a page arrive within minutes.
+  - name: slo_sli_short
+    interval: 30s
+    rules:
+      - record: job:slo_availability_errors:ratio_rate5m
+        expr: |
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[5m]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[5m])) * 0
+          )
+          /
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[5m]))
+
+      - record: job:slo_availability_errors:ratio_rate30m
+        expr: |
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[30m]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30m])) * 0
+          )
+          /
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30m]))
+
+      - record: job:slo_availability_errors:ratio_rate1h
+        expr: |
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[1h]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[1h])) * 0
+          )
+          /
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[1h]))
+
+      - record: job:slo_latency_errors:ratio_rate5m
+        expr: |
+          1 - (
+            sum by (job) (rate(http_server_request_duration_seconds_bucket{le="0.3",http_route!~"/healthz|/readyz|/startupz"}[5m]))
+            /
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[5m]))
+          )
+
+      - record: job:slo_latency_errors:ratio_rate30m
+        expr: |
+          1 - (
+            sum by (job) (rate(http_server_request_duration_seconds_bucket{le="0.3",http_route!~"/healthz|/readyz|/startupz"}[30m]))
+            /
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30m]))
+          )
+
+      - record: job:slo_latency_errors:ratio_rate1h
+        expr: |
+          1 - (
+            sum by (job) (rate(http_server_request_duration_seconds_bucket{le="0.3",http_route!~"/healthz|/readyz|/startupz"}[1h]))
+            /
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[1h]))
+          )
+
+  # Long windows. Evaluated every five minutes rather than every thirty
+  # seconds: a `rate(...[30d])` is expensive and a number covering thirty
+  # days does not change meaningfully in half a minute.
+  - name: slo_sli_long
+    interval: 5m
+    rules:
+      - record: job:slo_availability_errors:ratio_rate6h
+        expr: |
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[6h]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[6h])) * 0
+          )
+          /
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[6h]))
+
+      - record: job:slo_availability_errors:ratio_rate3d
+        expr: |
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[3d]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[3d])) * 0
+          )
+          /
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[3d]))
+
+      - record: job:slo_availability_errors:ratio_rate30d
+        expr: |
+          (
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",http_route!~"/healthz|/readyz|/startupz"}[30d]))
+            or
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30d])) * 0
+          )
+          /
+          sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30d]))
+
+      - record: job:slo_latency_errors:ratio_rate6h
+        expr: |
+          1 - (
+            sum by (job) (rate(http_server_request_duration_seconds_bucket{le="0.3",http_route!~"/healthz|/readyz|/startupz"}[6h]))
+            /
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[6h]))
+          )
+
+      - record: job:slo_latency_errors:ratio_rate3d
+        expr: |
+          1 - (
+            sum by (job) (rate(http_server_request_duration_seconds_bucket{le="0.3",http_route!~"/healthz|/readyz|/startupz"}[3d]))
+            /
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[3d]))
+          )
+
+      - record: job:slo_latency_errors:ratio_rate30d
+        expr: |
+          1 - (
+            sum by (job) (rate(http_server_request_duration_seconds_bucket{le="0.3",http_route!~"/healthz|/readyz|/startupz"}[30d]))
+            /
+            sum by (job) (rate(http_server_request_duration_seconds_count{http_route!~"/healthz|/readyz|/startupz"}[30d]))
+          )
+
+  # Multi-window, multi-burn-rate alerting, from Google's Site Reliability
+  # Engineering workbook.
+  #
+  # The idea, in one paragraph. Alerting when the error rate crosses a fixed
+  # line either pages constantly during harmless blips or stays silent
+  # through a slow bleed, depending on where the line is put. Burn rate
+  # asks a better question: how fast is the error budget being spent? A
+  # burn rate of 1 spends the whole 30-day budget in exactly 30 days. A
+  # burn rate of 14.4 spends 2% of it in an hour.
+  #
+  # Each alert requires a LONG window and a SHORT window to be over the
+  # threshold at the same time. The long window is the signal — something
+  # is genuinely wrong. The short window is the reset — it drops back
+  # quickly once the problem stops, so the alert clears instead of
+  # smouldering for hours after recovery. Neither window alone gives both
+  # properties, which is the entire reason there are two.
+  - name: slo_burn_alerts
+    rules:
+      - alert: SLOAvailabilityFastBurn
+        # 2% of the 30-day budget in one hour.
+        expr: |
+          job:slo_availability_errors:ratio_rate1h > (14.4 * 0.001)
+          and
+          job:slo_availability_errors:ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "{{ $labels.job }} is burning its availability budget 14.4x too fast"
+          description: >-
+            At this rate the entire 30-day error budget is gone in about two
+            days. Something is broken now, not drifting.
+
+      - alert: SLOAvailabilitySlowBurn
+        # 5% of the budget in six hours.
+        expr: |
+          job:slo_availability_errors:ratio_rate6h > (6 * 0.001)
+          and
+          job:slo_availability_errors:ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: page
+          slo: availability
+        annotations:
+          summary: "{{ $labels.job }} is burning its availability budget 6x too fast"
+          description: >-
+            Sustained elevated errors. Slower than a fast burn, still fast
+            enough to exhaust the month's budget in five days.
+
+      - alert: SLOAvailabilityBudgetBleed
+        # 10% of the budget in three days: a ticket, not a page.
+        expr: |
+          job:slo_availability_errors:ratio_rate3d > (1 * 0.001)
+          and
+          job:slo_availability_errors:ratio_rate6h > (1 * 0.001)
+        for: 1h
+        labels:
+          severity: ticket
+          slo: availability
+        annotations:
+          summary: "{{ $labels.job }} is steadily spending its availability budget"
+          description: >-
+            Nothing is on fire and the budget is still draining. Worth an
+            engineer's morning, not their night.
+
+      - alert: SLOLatencyFastBurn
+        expr: |
+          job:slo_latency_errors:ratio_rate1h > (14.4 * 0.001)
+          and
+          job:slo_latency_errors:ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: page
+          slo: latency
+        annotations:
+          summary: "{{ $labels.job }} is burning its latency budget 14.4x too fast"
+          description: >-
+            Requests are returning, just not within 300ms. Check saturation
+            first: pool usage and event loop lag move before this does.
+
+      - alert: SLOLatencySlowBurn
+        expr: |
+          job:slo_latency_errors:ratio_rate6h > (6 * 0.001)
+          and
+          job:slo_latency_errors:ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: page
+          slo: latency
+        annotations:
+          summary: "{{ $labels.job }} is burning its latency budget 6x too fast"
+          description: >-
+            Sustained slow responses. Present for both indicators on
+            purpose: without it a steady 6x latency burn sits below the
+            fast-burn threshold and only ever raises a ticket, while the
+            same burn on availability pages.
+
+      - alert: SLOLatencyBudgetBleed
+        expr: |
+          job:slo_latency_errors:ratio_rate3d > (1 * 0.001)
+          and
+          job:slo_latency_errors:ratio_rate6h > (1 * 0.001)
+        for: 1h
+        labels:
+          severity: ticket
+          slo: latency
+        annotations:
+          summary: "{{ $labels.job }} is steadily spending its latency budget"
+          description: >-
+            A slow drift towards the 300ms threshold. Often a dataset
+            growing rather than anything that broke.
