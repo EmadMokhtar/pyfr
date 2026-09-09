@@ -192,12 +192,23 @@ def build_container(settings: Settings) -> Container:
 
 
 async def close_container(container: Container) -> None:
-    """Release resources. Runs after in-flight requests finish."""
-    if container.engine is not None:
-        # Closes every pooled connection. Without this, shutdown leaves
-        # connections open until the server times them out, and a rolling
-        # deployment can exhaust the database's connection limit with the
-        # sockets of pods that have already stopped serving.
-        await container.engine.dispose()
-    if container.http_client is not None:
-        await container.http_client.aclose()
+    """Release resources. Runs after in-flight requests finish.
+
+    `try`/`finally`, not two sequential `if`s: without it, an exception
+    from `engine.dispose()` would skip `http_client.aclose()` entirely,
+    leaking every pooled HTTP connection on a shutdown that also happened
+    to have database trouble — exactly the moment a leak is least
+    affordable. Each resource's own close call is independent of the
+    other's success, so nothing here should let one's failure hide the
+    other's cleanup.
+    """
+    try:
+        if container.engine is not None:
+            # Closes every pooled connection. Without this, shutdown leaves
+            # connections open until the server times them out, and a rolling
+            # deployment can exhaust the database's connection limit with the
+            # sockets of pods that have already stopped serving.
+            await container.engine.dispose()
+    finally:
+        if container.http_client is not None:
+            await container.http_client.aclose()

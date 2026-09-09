@@ -59,6 +59,15 @@ services:
       # that yields a migrated database and a working API.
       migrate:
         condition: service_completed_successfully
+      # `payment-stub` has no `profiles:` entry, so plain `docker compose up`
+      # already starts it alongside `app` — but starting is not readiness,
+      # and without this, `app` could come up and serve its first order
+      # before WireMock has finished booting, with no readiness check to
+      # catch it (container.py deliberately registers none for the payment
+      # provider — see its comment). service_healthy waits for the
+      # healthcheck below instead.
+      payment-stub:
+        condition: service_healthy
     environment:
       APP_ENVIRONMENT: production
       APP_LOG__LEVEL: info
