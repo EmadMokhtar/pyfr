@@ -38,6 +38,19 @@ test-contract:
 test-all:
     uv run pytest -m ''
 
+# The two contract gates that need Docker or the committed baseline.
+# `test-contract` (Schemathesis) and the drift gate run without either.
+contract-gates:
+    uv run pytest -m contract
+    uv run python scripts/check_contract_compatibility.py
+
+# Promote the current contract to the baseline. Run this as part of
+# CUTTING a release, never to make `contract-gates` stop complaining:
+# silencing it that way is precisely the silent breaking change the gate
+# exists to catch (spec 10.2).
+contract-release:
+    cp openapi.json openapi.baseline.json
+
 # Regenerate the committed contract from the code, then commit the result.
 # Read the diff before you do: it is your API change, in full.
 openapi:
@@ -160,7 +173,7 @@ check: lint typecheck imports test precommit
 # and usable without Docker.
 #
 # Everything `check` does, plus the container tier and all five gates.
-check-all: check test-integration gates o11y-gates
+check-all: check test-integration gates o11y-gates contract-gates
 
 up:
     docker compose up --build
