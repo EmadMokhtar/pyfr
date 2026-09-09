@@ -80,6 +80,29 @@ async def test_an_order_is_authorised_before_it_is_saved() -> None:
     assert orders.saved == [order]
 
 
+async def test_the_gateway_is_asked_to_authorise_the_order_being_placed() -> None:
+    """The id sent to the gateway must be the order's own id, not any id.
+
+    PlaceOrder generates order_id before the try block specifically so it
+    can double as the gateway's idempotency key (see that comment in
+    services/order.py) — a swapped or dropped order_id would silently
+    break idempotency on retry. The test above,
+    test_an_order_is_authorised_before_it_is_saved, already captures this
+    call but discards the id with `_`; nothing else in the suite checks
+    it, which is why mutation testing (`just mutants`) found this as a
+    real survivor rather than a message-only one: mutating `order_id=
+    order_id` to `order_id=None` in PlaceOrder.__call__ passed the whole
+    suite.
+    """
+    orders = FakeOrderRepository()
+    payments = FakePaymentGateway()
+
+    order = await PlaceOrder(orders, payments)(a_command())
+
+    order_id, _ = payments.calls[0]
+    assert order_id == order.id
+
+
 async def test_a_declined_payment_saves_nothing() -> None:
     orders = FakeOrderRepository()
 

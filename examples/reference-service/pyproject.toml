@@ -116,6 +116,55 @@ filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
 ]
 
+[tool.mutmut]
+# The whole package, then narrowed below. Pointing source_paths straight
+# at domain/ and services/ instead would leave the package unimportable
+# inside mutmut's copy, because api/ and main.py would be missing.
+source_paths = ["src/reference_service"]
+
+# Mutate business logic only. Mutating adapters produces a long tail of
+# survivors about error paths nobody asserts on, and a signal nobody
+# trusts is worse than no signal (spec 8.1).
+only_mutate = [
+    "src/reference_service/domain/*",
+    "src/reference_service/services/*",
+]
+
+# mutmut runs the suite inside a `mutants/` COPY of the project, and that
+# copy contains source_paths, tests/ and a fixed list of lock files —
+# nothing else. Without these two, M2's tests/unit/test_dashboards.py
+# fails with "mutants/ops/grafana/dashboards not found" and M1's
+# test_migration_files.py cannot find the files it hashes.
+also_copy = ["ops", "migrations"]
+
+# Behaviour tests only, and this list is the important line in this file.
+#
+# It excludes the file-shape gates ON PURPOSE, and not merely because they
+# are slow: mutmut injects `from mutmut import ...` into every module it
+# mutates, so M0's tests/unit/test_layer_purity.py — which asserts that
+# domain/ imports nothing but pydantic and the standard library — FAILS
+# inside the copy, reporting mutmut itself as a third-party import. The
+# alternative, adding mutmut to that gate's allow-list, would weaken a
+# real M0 gate in ordinary runs to satisfy a tool. A gate that checks the
+# SHAPE of the tree can never kill a mutant in the first place, so
+# excluding it costs nothing.
+pytest_add_cli_args_test_selection = [
+    "tests/unit/test_order.py",
+    "tests/unit/test_order_service.py",
+    "tests/unit/test_domain_errors.py",
+    "tests/unit/test_memory_repository.py",
+    "tests/api/test_orders.py",
+]
+
+# The floor, as a percentage of mutants killed. 85 rather than the 87.9
+# measured at the baseline: the seven survivors there are all
+# error-MESSAGE mutations (`raise ValueError("...")` -> `raise
+# ValueError(None)`), and pinning the threshold to the exact current
+# number would mean the next such survivor fails the build and pressures
+# whoever hits it into asserting on prose. Raise this when the score
+# improves for a real reason; never lower it to make a build pass.
+mutation_threshold_percent = 85
+
 [tool.mypy]
 python_version = "3.13"
 files = ["src", "tests"]

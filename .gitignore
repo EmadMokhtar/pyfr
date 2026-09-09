@@ -325,3 +325,8 @@ pyrightconfig.json
 
 # macOS
 .DS_Store
+
+# mutmut (examples/reference-service): a full copy of source_paths plus
+# tests/, rebuilt by every `just mutants` run. Build output, not a source
+# tree — never commit it.
+mutants/
