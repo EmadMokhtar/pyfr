@@ -79,4 +79,3 @@ rule_files:
   #
   # which is why ops/prometheus/slo_test.yml sits OUTSIDE rules/.
   - /otel-lgtm/rules/*.yml
-

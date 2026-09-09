@@ -119,6 +119,27 @@ Alembic appears in the development dependencies **only** as the comparison engin
 behind the model drift gate. There is no `alembic/` directory and no Alembic
 migration; golang-migrate owns the schema.
 
+## Observability
+
+Telemetry is off by default and costs nothing when off — no providers built,
+no socket opened, no background task started.
+
+```bash
+just o11y
+```
+
+That adds one container holding Grafana, Prometheus, Tempo, Loki and an
+OpenTelemetry collector, with three dashboards and the service level
+objective rules from `ops/` mounted in. Grafana is on
+<http://localhost:3000> with no login; look in the **PyFr** folder.
+
+Make a request and you can follow it three ways: as a trace in Tempo, as log
+lines carrying that trace's `trace_id`, and as metrics on the service-health
+dashboard.
+
+`just o11y-gates` validates the objective rules with `promtool`, which runs
+from inside the pinned image rather than needing its own install.
+
 ## Configuration
 
 Every variable is prefixed `APP_`; nested settings use `__`. Copy

@@ -79,6 +79,7 @@ nav:
       - HTTP API: reference/http-api.md
       - Errors: reference/errors.md
       - Logging: reference/logging.md
+      - Observability: reference/observability.md
   - Explanation:
       - Architecture: explanation/architecture.md
       - Why a template, not a framework: explanation/why-a-template.md
