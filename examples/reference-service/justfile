@@ -38,6 +38,11 @@ test-contract:
 test-all:
     uv run pytest -m ''
 
+# Regenerate the committed contract from the code, then commit the result.
+# Read the diff before you do: it is your API change, in full.
+openapi:
+    uv run python -c "from tests.contract.test_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
+
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
 #
