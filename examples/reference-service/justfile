@@ -23,6 +23,16 @@ typecheck:
 test:
     uv run pytest
 
+# Re-record the outbound cassettes against the local payment stub.
+# Commit the result, and READ it first: a cassette is a committed copy of
+# somebody else's response, so anything secret in it becomes public with
+# the repository. vcr_config's filter_headers strips the credential
+# headers we know about; a new upstream means a new entry there.
+test-record:
+    docker compose up -d payment-stub
+    uv run pytest tests/recorded --record-mode=once
+    docker compose stop payment-stub
+
 # The container-backed tier. Needs a running Docker daemon; `just test` does not.
 test-integration:
     uv run pytest -m integration

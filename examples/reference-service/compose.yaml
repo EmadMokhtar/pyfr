@@ -76,6 +76,10 @@ services:
       # 60s is the SDK default and far too slow to iterate against: you
       # make a request and wait a minute to see the panel move.
       APP_OTEL__METRIC_EXPORT_INTERVAL_MS: 10000
+      # `payment-stub` is the compose service name below. WireMock, not a
+      # real provider — see ops/payment-stub/mappings and Task 15's
+      # documentation of what that does and does not prove.
+      APP_PAYMENT__BASE_URL: http://payment-stub:8080
     # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
     # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
     # (and Docker's) own default kill deadline is 10s, so without raising
@@ -89,6 +93,28 @@ services:
     # APP_HTTP_PORT is overridden — Compose applies the image's own
     # healthcheck automatically, so duplicating it just to hardcode the
     # port both drifts and repeats the same instruction twice.
+
+  # A local stub of the payment provider, not the provider itself — there
+  # is no real one to build a reference service against. WireMock serves
+  # the mappings in ops/payment-stub/mappings as-is: two declarative JSON
+  # files rather than a second application to build and maintain. Used by
+  # `app` above (APP_PAYMENT__BASE_URL) and by `just test-record` to
+  # (re-)record the cassettes tests/recorded replays offline. See Task 15
+  # for what a stub recorded once and committed does and does not prove.
+  payment-stub:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      # Published so `just test-record` can reach it from the host, where
+      # pytest runs. The app inside compose reaches it over the compose
+      # network at the service name, same as postgres above.
+      - "9099:8080"
+    volumes:
+      - ./ops/payment-stub/mappings:/home/wiremock/mappings:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/__admin/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   # The whole local observability stack in one container: Grafana,
   # Prometheus, Tempo, Loki and an OpenTelemetry collector. One image
