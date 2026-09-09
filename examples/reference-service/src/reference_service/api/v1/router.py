@@ -39,10 +39,16 @@ async def place_order(
 @router.get(
     "/{order_id}",
     response_model=OrderResponse,
-    # Not in main.py's global DEFAULT_PROBLEM_RESPONSES: unlike 422 and 500,
-    # only this route can actually raise OrderNotFoundError, so documenting
-    # 404 here — and nowhere else — is what makes the schema describe what
-    # each route actually does, rather than a blanket approximation.
+    # main.py's global DEFAULT_PROBLEM_RESPONSES already documents a 404 —
+    # but that one is "no route matched this path at all", reachable under
+    # any prefix, from api/errors.py's `_http_exception` handler. THIS 404
+    # is a different thing: "this specific order id does not exist",
+    # raised only here, by OrderNotFoundError, and carrying a different
+    # `type` (`.../order_not_found` vs the global one's `.../http_error`).
+    # Only this route can raise it, so documenting it here — on top of,
+    # not instead of, the global entry — is what makes the schema describe
+    # what THIS route actually does. See api/errors.py's
+    # DEFAULT_PROBLEM_RESPONSES comment for the other half of this pair.
     responses={status.HTTP_404_NOT_FOUND: problem_response("Order not found")},
 )
 async def get_order(order_id: UUID, fetch: GetOrderDep) -> OrderResponse:

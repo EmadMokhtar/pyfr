@@ -84,14 +84,30 @@ def problem_response(description: str) -> dict[str, Any]:
 
 # Every route can hit request validation (422, via RequestValidationError)
 # or an unexpected failure (500, via the catch-all Exception handler), so
-# these are applied globally, in main.py's `FastAPI(responses=...)`. The
-# 404 for OrderNotFoundError is NOT included here: unlike 422 and 500, only
-# some routes can actually produce it, so it is applied per-route instead,
-# where it is true — see api/v1/router.py's `get_order`.
+# these are applied globally, in main.py's `FastAPI(responses=...)`.
+#
+# 404 belongs here too, and this is NOT the same 404 as `get_order`'s
+# per-route one below. This one describes "the framework could not match
+# any route at all" — the `_http_exception` handler's `StarletteHTTPException`
+# path, reachable under ANY prefix, on literally every request the router
+# does not recognise. `get_order`'s is "this specific order id does not
+# exist", raised by `OrderNotFoundError` and reachable ONLY from that one
+# route. Both are genuinely 404, both are genuinely global-vs-per-route in
+# the sense that matters, and they carry different `type` values precisely
+# because they mean different things: `.../http_error` here,
+# `.../order_not_found` there. See docs/reference/errors.md for both rows.
+# (An earlier version of this comment claimed the global 404 was NOT
+# registered here "because only some routes can produce it" — that was
+# true of OrderNotFoundError, but false of this one, and the two were
+# conflated. Read `_http_exception` below before touching this again.)
 DEFAULT_PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
     # 400 is reachable on EVERY route, not only ones with a body: it is
     # what FastAPI raises when it cannot read the request at all.
     status.HTTP_400_BAD_REQUEST: problem_response("Malformed request"),
+    # "No such resource at this path" — an unmatched route, from
+    # `_http_exception` below. Not to be confused with `get_order`'s
+    # "this order id does not exist", which is a different 404 with a
+    # different `type`, documented per-route in api/v1/router.py instead.
     status.HTTP_404_NOT_FOUND: problem_response("No such resource"),
     status.HTTP_405_METHOD_NOT_ALLOWED: problem_response("Method not allowed"),
     status.HTTP_422_UNPROCESSABLE_CONTENT: problem_response(
