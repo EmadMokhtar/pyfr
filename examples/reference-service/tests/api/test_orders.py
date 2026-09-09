@@ -259,3 +259,63 @@ def test_the_response_schema_never_declares_internal_fields() -> None:
     """
     assert "internal_note" in Order.model_fields
     assert "internal_note" not in OrderResponse.model_fields
+
+
+def test_a_number_outside_moneys_range_is_rejected_at_the_edge(
+    client: TestClient,
+) -> None:
+    """The published contract used to permit this and the app used to refuse it.
+
+    Pydantic renders a constrained Decimal as anyOf[number, string] and
+    puts `max_digits`/`decimal_places` on the STRING branch only, so the
+    number branch said "any number >= 0". Schemathesis generated 1.06e308
+    against that contract and got a 422 — a schema-compliant request the
+    API rejected. The assertion here is unchanged behaviour; what changes
+    is that the contract now says so.
+    """
+    response = client.post(
+        "/api/v1/orders",
+        json={
+            "customer_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "lines": [
+                {
+                    "sku": "widget",
+                    "quantity": 1,
+                    "unit_amount": 1.0605661518203426e308,
+                    "currency": "EUR",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_an_order_whose_total_overflows_money_is_a_422_not_a_500(
+    client: TestClient,
+) -> None:
+    """Two individually valid fields whose PRODUCT no Money can hold.
+
+    quantity and unit_amount each carry a bound mirroring their storage
+    column, and each is satisfied here. Their product is not: it exceeds
+    NUMERIC(14, 2). Before this task, Money construction failed inside
+    PlaceOrder, was wrapped as ServiceDefectError and returned 500 — a
+    server error for ordinary, schema-valid client input.
+    """
+    response = client.post(
+        "/api/v1/orders",
+        json={
+            "customer_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "lines": [
+                {
+                    "sku": "widget",
+                    "quantity": 2_147_483_646,
+                    "unit_amount": "272486.81",
+                    "currency": "EUR",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == "application/problem+json"

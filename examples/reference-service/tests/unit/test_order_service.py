@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from reference_service.domain.errors import OrderNotFoundError
 from reference_service.domain.order import OrderId
@@ -84,6 +85,21 @@ def test_a_command_with_mixed_currency_lines_is_refused() -> None:
                     quantity=1,
                     unit_amount=Decimal("5.00"),
                     currency="USD",
+                ),
+            ),
+        )
+
+
+def test_a_command_whose_total_overflows_money_is_rejected() -> None:
+    with pytest.raises(PydanticValidationError, match="exceeds the maximum"):
+        PlaceOrderCommand(
+            customer_id=uuid4(),
+            lines=(
+                PlaceOrderLine(
+                    sku="widget",
+                    quantity=2_147_483_646,
+                    unit_amount=Decimal("272486.81"),
+                    currency="EUR",
                 ),
             ),
         )

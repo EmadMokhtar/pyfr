@@ -12,7 +12,56 @@ from decimal import Decimal
 from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    StringConstraints,
+    WithJsonSchema,
+    model_validator,
+)
+
+# NUMERIC(14, 2) in migrations/000001: twelve integer digits and two
+# decimal places. One name for it, because three files need the same
+# number and a second literal is a second thing to forget.
+MAX_MONEY = Decimal("999999999999.99")
+
+# The schema is written out rather than inferred, and that is the point.
+#
+# Pydantic renders a constrained Decimal as a two-branch anyOf, and the
+# inferred version is wrong in both branches. The NUMBER branch gets only
+# `minimum`: `max_digits` and `decimal_places` have no JSON Schema
+# equivalent and are simply dropped, so the contract said any number >= 0
+# was acceptable. The STRING branch gets a regex whose first alternative,
+# `\d{0,12}`, has no closing `$` — and JSON Schema's `pattern` is
+# explicitly a PARTIAL match, so "070" followed by arbitrary junk
+# satisfies it. Both gaps were found by Schemathesis generating values the
+# contract permitted and the model refused.
+#
+# Keeping this in step with the Field() constraints above it is exactly
+# what the conformance gate does, on every run, by generating from this
+# schema and asserting the model accepts the result. That is why it is
+# safe to state it by hand here and nowhere else.
+UnitAmount = Annotated[
+    Decimal,
+    Field(ge=0, le=MAX_MONEY, max_digits=14, decimal_places=2),
+    WithJsonSchema(
+        {
+            "anyOf": [
+                {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 999999999999.99,
+                    "multipleOf": 0.01,
+                },
+                {
+                    "type": "string",
+                    "pattern": r"^(0|[1-9][0-9]{0,11})(\.[0-9]{1,2})?$",
+                },
+            ],
+            "title": "Unit Amount",
+        }
+    ),
+]
 
 
 class MoneyOut(BaseModel):
@@ -33,8 +82,9 @@ class OrderLineIn(BaseModel):
     # Mirrors domain.order.Money.amount: without these bounds, a value the
     # domain rejects (e.g. "10.123", three decimal places) passes this
     # schema and blows up as an unhandled ValidationError deep inside the
-    # use case instead of a 422 at the edge.
-    unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
+    # use case instead of a 422 at the edge. See UnitAmount's docstring
+    # above for why the published JSON Schema is written out by hand.
+    unit_amount: UnitAmount
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
 
@@ -62,6 +112,25 @@ class PlaceOrderRequest(BaseModel):
         if len(currencies) > 1:
             raise ValueError(
                 f"all lines must share one currency, got {sorted(currencies)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def total_must_fit_in_money(self) -> Self:
+        # A relationship between two fields of two different lines, so no
+        # per-field constraint can express it — the same reason
+        # lines_must_share_one_currency above exists. quantity and
+        # unit_amount each satisfy their own bound while their PRODUCT
+        # exceeds what NUMERIC(14, 2) can hold; Money then refuses to be
+        # constructed inside PlaceOrder, which wrapped it as a
+        # ServiceDefectError and returned 500 for ordinary client input.
+        total = sum(
+            (line.unit_amount * line.quantity for line in self.lines), Decimal(0)
+        )
+        if total > MAX_MONEY:
+            raise ValueError(
+                f"order total {total} exceeds the maximum representable "
+                f"amount {MAX_MONEY}"
             )
         return self
 

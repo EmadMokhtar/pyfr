@@ -36,6 +36,12 @@ from reference_service.domain.order import (
 from reference_service.domain.repositories import OrderRepository
 from reference_service.services.errors import ServiceDefectError
 
+# NUMERIC(14, 2) in migrations/000001, mirroring api/v1/schemas.py's
+# MAX_MONEY. The service layer must not import from api, so the constant
+# is repeated rather than shared, exactly as the field constraints below
+# already are.
+MAX_ORDER_TOTAL = Decimal("999999999999.99")
+
 
 class PlaceOrderLine(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -76,6 +82,21 @@ class PlaceOrderCommand(BaseModel):
         if len(currencies) > 1:
             raise ValueError(
                 f"all lines must share one currency, got {sorted(currencies)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def total_must_fit_in_money(self) -> Self:
+        # Mirrors api/v1/schemas.py's validator of the same name, for the
+        # reason the rest of this module's constraints mirror that
+        # module's: a command must stand on its own for a non-HTTP caller.
+        total = sum(
+            (line.unit_amount * line.quantity for line in self.lines), Decimal(0)
+        )
+        if total > MAX_ORDER_TOTAL:
+            raise ValueError(
+                f"order total {total} exceeds the maximum representable "
+                f"amount {MAX_ORDER_TOTAL}"
             )
         return self
 
