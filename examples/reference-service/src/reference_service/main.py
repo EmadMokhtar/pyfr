@@ -20,6 +20,10 @@ from reference_service.api.middleware import (
 from reference_service.api.v1.router import router as v1_router
 from reference_service.container import build_container, close_container
 from reference_service.observability.logging import configure_logging
+from reference_service.observability.metrics import (
+    RuntimeMetrics,
+    register_runtime_metrics,
+)
 from reference_service.observability.otel import (
     OtelRuntime,
     configure_otel,
@@ -59,13 +63,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         container = build_container(resolved)
         app.state.container = container
-        if otel_runtime is not None and container.engine is not None:
-            # Here rather than in create_app because the engine does not
-            # exist until the container is built, and here rather than in
-            # container.py because the composition root has no business
-            # importing an SDK — container.py stays a module about wiring
-            # adapters together.
-            instrument_database(container.engine, otel_runtime)
+        # Bound before the try below, because the finally block reads it:
+        # assigned inside the try, an exception raised earlier would make
+        # the finally hit an unbound name and mask the real startup error.
+        runtime_metrics: RuntimeMetrics | None = None
+        if otel_runtime is not None:
+            if container.engine is not None:
+                # Here rather than in create_app because the engine does
+                # not exist until the container is built, and here rather
+                # than in container.py because the composition root has no
+                # business importing an SDK.
+                instrument_database(container.engine, otel_runtime)
+            # Here, not in create_app: the probe task needs a running
+            # event loop, and create_app runs before there is one.
+            runtime_metrics = register_runtime_metrics(
+                otel_runtime,
+                service_version=__version__,
+                engine=container.engine,
+            )
         container.started = True
         try:
             yield
@@ -74,6 +89,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # --timeout-graceful-shutdown bounds how long that may take.
             container.started = False
             await close_container(container)
+            if runtime_metrics is not None:
+                # Before the providers shut down, so the final collection
+                # still has instruments to read.
+                await runtime_metrics.stop()
             if otel_runtime is not None:
                 # Last, and after close_container: shutting the providers
                 # down flushes whatever is still batched, and the lines and
