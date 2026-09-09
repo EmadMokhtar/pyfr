@@ -159,10 +159,14 @@ up:
 #
 # The two variables are set here rather than in compose.yaml so that one
 # compose file serves both this and plain `up`.
+#
+# Start the stack with the local Grafana observability profile.
 o11y:
     APP_OTEL__ENABLED=true APP_OTEL__LOGS_ENABLED=true docker compose --profile o11y up --build
 
-# Stop it and delete the volumes, telemetry included.
+# Deletes the database volume too, exactly as `down` does.
+#
+# Stop the observability stack and remove its volumes.
 o11y-down:
     docker compose --profile o11y down -v
 
@@ -177,6 +181,8 @@ o11y-down:
 #
 # The whole ops/prometheus directory is mounted, not just rules/, because
 # slo_test.yml sits above it and refers to rules/slo.yml relatively.
+#
+# Check and unit-test the SLO rules with promtool.
 o11y-gates:
     docker run --rm -v "$PWD/ops/prometheus:/p" \
         --entrypoint sh grafana/otel-lgtm:0.32.1 \
