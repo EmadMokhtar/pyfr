@@ -5,8 +5,10 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from reference_service.domain.order import (
+    AuthorisationId,
     CustomerId,
     Money,
     Order,
@@ -14,6 +16,7 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
+from reference_service.domain.payments import Authorisation, PaymentGateway
 
 
 def money(amount: str, currency: str = "EUR") -> Money:
@@ -205,3 +208,28 @@ def test_total_always_equals_the_sum_of_lines(
 def test_order_id_is_a_uuid() -> None:
     order = build_order()
     assert isinstance(order.id, UUID)
+
+
+def test_an_authorisation_is_a_frozen_value_object() -> None:
+    authorisation = Authorisation(id=AuthorisationId("auth_123"))
+
+    with pytest.raises(PydanticValidationError):
+        # unused-ignore: same reason as test_money_is_immutable above — this
+        # project does not enable the pydantic.mypy plugin, so mypy does not
+        # know the model is frozen and reports `misc` as unused.
+        authorisation.id = AuthorisationId(  # type: ignore[misc, unused-ignore]
+            "auth_456"
+        )
+
+
+def test_the_payment_gateway_port_is_structural() -> None:
+    """Anything with the right shape satisfies it — no base class, no
+    import of ours in the implementer. That is what makes the domain able
+    to name the operation without knowing who performs it."""
+
+    class Stub:
+        async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
+            return Authorisation(id=AuthorisationId("auth_123"))
+
+    gateway: PaymentGateway = Stub()
+    assert gateway is not None

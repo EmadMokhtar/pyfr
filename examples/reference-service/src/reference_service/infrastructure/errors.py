@@ -65,3 +65,15 @@ class StorageConstraintViolatedError(Exception):
     replacement message is built from an allowlist of identifier fields and
     why it must be raised with `from None`.
     """
+
+
+class PaymentUnavailableError(Exception):
+    """The payment provider could not be reached, or the circuit is open.
+
+    Not a DomainError, and deliberately so: the caller did nothing wrong,
+    and the request may well succeed if repeated later. Unlike its
+    siblings in this module it DOES get a registered handler in
+    api/errors.py, mapping it to 503 with a Retry-After — a 500 would tell
+    a client "this is broken, do not come back", which is the wrong advice
+    for a dependency that is merely down right now.
+    """

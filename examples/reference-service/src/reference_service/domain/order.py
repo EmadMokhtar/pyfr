@@ -23,6 +23,7 @@ from pydantic import (
 
 OrderId = NewType("OrderId", UUID)
 CustomerId = NewType("CustomerId", UUID)
+AuthorisationId = NewType("AuthorisationId", str)
 
 Currency = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 Sku = Annotated[str, StringConstraints(min_length=1, max_length=64)]
