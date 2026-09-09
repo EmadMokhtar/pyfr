@@ -181,8 +181,16 @@ class PlaceOrder:
         # The window: if this raises, the payment above is authorised and no
         # order exists. Deliberately not "cleaned up" here with a call that
         # voids the authorisation — that call can fail too, and then there
-        # are two windows instead of one. See the note at the head of Task
-        # 12's brief; closing this properly is Task 15's job, not this one's.
+        # are two windows instead of one.
+        #
+        # This gap stays open past M3 — it is not scheduled to close. What
+        # it looks like when it happens: an authorisation the payment
+        # provider holds with no order row to match it. Closing it properly
+        # needs an outbox or a reconciliation job, and either is its own
+        # design round: message queues are excluded from this project
+        # entirely (see the roadmap's excluded-features table). Task 15
+        # records this gap in the project documentation — writing it down
+        # is not the same as closing it.
         await self._orders.save(order)
         return order
 

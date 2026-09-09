@@ -120,9 +120,13 @@ class Order(BaseModel):
     # response omits it — the demonstration of why api schemas are separate.
     internal_note: str | None = None
     # Set once the payment provider has authorised the total, and never
-    # after. `None` is not "unpaid": it is an order placed while no
-    # payment provider was configured at all, which is the in-memory
-    # gateway's case and the default `just dev` experience.
+    # after. `None` is not "unpaid": every order placed today is
+    # authorised before it is saved, even under the in-memory gateway,
+    # whose authorisation id is never absent. The only orders carrying
+    # `None` are ones saved before this column existed — it was added
+    # nullable, with no backfill, so an old row says `None` because what
+    # its authorisation was, if any, is genuinely unknown, not because
+    # none took place.
     authorisation_id: AuthorisationId | None = None
 
     @model_validator(mode="after")

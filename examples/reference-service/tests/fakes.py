@@ -43,4 +43,14 @@ class DecliningPaymentGateway:
 
 class UnavailablePaymentGateway:
     async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
-        raise PaymentUnavailableError("payment provider did not answer")
+        # Deliberately realistic: names a provider and a URL, the same
+        # shape a real gateway's failure message would take (see
+        # infrastructure/http/payment_gateway.py). The old message,
+        # "payment provider did not answer", contained no "http" either
+        # way, so a test asserting "http" is absent from the response
+        # could not tell the fixed public `detail` apart from a
+        # regression that echoes `str(exc)` straight to the client. This
+        # message can — see tests/api/test_orders.py's 503 test.
+        raise PaymentUnavailableError(
+            "acme-pay at https://pay.acme.example did not answer"
+        )

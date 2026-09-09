@@ -91,8 +91,17 @@ def test_an_unavailable_gateway_is_a_503_with_retry_after(
     # A 503 without Retry-After tells a client nothing about when to come
     # back, so every client invents its own answer and they all pick "now".
     assert response.headers["retry-after"] == "30"
-    # And it must NOT leak which provider, at what URL, refused us.
-    assert "http" not in response.json().get("detail", "").lower()
+    detail = response.json().get("detail", "")
+    # The fake gateway's own failure message names a provider and a URL
+    # ("acme-pay at https://pay.acme.example did not answer"), so this
+    # "http" check actually discriminates now: it would have missed the
+    # old fake's message ("payment provider did not answer"), which
+    # contained no "http" either way and let `detail=str(exc)` through
+    # undetected.
+    assert "http" not in detail.lower()
+    # Pin the exact value too, not just the absence of one substring:
+    # the handler must send this fixed string, never `str(exc)`.
+    assert detail == "The payment provider could not be reached. Try again."
 
 
 def test_fetching_an_unknown_order_is_problem_details_404(
