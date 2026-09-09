@@ -7,6 +7,7 @@ statement about a transport protocol and belongs here.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -36,10 +37,41 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
 
 _DEFAULT_DOMAIN_STATUS = status.HTTP_422_UNPROCESSABLE_CONTENT
 
-# Matches PaymentSettings.breaker_reset_after_seconds's own default in
-# settings.py. Telling a client to come back before the circuit could
-# possibly have closed just wastes both sides' time.
+# The fallback only, for when no payment provider is configured and there
+# is therefore no breaker window to read. Matches
+# PaymentSettings.breaker_reset_after_seconds's own default in
+# settings.py; `_retry_after_seconds` below prefers the CONFIGURED value,
+# because telling a client to come back before the circuit could possibly
+# have closed just wastes both sides' time.
 RETRY_AFTER_SECONDS = 30
+
+
+def _retry_after_seconds(request: Request) -> int:
+    """How long to tell a client to wait, from the settings in force.
+
+    Derived per request rather than fixed at import, because
+    `breaker_reset_after_seconds` is configurable: an operator who widens
+    the breaker's cool-down to 120s would otherwise still see the service
+    advertise 30, inviting every client back four times too early — while
+    the circuit is still open, so each of those requests earns another
+    503. The header and the breaker have to move together.
+
+    Rounded UP. The value is a float and the header is defined as a
+    whole number of seconds (RFC 9110 delay-seconds), and of the two
+    directions to be wrong in, early is the one that costs something.
+
+    Falls back to the module default defensively: `app.state.container`
+    is only bound once the lifespan has run, and while this handler
+    cannot fire before then in practice — reaching it means a request
+    already got as far as the service layer — an error handler is a bad
+    place to raise a second error.
+    """
+    container = getattr(request.app.state, "container", None)
+    payment = getattr(getattr(container, "settings", None), "payment", None)
+    if payment is None:
+        return RETRY_AFTER_SECONDS
+    return math.ceil(payment.breaker_reset_after_seconds)
+
 
 _logger = structlog.get_logger(__name__)
 
@@ -187,7 +219,7 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail="The payment provider could not be reached. Try again.",
                 instance=request.url.path,
             ),
-            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+            headers={"Retry-After": str(_retry_after_seconds(request))},
         )
 
     @app.exception_handler(StarletteHTTPException)

@@ -46,7 +46,7 @@ publishes.
 | 405 | `http_error` | The path exists, but not for this HTTP method. Carries an `Allow` header naming the methods that do work. |
 | 422 | `validation_error` | The request body broke a rule. |
 | 500 | `internal_error` | An unhandled failure. |
-| 503 | `payment_unavailable` | The payment provider could not be reached, or its circuit breaker is open. Carries a `Retry-After` header. |
+| 503 | `payment_unavailable` | The payment provider could not be reached, or its circuit breaker is open. Carries a `Retry-After` header set from the configured breaker cool-down. |
 
 422 is used for a request that is well-formed JSON but breaks a rule —
 a quantity of zero, a currency of `eur`, two lines in different currencies.

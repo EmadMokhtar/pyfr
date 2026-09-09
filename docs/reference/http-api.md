@@ -111,9 +111,12 @@ Placing an order authorises payment first, so it can also answer:
   part; it is never retried automatically. See
   [Outbound HTTP calls](../guides/outbound-http.md#the-retry-rule-and-why-it-is-narrow).
 - **503 Service Unavailable** — the payment provider could not be reached,
-  or its circuit breaker is open. Carries a `Retry-After` header (30
-  seconds); waiting and retrying is the correct client behaviour, not
-  treating this as a permanent failure. See
+  or its circuit breaker is open. Carries a `Retry-After` header, whose
+  value is the configured breaker cool-down
+  (`APP_PAYMENT__BREAKER_RESET_AFTER_SECONDS`, 30 seconds by default,
+  rounded up to a whole number of seconds); waiting that long and
+  retrying is the correct client behaviour, not treating this as a
+  permanent failure. See
   [Outbound HTTP calls](../guides/outbound-http.md#the-breakers-three-states).
 
 Both use the same [Problem Details](errors.md) body shape as every other

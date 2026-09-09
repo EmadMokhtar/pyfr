@@ -4,12 +4,13 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import HttpUrl
 
 from reference_service.api.deps import get_payments
 from reference_service.api.v1.schemas import OrderResponse
 from reference_service.domain.order import Order
 from reference_service.main import create_app
-from reference_service.settings import Settings
+from reference_service.settings import PaymentSettings, Settings
 from tests.fakes import DecliningPaymentGateway, UnavailablePaymentGateway
 
 
@@ -79,6 +80,51 @@ def test_a_declined_payment_is_a_402_problem_details(
     # The provider's reason reaches the client: it is the one thing that
     # tells them whether retrying could ever work.
     assert "insufficient_funds" in problem["detail"]
+
+
+@pytest.fixture
+def client_with_a_wide_breaker_window() -> Iterator[TestClient]:
+    """A service configured with a non-default breaker cool-down.
+
+    The `settings` fixture leaves `payment` unset, which is the in-memory
+    gateway's path and the Retry-After fallback. This one configures a
+    provider so the header has a real, and deliberately non-default,
+    window to read.
+    """
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        environment="production",
+        payment=PaymentSettings(
+            base_url=HttpUrl("http://payments.invalid"),
+            breaker_reset_after_seconds=119.2,
+        ),
+    )
+    app = create_app(settings)
+    app.dependency_overrides[get_payments] = UnavailablePaymentGateway
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_retry_after_follows_the_configured_breaker_window(
+    client_with_a_wide_breaker_window: TestClient,
+) -> None:
+    """The header and the breaker have to move together.
+
+    Retry-After was a fixed 30 while `breaker_reset_after_seconds` is
+    configurable, so an operator widening the cool-down left the service
+    advertising a window four times too short — sending every client back
+    while the circuit was still open, earning each of them another 503.
+
+    119.2 rounds UP to 120: the value is a float, the header is a whole
+    number of seconds, and of the two directions to be wrong in, early is
+    the one that costs something.
+    """
+    response = client_with_a_wide_breaker_window.post(
+        "/api/v1/orders", json=a_payload()
+    )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "120"
 
 
 def test_an_unavailable_gateway_is_a_503_with_retry_after(
