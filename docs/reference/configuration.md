@@ -30,6 +30,19 @@ cp .env.example .env
 | `APP_OTEL__SAMPLE_RATIO` | float | `1.0` | Fraction of *new* traces recorded, 0.0 to 1.0. Sampling is parent-based, so a request arriving with a sampled parent is always recorded whatever this says. |
 | `APP_OTEL__METRIC_EXPORT_INTERVAL_MS` | integer | `60000` | How often metrics are pushed. `just o11y` lowers it to 10000 so panels move while you watch. |
 | `APP_OTEL__LOGS_ENABLED` | boolean | `false` | Export logs over OTLP **in addition to** standard output. Requires `APP_OTEL__ENABLED`. See the warning below. |
+| `APP_PAYMENT__BASE_URL` | URL | unset | The payment provider's base URL. **Leave it unset to run on the in-memory gateway, which authorises everything** — the same arrangement `APP_DATABASE__DSN` has with the in-memory repository. `just up` points it at a local stub. |
+| `APP_PAYMENT__API_KEY` | secret | unset | Sent as a bearer token. `SecretStr`, so it cannot reach a log line or a traceback by accident — its printed form is `**********`. |
+| `APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS` | float, > 0 | `2.0` | How long to wait for the TCP/TLS handshake. |
+| `APP_PAYMENT__HTTP__READ_TIMEOUT_SECONDS` | float, > 0 | `5.0` | How long to wait for a response once the request is sent. Never retried on expiry — see [Outbound HTTP calls](../guides/outbound-http.md#the-retry-rule-and-why-it-is-narrow). |
+| `APP_PAYMENT__HTTP__WRITE_TIMEOUT_SECONDS` | float, > 0 | `5.0` | How long to wait while sending the request body. |
+| `APP_PAYMENT__HTTP__POOL_TIMEOUT_SECONDS` | float, > 0 | `1.0` | How long to wait for a free connection from this client's own pool, before any socket to the gateway opens. |
+| `APP_PAYMENT__HTTP__MAX_CONNECTIONS` | integer, ≥ 1 | `20` | The connection pool's ceiling. |
+| `APP_PAYMENT__HTTP__MAX_KEEPALIVE_CONNECTIONS` | integer, ≥ 0 | `10` | Idle connections kept open for reuse. |
+| `APP_PAYMENT__RETRY_ATTEMPTS` | integer, ≥ 1 | `3` | Attempts, not retries: `3` means one call and two further tries. |
+| `APP_PAYMENT__RETRY_INITIAL_WAIT_SECONDS` | float, > 0 | `0.1` | Wait before the first retry. Backs off from here. |
+| `APP_PAYMENT__RETRY_MAX_WAIT_SECONDS` | float, > 0 | `2.0` | The backoff's ceiling. |
+| `APP_PAYMENT__BREAKER_FAILURE_THRESHOLD` | integer, ≥ 1 | `5` | Consecutive failures before the circuit opens. |
+| `APP_PAYMENT__BREAKER_RESET_AFTER_SECONDS` | float, > 0 | `30.0` | How long the circuit stays open before admitting one probe. |
 
 ### The database URL carries no driver and no `sslmode`
 

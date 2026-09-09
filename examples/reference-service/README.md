@@ -49,8 +49,14 @@ is not there yet.
 | `just typecheck` | mypy — strict on domain and services |
 | `just imports` | Verify the layer dependency rule |
 | `just check` | lint, typecheck, imports, test, precommit, then `git diff --exit-code` — fails loudly if any pre-commit hook (ruff-format, uv-lock, and others mutate files) changed the tree instead of silently passing on a second run; needs no Docker; run this before pushing |
-| `just check-all` | `check`, plus `test-integration` and `gates` — what CI will run at M5, and what to run before a pull request that touches the schema or the adapter |
+| `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — what CI will run at M5, and what to run before a pull request that touches the schema, the adapter, the API contract, or observability |
 | `just up` / `just down` | Start / stop the container stack |
+| `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
+| `just test-contract` | The contract tier: the drift check and Schemathesis conformance testing over ASGI — see [Contract governance](#contract-governance) |
+| `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |
+| `just contract-release` | Promote `openapi.json` to the baseline. Only at a release — never to silence a red `contract-gates` |
+| `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub — see [Outbound payments](#outbound-payments) |
+| `just mutants` / `just mutants-gate` | Mutation testing over `domain/` and `services/`, and the gate against the recorded floor |
 
 ## Endpoints
 
@@ -62,6 +68,27 @@ is not there yet.
 | `POST /api/v1/orders` | Place an order. |
 | `GET /api/v1/orders/{order_id}` | Fetch an order. |
 | `GET /docs` | Interactive API documentation. |
+
+## Contract governance
+
+`openapi.json` is committed at the repository root, generated from the code
+and never hand-edited. Three gates keep it honest: a byte-for-byte drift
+check against the code, generated conformance testing against the running
+app (Schemathesis, over ASGI — no server, no socket), and a breaking-change
+check (`oasdiff`) cross-checked against the version in `pyproject.toml`.
+
+```
+just openapi           regenerate the contract from the code — read the diff before committing
+just test-contract     the drift check and conformance testing — no Docker needed
+just contract-gates    test-contract, plus the breaking-change check — needs Docker
+just contract-release  promote the current contract to the baseline — only at a release
+```
+
+Writing the conformance gate against code that already existed found five
+real defects — three of the service's own error responses silently
+bypassing RFC 9457, a published schema more permissive than the model it
+described, and a client input that produced a 500 instead of a 422 — none
+of them contrived.
 
 ## Layout
 
@@ -119,6 +146,35 @@ Alembic appears in the development dependencies **only** as the comparison engin
 behind the model drift gate. There is no `alembic/` directory and no Alembic
 migration; golang-migrate owns the schema.
 
+## Outbound payments
+
+`PlaceOrder` authorises a payment before saving the order, through one
+outbound HTTP client shared by every future outbound integration: four
+explicit timeouts, a narrow retry rule (only what provably never reached
+the gateway — never a read timeout, never a 502 or 504, because those may
+have been delivered and this authorises money), and a hand-written circuit
+breaker with three states. A decline is 402; a provider that cannot be
+reached is 503 with `Retry-After`.
+
+```
+just test-record   re-record the outbound cassettes against the local payment stub
+just mutants       mutation testing over domain/ and services/
+just mutants-gate  fail the build if the mutation score falls below the recorded floor
+```
+
+Leave `APP_PAYMENT__BASE_URL` unset to run on the in-memory gateway, which
+authorises everything — the same arrangement `database` above has with the
+in-memory repository. `just up` points it at a local WireMock stub instead.
+
+Two things are worth knowing rather than assuming. The recorded cassettes
+prove this adapter still parses that stub's wire format; they cannot detect
+the real provider changing, because the stub is static and nothing about it
+changes on its own. And if this process dies between a successful
+authorisation and a successful save, the payment provider is left holding
+an authorisation with no order to match it — a gap M3 records rather than
+closes, because closing it needs an outbox or a reconciliation job, and
+message queues are excluded from this project entirely.
+
 ## Observability
 
 Telemetry is off by default and costs nothing when off — no providers built,
@@ -167,9 +223,10 @@ instead of falling back to the in-memory repository.
 | `APP_DATABASE__DSN` | unset (commented out in `.env.example`) | PostgreSQL connection string, read by the **application only** — `just up`'s migrate service and every `just migrate-*` recipe carry their own hardcoded URL in `compose.yaml` and never read this one, so there is no golang-migrate/SQLAlchemy drift to worry about here. Unset selects the in-memory repository (see [Database](#database)); when set, store it WITHOUT a `+asyncpg` driver suffix and WITHOUT an `sslmode` parameter — `infrastructure/db/engine.py` adds `+asyncpg` itself, and `sslmode` is a libpq parameter asyncpg does not understand, rejected at settings-validation time (exit 78, naming the field) rather than reaching asyncpg as a raw error |
 | `APP_DATABASE__POOL_SIZE` | `10` | The hard ceiling on concurrent database connections this instance opens. `infrastructure/db/engine.py` pins SQLAlchemy's `max_overflow` to `0`, so this is an exact number, not this plus SQLAlchemy's own default overflow of 10 — the difference matters when this figure is used for capacity planning against the database's own `max_connections` |
 | `APP_DATABASE__STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout`, applied per connection — a runaway query is cancelled by the server rather than holding a pooled connection forever |
-| `APP_OTEL__ENABLED` | `false` | Reserved for M2's OpenTelemetry exporter |
-| `APP_OTEL__LOGS_ENABLED` | `false` | Reserved for M2; would double log ingest if enabled alongside a platform log agent |
-| `APP_OTEL__ENDPOINT` | unset | Reserved for M2; the OTLP collector endpoint the exporter would send to |
+| `APP_OTEL__ENABLED` | `false` | Turn on OpenTelemetry traces and metrics — see [Observability](#observability). Off by default; with it off nothing OpenTelemetry is built at all |
+| `APP_OTEL__LOGS_ENABLED` | `false` | Export logs over OTLP too, in addition to standard output. Doubles log ingest if enabled alongside a platform log agent — leave it off in production |
+| `APP_OTEL__ENDPOINT` | unset | The OTLP collector endpoint. **Required** when `APP_OTEL__ENABLED` is true |
+| `APP_PAYMENT__BASE_URL` | unset | The payment provider's base URL — see [Outbound payments](#outbound-payments). Leave unset for the in-memory gateway, which authorises everything |
 
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later.
