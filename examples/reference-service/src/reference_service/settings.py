@@ -338,8 +338,8 @@ class PaymentSettings(BaseModel):
         default=None,
         description=(
             "Sent as a bearer token. `SecretStr`, so it cannot reach a log "
-            "line or a traceback by accident — its printed form is "
-            "`**********`."
+            "line or a traceback by accident — it always prints as a row "
+            "of asterisks, never the real value."
         ),
     )
     http: HttpClientSettings = Field(default_factory=HttpClientSettings)

@@ -15,9 +15,12 @@ it, so it lives in scripts/ and is imported by path.
 
 from __future__ import annotations
 
+import re
+import sys
 import types
 import typing
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import annotated_types
@@ -240,3 +243,162 @@ def walk_settings() -> list[ConfigGroup]:
     groups: list[ConfigGroup] = []
     _walk_model(Settings, (), optional=False, groups=groups)
     return groups
+
+
+_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+_REPOSITORY_ROOT = _SERVICE_ROOT.parents[1]
+
+ENV_EXAMPLE = _SERVICE_ROOT / ".env.example"
+CONFIGURATION_DOC = _REPOSITORY_ROOT / "docs" / "reference" / "configuration.md"
+
+MARKER_BEGIN = "<!-- generated: config-table. Run `just config-docs`. -->"
+MARKER_END = "<!-- /generated: config-table -->"
+
+_ENV_HEADER = """\
+# Copy to .env for local development. Never commit .env itself.
+#
+# GENERATED FILE -- do not edit. Every line below comes from
+# src/reference_service/settings.py. Change a description there and run
+# `just config-docs`; `just gates` fails if this file has drifted.
+"""
+
+# Markdown that means something to a rendered page and nothing to someone
+# reading a dotfile in an editor.
+_MARKDOWN_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_MARKDOWN_EMPHASIS = re.compile(r"\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`")
+
+
+def _plain_text(description: str) -> str:
+    """Markdown reduced to what it says, for a file nobody renders."""
+    text = _MARKDOWN_LINK.sub(r"\1", description)
+    return _MARKDOWN_EMPHASIS.sub(
+        lambda match: match.group(1) or match.group(2) or match.group(3), text
+    )
+
+
+def _default_cell(variable: ConfigVariable) -> str:
+    if variable.required_in_group:
+        group = variable.name.rsplit(NESTED_DELIMITER, 1)[0]
+        return f"unset, required once any `{group}{NESTED_DELIMITER}*` is set"
+    if variable.default_label in {"", "unset"}:
+        return "unset"
+    return f"`{variable.default_label}`"
+
+
+def _escape_table_cell(text: str) -> str:
+    """Escape a literal "|", which would otherwise split the row.
+
+    `_render_type` joins a `Literal`'s alternatives with " | " (Verified
+    Fact: `APP_ENVIRONMENT`'s type_label is the literal string "`local` |
+    `staging` | `production`"), and that string is about to be embedded in
+    a Markdown table cell -- unescaped, it reads as two extra column
+    separators, not the word "or".
+    """
+    return text.replace("|", "\\|")
+
+
+def render_markdown_table() -> str:
+    """The published reference table, one row per environment variable."""
+    rows = [
+        "| Variable | Type | Default | Meaning |",
+        "| --- | --- | --- | --- |",
+    ]
+    for group in walk_settings():
+        for variable in group.variables:
+            # Descriptions are wrapped Python strings; a stray newline would
+            # end the table silently, so collapse whitespace unconditionally.
+            meaning = " ".join(variable.description.split())
+            cells = (
+                f"`{variable.name}`",
+                variable.type_label,
+                _default_cell(variable),
+                meaning,
+            )
+            rows.append(
+                "| " + " | ".join(_escape_table_cell(cell) for cell in cells) + " |"
+            )
+    return "\n".join(rows)
+
+
+def _wrap_comment(text: str, width: int = 76) -> list[str]:
+    """Prose as `#` lines, wrapped so the file stays readable in an editor."""
+    words = text.split()
+    lines: list[str] = []
+    current = "#"
+    for word in words:
+        candidate = f"{current} {word}"
+        if len(candidate) > width and current != "#":
+            lines.append(current)
+            current = f"# {word}"
+        else:
+            current = candidate
+    if current != "#":
+        lines.append(current)
+    return lines
+
+
+def render_env_example() -> str:
+    """A working starting point, with every variable documented in place."""
+    blocks: list[str] = [_ENV_HEADER]
+    for group in walk_settings():
+        section: list[str] = []
+        if group.doc:
+            section.extend(_wrap_comment(_plain_text(group.doc)))
+        for variable in group.variables:
+            section.extend(_wrap_comment(_plain_text(variable.description)))
+            value = variable.default_label
+            if variable.default_label in {"", "unset"}:
+                # Commented out, not left empty: `APP_DATABASE__DSN=` is a
+                # malformed URL, and the service exits 78 on it. Absent is
+                # the supported configuration; empty is a broken one.
+                section.append(f"# {variable.name}=")
+            else:
+                section.append(f"{variable.name}={value}")
+        blocks.append("\n".join(section))
+    return "\n\n".join(blocks) + "\n"
+
+
+def _configuration_doc_with_table(existing: str, table: str) -> str:
+    """Replace only the region between the markers, keeping the prose."""
+    begin = existing.index(MARKER_BEGIN) + len(MARKER_BEGIN)
+    end = existing.index(MARKER_END)
+    return existing[:begin] + "\n\n" + table + "\n\n" + existing[end:]
+
+
+def _rendered_outputs() -> dict[Path, str]:
+    return {
+        ENV_EXAMPLE: render_env_example(),
+        CONFIGURATION_DOC: _configuration_doc_with_table(
+            CONFIGURATION_DOC.read_text(encoding="utf-8"), render_markdown_table()
+        ),
+    }
+
+
+def write_outputs() -> None:
+    for path, content in _rendered_outputs().items():
+        path.write_text(content, encoding="utf-8")
+
+
+def check_outputs() -> list[str]:
+    """Paths whose committed content differs from what the model produces."""
+    return [
+        str(path.relative_to(_REPOSITORY_ROOT))
+        for path, content in _rendered_outputs().items()
+        if path.read_text(encoding="utf-8") != content
+    ]
+
+
+if __name__ == "__main__":
+    if "--check" in sys.argv:
+        stale = check_outputs()
+        if stale:
+            sys.stderr.write(
+                "These generated files are stale:\n"
+                + "".join(f"  {path}\n" for path in stale)
+                + "Run `just config-docs` and commit the result.\n"
+            )
+            raise SystemExit(1)
+        print("configuration documentation is current")
+    else:
+        write_outputs()
+        print("regenerated .env.example and docs/reference/configuration.md")

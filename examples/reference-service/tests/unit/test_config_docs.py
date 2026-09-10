@@ -16,7 +16,17 @@ import pytest
 # lives beside the code it reads.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-from generate_config_docs import ConfigGroup, ConfigVariable, walk_settings
+from generate_config_docs import (
+    CONFIGURATION_DOC,
+    MARKER_BEGIN,
+    MARKER_END,
+    ConfigGroup,
+    ConfigVariable,
+    check_outputs,
+    render_env_example,
+    render_markdown_table,
+    walk_settings,
+)
 
 
 @pytest.fixture(scope="module")
@@ -189,3 +199,96 @@ def test_no_secret_field_has_a_default(by_name: dict[str, ConfigVariable]) -> No
         if variable.secret and variable.default_label != "unset"
     )
     assert leaked == []
+
+
+def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
+    table = render_markdown_table()
+    lines = [line for line in table.splitlines() if line.startswith("|")]
+    # header + separator + 38 rows
+    assert len(lines) == 40
+    assert lines[0].startswith("| Variable |")
+
+
+def test_markdown_rows_carry_the_variable_type_and_default() -> None:
+    row = next(
+        line
+        for line in render_markdown_table().splitlines()
+        if line.startswith("| `APP_CACHE__TTL_SECONDS`")
+    )
+    assert "integer, ≥ 1" in row
+    assert "`300`" in row
+
+
+def test_markdown_never_emits_a_raw_newline_inside_a_row() -> None:
+    """A description with a line break silently breaks the table.
+
+    Descriptions are written as wrapped Python strings; if one ever gains a
+    literal newline, the row after it renders as body text and the table
+    ends early -- with no error anywhere.
+    """
+    for line in render_markdown_table().splitlines():
+        if line.startswith("| `APP_"):
+            assert line.rstrip().endswith("|")
+
+
+def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
+    row = next(
+        line
+        for line in render_markdown_table().splitlines()
+        if line.startswith("| `APP_STORAGE__BUCKET`")
+    )
+    assert "required once any" in row
+
+
+def test_env_example_strips_markdown_links() -> None:
+    """`.env.example` is read in an editor, not rendered.
+
+    A description carrying `[Outbound HTTP calls](../guides/outbound-http.md)`
+    must appear as its text, not its source.
+    """
+    rendered = render_env_example()
+    assert "](" not in rendered
+    assert "**" not in rendered
+
+
+def test_env_example_comments_every_prose_line() -> None:
+    for line in render_env_example().splitlines():
+        if line and not line.startswith("#"):
+            assert "=" in line, f"uncommented prose line: {line!r}"
+
+
+def test_env_example_comments_out_variables_with_no_default() -> None:
+    """An unset optional variable must not become an empty assignment.
+
+    `APP_DATABASE__DSN=` is not the same as absent: it is a malformed URL,
+    and the service would exit 78 on a file that is supposed to be a
+    working starting point.
+    """
+    rendered = render_env_example()
+    assert "# APP_DATABASE__DSN=" in rendered
+    assert "\nAPP_DATABASE__DSN=" not in rendered
+
+
+def test_env_example_sets_variables_that_have_defaults() -> None:
+    rendered = render_env_example()
+    assert "\nAPP_HTTP_PORT=8000" in rendered
+    assert "\nAPP_LOG__LEVEL=info" in rendered
+
+
+def test_committed_outputs_are_current() -> None:
+    """The drift gate, as a test as well as a recipe.
+
+    Running it here means a stale file fails the fast unit loop rather than
+    waiting for CI -- the same arrangement the OpenAPI contract has.
+    """
+    stale = check_outputs()
+    assert stale == [], (
+        f"stale generated file(s): {stale}. Run `just config-docs` and "
+        f"commit the result."
+    )
+
+
+def test_configuration_doc_keeps_its_generated_markers() -> None:
+    text = CONFIGURATION_DOC.read_text(encoding="utf-8")
+    assert text.count(MARKER_BEGIN) == 1
+    assert text.count(MARKER_END) == 1

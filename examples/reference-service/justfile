@@ -153,6 +153,16 @@ contract-release:
 openapi:
     uv run python -c "from tests.unit.test_contract_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
 
+# Regenerate .env.example and the published configuration table from the
+# settings model, then commit the result. Read the diff first: it is your
+# configuration change, in full.
+config-docs:
+    uv run python scripts/generate_config_docs.py
+
+# Fail if either generated file has drifted from the model.
+config-docs-check:
+    uv run python scripts/generate_config_docs.py --check
+
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
 #
@@ -172,6 +182,7 @@ schema-snapshot:
 gates:
     uv run pytest tests/unit/test_migration_files.py
     uv run pytest -m integration -k "schema_gates or schema_drift"
+    just config-docs-check
 
 imports:
     uv run lint-imports
