@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from reference_service.container import Container
+from reference_service.domain.payments import PaymentGateway
 from reference_service.domain.repositories import OrderRepository
 from reference_service.services.order import GetOrder, PlaceOrder
 
@@ -30,8 +31,15 @@ def get_orders(container: ContainerDep) -> OrderRepository:
 OrdersDep = Annotated[OrderRepository, Depends(get_orders)]
 
 
-def get_place_order(orders: OrdersDep) -> PlaceOrder:
-    return PlaceOrder(orders)
+def get_payments(container: ContainerDep) -> PaymentGateway:
+    return container.payments
+
+
+PaymentsDep = Annotated[PaymentGateway, Depends(get_payments)]
+
+
+def get_place_order(orders: OrdersDep, payments: PaymentsDep) -> PlaceOrder:
+    return PlaceOrder(orders, payments)
 
 
 def get_get_order(orders: OrdersDep) -> GetOrder:

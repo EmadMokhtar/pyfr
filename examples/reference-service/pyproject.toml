@@ -32,13 +32,25 @@ dependencies = [
     # turns into a test failure; the SDK's own message names this
     # package as the replacement.
     "opentelemetry-instrumentation-logging>=0.65b0",
+    # The shared outbound client (spec 12, item 5). A runtime dependency
+    # from M3 on, not a test helper: infrastructure/http/client.py is
+    # production code.
+    "httpx>=0.28",
+    # Bounded retries with exponential backoff and jitter. Chosen over
+    # writing one: stamina is asyncio-native, typed, and wraps tenacity,
+    # which has solved retry budgets and jitter properly for years. The
+    # circuit breaker beside it IS hand-written, because no maintained
+    # asyncio implementation exists — see the plan's Verified Fact 15.
+    "stamina>=26.1",
+    # Outbound spans for the payment call. Closes the first row of the M2
+    # plan's "deliberately does not include" table.
+    "opentelemetry-instrumentation-httpx>=0.65b0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
     "hypothesis>=6.112",
     "mypy>=1.13",
     "ruff>=0.7",
@@ -59,6 +71,9 @@ dev = [
     # dependency.
     "pyyaml>=6.0",
     "types-pyyaml>=6.0",
+    "schemathesis>=4.26",
+    "pytest-recording>=0.13",
+    "mutmut>=3.7",
 ]
 
 [build-system]
@@ -69,7 +84,7 @@ build-backend = "hatchling.build"
 packages = ["src/reference_service"]
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers --strict-config -m 'not integration'"
+addopts = "-q --strict-markers --strict-config -m 'not integration and not contract'"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
@@ -77,6 +92,19 @@ markers = [
     # in addopts above, so `just test` stays a few seconds and needs no Docker.
     # `just test-integration` selects them back in with `-m integration`.
     "integration: requires a running Docker daemon",
+    # Schemathesis over ASGI. Deselected by default for the same reason
+    # `integration` is — it is slow — and for one worse reason that is
+    # specific to it: its ASGI transport leaves anyio memory object
+    # streams unclosed, and `filterwarnings = ["error"]` below turns the
+    # resulting ResourceWarning into a PytestUnraisableExceptionWarning.
+    # That warning fires whenever the garbage collector reaches the
+    # stream, so pytest blames whichever test happens to be running then.
+    # Verified: with tests/contract/ in the default selection, the whole
+    # suite failed on tests/api/test_errors.py — a test that passes on its
+    # own and has nothing to do with contracts. `just test-contract` runs
+    # this tier on its own, where the filter in tests/contract/conftest.py
+    # contains the damage.
+    "contract: schemathesis conformance against the committed contract",
 ]
 filterwarnings = [
     "error",
@@ -87,6 +115,62 @@ filterwarnings = [
     # subclasses UserWarning, not the builtin DeprecationWarning.
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
 ]
+
+[tool.mutmut]
+# The whole package, then narrowed below. Pointing source_paths straight
+# at domain/ and services/ instead would leave the package unimportable
+# inside mutmut's copy, because api/ and main.py would be missing.
+source_paths = ["src/reference_service"]
+
+# Mutate business logic only. Mutating adapters produces a long tail of
+# survivors about error paths nobody asserts on, and a signal nobody
+# trusts is worse than no signal (spec 8.1).
+only_mutate = [
+    "src/reference_service/domain/*",
+    "src/reference_service/services/*",
+]
+
+# mutmut runs the suite inside a `mutants/` COPY of the project, and that
+# copy contains source_paths, tests/ and a fixed list of lock files —
+# nothing else. Without these two, M2's tests/unit/test_dashboards.py
+# fails with "mutants/ops/grafana/dashboards not found" and M1's
+# test_migration_files.py cannot find the files it hashes.
+also_copy = ["ops", "migrations"]
+
+# Behaviour tests only, and this list is the important line in this file.
+#
+# It excludes the file-shape gates ON PURPOSE, and not merely because they
+# are slow: mutmut injects `from mutmut import ...` into every module it
+# mutates, so M0's tests/unit/test_layer_purity.py — which asserts that
+# domain/ imports nothing but pydantic and the standard library — FAILS
+# inside the copy, reporting mutmut itself as a third-party import. The
+# alternative, adding mutmut to that gate's allow-list, would weaken a
+# real M0 gate in ordinary runs to satisfy a tool. A gate that checks the
+# SHAPE of the tree can never kill a mutant in the first place, so
+# excluding it costs nothing.
+pytest_add_cli_args_test_selection = [
+    "tests/unit/test_order.py",
+    "tests/unit/test_order_service.py",
+    "tests/unit/test_domain_errors.py",
+    "tests/unit/test_memory_repository.py",
+    "tests/api/test_orders.py",
+]
+
+# The floor, as a percentage of mutants killed. Measured 85.3% (64/75 killed)
+# in M3 Task 14 (2026-09-09), after the payments code (domain/payments.py,
+# PlaceOrder's authorise-then-save call) pushed the score up from the plan's
+# original baseline of 87.9% (51/58 killed), which predated that code and is
+# now stale. The floor is set to 80, deliberately below the measured 85.3%, by
+# roughly the cushion the original 85-against-87.9 gap gave: about four
+# survivors -- 64/75 killed can drop to 60/75 = 80% before the gate fails.
+# That cushion exists so the next message-only survivor (raise
+# ValueError("...") -> raise ValueError(None)) does not fail the build and
+# pressure whoever hits it into asserting on prose. Raise this floor when the
+# score improves for a real reason; never lower it to make a build pass.
+# Recompute both the measured score and this floor whenever a milestone adds a
+# substantial amount of domain or services code -- that is exactly what made
+# the 87.9 baseline stale enough to need this fix.
+mutation_threshold_percent = 80
 
 [tool.mypy]
 python_version = "3.13"

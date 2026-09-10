@@ -1,13 +1,33 @@
 import json
+from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import HttpUrl
 
+from reference_service.api.deps import get_payments
 from reference_service.api.v1.schemas import OrderResponse
 from reference_service.domain.order import Order
 from reference_service.main import create_app
-from reference_service.settings import Settings
+from reference_service.settings import PaymentSettings, Settings
+from tests.fakes import DecliningPaymentGateway, UnavailablePaymentGateway
+
+
+@pytest.fixture
+def client_with_declining_gateway(settings: Settings) -> Iterator[TestClient]:
+    app = create_app(settings)
+    app.dependency_overrides[get_payments] = DecliningPaymentGateway
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def client_with_unavailable_gateway(settings: Settings) -> Iterator[TestClient]:
+    app = create_app(settings)
+    app.dependency_overrides[get_payments] = UnavailablePaymentGateway
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def a_payload(quantity: int = 2, amount: str = "10.00") -> dict[str, object]:
@@ -46,6 +66,88 @@ def test_a_placed_order_can_be_fetched(client: TestClient) -> None:
 
     assert fetched.status_code == 200
     assert fetched.json() == created
+
+
+def test_a_declined_payment_is_a_402_problem_details(
+    client_with_declining_gateway: TestClient,
+) -> None:
+    response = client_with_declining_gateway.post("/api/v1/orders", json=a_payload())
+
+    assert response.status_code == 402
+    assert response.headers["content-type"] == "application/problem+json"
+    problem = response.json()
+    assert problem["type"].endswith("/payment_declined")
+    # The provider's reason reaches the client: it is the one thing that
+    # tells them whether retrying could ever work.
+    assert "insufficient_funds" in problem["detail"]
+
+
+@pytest.fixture
+def client_with_a_wide_breaker_window() -> Iterator[TestClient]:
+    """A service configured with a non-default breaker cool-down.
+
+    The `settings` fixture leaves `payment` unset, which is the in-memory
+    gateway's path and the Retry-After fallback. This one configures a
+    provider so the header has a real, and deliberately non-default,
+    window to read.
+    """
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        environment="production",
+        payment=PaymentSettings(
+            base_url=HttpUrl("http://payments.invalid"),
+            breaker_reset_after_seconds=119.2,
+        ),
+    )
+    app = create_app(settings)
+    app.dependency_overrides[get_payments] = UnavailablePaymentGateway
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_retry_after_follows_the_configured_breaker_window(
+    client_with_a_wide_breaker_window: TestClient,
+) -> None:
+    """The header and the breaker have to move together.
+
+    Retry-After was a fixed 30 while `breaker_reset_after_seconds` is
+    configurable, so an operator widening the cool-down left the service
+    advertising a window four times too short — sending every client back
+    while the circuit was still open, earning each of them another 503.
+
+    119.2 rounds UP to 120: the value is a float, the header is a whole
+    number of seconds, and of the two directions to be wrong in, early is
+    the one that costs something.
+    """
+    response = client_with_a_wide_breaker_window.post(
+        "/api/v1/orders", json=a_payload()
+    )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "120"
+
+
+def test_an_unavailable_gateway_is_a_503_with_retry_after(
+    client_with_unavailable_gateway: TestClient,
+) -> None:
+    response = client_with_unavailable_gateway.post("/api/v1/orders", json=a_payload())
+
+    assert response.status_code == 503
+    assert response.headers["content-type"] == "application/problem+json"
+    # A 503 without Retry-After tells a client nothing about when to come
+    # back, so every client invents its own answer and they all pick "now".
+    assert response.headers["retry-after"] == "30"
+    detail = response.json().get("detail", "")
+    # The fake gateway's own failure message names a provider and a URL
+    # ("acme-pay at https://pay.acme.example did not answer"), so this
+    # "http" check actually discriminates now: it would have missed the
+    # old fake's message ("payment provider did not answer"), which
+    # contained no "http" either way and let `detail=str(exc)` through
+    # undetected.
+    assert "http" not in detail.lower()
+    # Pin the exact value too, not just the absence of one substring:
+    # the handler must send this fixed string, never `str(exc)`.
+    assert detail == "The payment provider could not be reached. Try again."
 
 
 def test_fetching_an_unknown_order_is_problem_details_404(
@@ -105,6 +207,42 @@ def test_a_quantity_above_int4_max_is_refused_with_422_not_500(
     assert response.headers["content-type"].startswith("application/problem+json")
 
 
+def test_a_quantity_sent_as_an_integral_json_number_is_accepted(
+    client: TestClient,
+) -> None:
+    """Regression test for a contract-versus-model gap.
+
+    The published schema declares `quantity` as `"type": "integer"`, and
+    JSON Schema defines that as any number with a zero fractional part —
+    so `2.0` is valid against the contract this service publishes, and a
+    client whose language serialises numbers as doubles sends exactly
+    that. `strict=True` on the field (which stops `true` being read as
+    `1`) rejected it, so the API refused a request its own contract
+    declared valid. The conformance gate did not catch this: it generates
+    Python integers, never `2.0`.
+    """
+    payload = a_payload()
+    payload["lines"][0]["quantity"] = 2.0  # type: ignore[index]
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 201
+
+
+def test_a_quantity_with_a_real_fractional_part_is_still_refused(
+    client: TestClient,
+) -> None:
+    """The other half of the rule: 2.5 is NOT an integer to JSON Schema
+    either, so accepting it would put the model back out of step with the
+    contract in the opposite direction."""
+    payload = a_payload()
+    payload["lines"][0]["quantity"] = 2.5  # type: ignore[index]
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 422
+
+
 def test_the_int4_boundary_value_itself_is_accepted(client: TestClient) -> None:
     """The bound is le, not lt: the column's own maximum must still work.
 
@@ -117,6 +255,40 @@ def test_the_int4_boundary_value_itself_is_accepted(client: TestClient) -> None:
     )
 
     assert response.status_code == 201
+
+
+def test_a_boolean_quantity_is_refused_not_coerced_to_an_integer(
+    client: TestClient,
+) -> None:
+    """Regression test for a real defect, found by Schemathesis.
+
+    Python's `bool` is an `int` subclass, so pydantic's default LAX int
+    validation accepted `{"quantity": true}` as `quantity=1` — a 201 for a
+    request the contract does not permit: `quantity`'s rendered JSON
+    Schema is a plain `type: integer`, and JSON Schema's `boolean` and
+    `integer` are disjoint types, so this request is schema-invalid and
+    must be refused. Confirmed against the unpatched model: `OrderLineIn`
+    parsed `quantity=True` without error. Found live by
+    tests/contract/test_conformance.py generating exactly this
+    schema-violating value and getting 201 back where the schema promises
+    a 4xx.
+    """
+    payload = {
+        "customer_id": str(uuid4()),
+        "lines": [
+            {
+                "sku": "sku-1",
+                "quantity": True,
+                "unit_amount": "10.00",
+                "currency": "EUR",
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/orders", json=payload)
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("application/problem+json")
 
 
 def test_an_order_with_no_lines_is_refused(client: TestClient) -> None:
@@ -259,3 +431,63 @@ def test_the_response_schema_never_declares_internal_fields() -> None:
     """
     assert "internal_note" in Order.model_fields
     assert "internal_note" not in OrderResponse.model_fields
+
+
+def test_a_number_outside_moneys_range_is_rejected_at_the_edge(
+    client: TestClient,
+) -> None:
+    """The published contract used to permit this and the app used to refuse it.
+
+    Pydantic renders a constrained Decimal as anyOf[number, string] and
+    puts `max_digits`/`decimal_places` on the STRING branch only, so the
+    number branch said "any number >= 0". Schemathesis generated 1.06e308
+    against that contract and got a 422 — a schema-compliant request the
+    API rejected. The assertion here is unchanged behaviour; what changes
+    is that the contract now says so.
+    """
+    response = client.post(
+        "/api/v1/orders",
+        json={
+            "customer_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "lines": [
+                {
+                    "sku": "widget",
+                    "quantity": 1,
+                    "unit_amount": 1.0605661518203426e308,
+                    "currency": "EUR",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_an_order_whose_total_overflows_money_is_a_422_not_a_500(
+    client: TestClient,
+) -> None:
+    """Two individually valid fields whose PRODUCT no Money can hold.
+
+    quantity and unit_amount each carry a bound mirroring their storage
+    column, and each is satisfied here. Their product is not: it exceeds
+    NUMERIC(14, 2). Before this task, Money construction failed inside
+    PlaceOrder, was wrapped as ServiceDefectError and returned 500 — a
+    server error for ordinary, schema-valid client input.
+    """
+    response = client.post(
+        "/api/v1/orders",
+        json={
+            "customer_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "lines": [
+                {
+                    "sku": "widget",
+                    "quantity": 2_147_483_646,
+                    "unit_amount": "272486.81",
+                    "currency": "EUR",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == "application/problem+json"

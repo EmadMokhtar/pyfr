@@ -8,20 +8,29 @@ it in the same run.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import httpx
 import pytest
+from opentelemetry.instrumentation._semconv import (
+    _OpenTelemetrySemanticConventionStability,
+)
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 from opentelemetry.sdk.trace.sampling import ParentBased
+from opentelemetry.trace import SpanKind
 
 from reference_service.observability.otel import (
+    _STABLE_SEMCONV_ENV_VAR,
     build_providers,
     build_resource,
     build_sampler,
     build_views,
     configure_otel,
+    instrument_http_client,
 )
 from reference_service.observability.slo import (
     HTTP_DURATION_BUCKET_BOUNDARIES,
@@ -131,3 +140,123 @@ def test_configure_otel_returns_none_when_disabled() -> None:
     settings = Settings(_env_file=None, environment="production")  # type: ignore[call-arg]
 
     assert configure_otel(settings, "1.2.3") is None
+
+
+@pytest.fixture
+def _reset_semconv_stability_cache(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Force the SDK to re-decide the HTTP semantic-convention mode.
+
+    `_OpenTelemetrySemanticConventionStability._initialize()` (in the
+    `opentelemetry-instrumentation` package) reads the
+    `OTEL_SEMCONV_STABILITY_OPT_IN` environment variable exactly ONCE per
+    process and then sets its own `_initialized` flag so every later call
+    is a no-op that returns the first decision, forever. Under `just
+    test`, `tests/api/test_instrumentation.py` calls `instrument_fastapi`
+    (which also calls `_opt_in_to_stable_semconv()`) before this file
+    even collects, on pytest's default alphabetical module order
+    (`tests/api/` sorts before `tests/unit/`) — so by the time
+    `test_an_instrumented_client_produces_a_client_span` below runs, the
+    decision is ALREADY cached as "stable", regardless of whether
+    `instrument_http_client` remembers to opt in itself. A test that
+    reads `http.request.method` under those conditions passes even if
+    the opt-in call in `instrument_http_client` were deleted — a guard
+    that cannot fail is not a guard.
+
+    This fixture resets both places that decision lives, so the test
+    below observes the SAME "nothing has opted in yet" state regardless
+    of what ran before it in the same process:
+
+    - `_OpenTelemetrySemanticConventionStability._initialized` and its
+      `_OTEL_SEMCONV_STABILITY_SIGNAL_MAPPING` dict. These are PRIVATE
+      attributes (leading underscore on the class, and on the
+      `_semconv.py` module it lives in) of a third-party package we do
+      not own — there is no public API to un-decide this, because the
+      SDK's own contract is that the decision is made once and never
+      revisited. Reaching in here is deliberate: if a future release of
+      `opentelemetry-instrumentation` renames `_initialized` or replaces
+      the mapping with something else, this fixture raises
+      `AttributeError` at test setup — loudly, immediately, and pointing
+      straight back at this comment — rather than silently leaving the
+      mutation guard below unable to fail.
+    - The `OTEL_SEMCONV_STABILITY_OPT_IN` environment variable itself,
+      via `monkeypatch.delenv` rather than `os.environ.pop`: `_opt_in_to_
+      stable_semconv()` sets it with `setdefault`, which is a no-op once
+      any earlier test has already set it, so without clearing it here
+      the "opt-in never happened" state we are trying to reproduce would
+      still read a stale "http" left behind by that earlier test.
+      `monkeypatch` restores whatever value (or absence) it found, even
+      if this test fails partway through.
+
+    Only the two SDK-private attributes need manual restoration below —
+    `monkeypatch` already reverses the environment-variable change on its
+    own once this fixture's consumer finishes, which is what keeps this
+    reset from leaking into every test that runs after it in the same
+    session.
+    """
+    stability = _OpenTelemetrySemanticConventionStability
+    initialized_before = stability._initialized
+    mapping_before = dict(stability._OTEL_SEMCONV_STABILITY_SIGNAL_MAPPING)
+
+    monkeypatch.delenv(_STABLE_SEMCONV_ENV_VAR, raising=False)
+    stability._initialized = False
+    stability._OTEL_SEMCONV_STABILITY_SIGNAL_MAPPING = {}
+    try:
+        yield
+    finally:
+        stability._initialized = initialized_before
+        stability._OTEL_SEMCONV_STABILITY_SIGNAL_MAPPING = mapping_before
+
+
+async def test_an_instrumented_client_produces_a_client_span(
+    _reset_semconv_stability_cache: None,
+) -> None:
+    """A request through an instrumented client is a CLIENT span, and its
+    method attribute uses the STABLE convention — genuinely, not by the
+    accident of test execution order.
+
+    `SimpleSpanProcessor` is what `build_providers` attaches when an
+    exporter is injected (see its own comment), so the span is visible in
+    the exporter as soon as the request completes — no force_flush needed,
+    matching test_db_instrumentation.py's pattern for the same reason.
+
+    `http.request.method`, not `http.method`: matching every other span
+    this service emits (see the M2 plan's Verified Fact 2). Were the
+    legacy attribute to leak in here, outbound spans could not be queried
+    alongside the inbound ones that FastAPIInstrumentor already emits
+    under the stable convention.
+
+    The `_reset_semconv_stability_cache` fixture is what makes that
+    assertion mean something: without it, an earlier-running test module
+    may already have locked the process-wide semconv decision to
+    "stable" before this test ever runs, and the assertion below would
+    pass even if `instrument_http_client` stopped calling
+    `_opt_in_to_stable_semconv()` entirely. See that fixture's docstring
+    for the mechanism, and this task's report for the mutation check that
+    proved it: deleting the opt-in call from `instrument_http_client`
+    makes this exact test fail, with the fixture in place.
+    """
+    span_exporter = InMemorySpanExporter()
+    runtime = build_providers(
+        _enabled_settings(),
+        "1.2.3",
+        span_exporter=span_exporter,
+        metric_reader=InMemoryMetricReader(),
+    )
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(201, json={})),
+        base_url="http://gateway",
+    )
+    instrument_http_client(client, runtime)
+
+    try:
+        await client.post("/authorisations", json={})
+    finally:
+        await client.aclose()
+        runtime.shutdown()
+
+    spans = span_exporter.get_finished_spans()
+    assert [span.kind for span in spans] == [SpanKind.CLIENT]
+    attributes = spans[0].attributes
+    assert attributes is not None
+    assert attributes["http.request.method"] == "POST"
+    assert "http.method" not in attributes

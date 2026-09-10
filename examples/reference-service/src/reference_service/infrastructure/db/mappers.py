@@ -7,6 +7,7 @@ in the unit tier with no container.
 from __future__ import annotations
 
 from reference_service.domain.order import (
+    AuthorisationId,
     CustomerId,
     Money,
     Order,
@@ -30,6 +31,7 @@ def order_values(order: Order) -> dict[str, object]:
         "total_amount": order.total.amount,
         "total_currency": order.total.currency,
         "internal_note": order.internal_note,
+        "authorisation_id": order.authorisation_id,
     }
 
 
@@ -68,4 +70,9 @@ def to_domain(row: OrderRow, lines: list[OrderLineRow]) -> Order:
         ),
         total=Money(amount=row.total_amount, currency=row.total_currency),
         internal_note=row.internal_note,
+        authorisation_id=(
+            AuthorisationId(row.authorisation_id)
+            if row.authorisation_id is not None
+            else None
+        ),
     )

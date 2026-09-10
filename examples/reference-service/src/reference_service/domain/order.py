@@ -23,6 +23,7 @@ from pydantic import (
 
 OrderId = NewType("OrderId", UUID)
 CustomerId = NewType("CustomerId", UUID)
+AuthorisationId = NewType("AuthorisationId", str)
 
 Currency = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 Sku = Annotated[str, StringConstraints(min_length=1, max_length=64)]
@@ -54,12 +55,26 @@ class OrderLine(BaseModel):
     # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
     # (PostgreSQL int4, max 2_147_483_647), in
     # migrations/000001_create_orders_tables.up.sql — the same reason
-    # Money.amount below is bounded to mirror NUMERIC(14, 2). Without it, a
-    # quantity the column cannot hold passes every model in this codebase
-    # and fails only when asyncpg sends it to PostgreSQL, as
-    # DataError: value out of int32 range — a 500 for schema-valid input
-    # instead of a 422 at construction.
-    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
+    # Money.amount below is bounded to mirror NUMERIC(14, 2). Without this
+    # bound, a quantity the column cannot hold would pass construction
+    # here and fail only once the adapter sent it to PostgreSQL, as
+    # `DataError: value out of int32 range` — a storage failure raised
+    # from infrastructure, mid-write, for a value this model had already
+    # declared valid. Rejecting it here keeps the failure where the rule
+    # is: an OrderLine that cannot be stored is not a valid OrderLine.
+    # What that means for a caller over HTTP is api/errors.py's decision,
+    # not this module's.
+    #
+    # strict=True closes a second, independent gap: `bool` is an `int`
+    # subclass in Python, so pydantic's default LAX int validation accepts
+    # `True`/`False` as `1`/`0`. This is the domain layer, so there is no
+    # published JSON Schema to compare against here — but a non-HTTP
+    # caller can construct this model directly, and the coercion would
+    # silently turn a caller's mistake into a valid order line. Mirrored
+    # in services/order.py's PlaceOrderLine and api/v1/schemas.py's
+    # OrderLineIn (which documents the same gap, found live by
+    # Schemathesis, in full); keep all three in step.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
     unit_price: Money
 
     @property
@@ -108,6 +123,15 @@ class Order(BaseModel):
     # Deliberately never exposed over HTTP. Task 12 asserts that the API
     # response omits it — the demonstration of why api schemas are separate.
     internal_note: str | None = None
+    # Set once the payment provider has authorised the total, and never
+    # after. `None` is not "unpaid": every order placed today is
+    # authorised before it is saved, even under the in-memory gateway,
+    # whose authorisation id is never absent. The only orders carrying
+    # `None` are ones saved before this column existed — it was added
+    # nullable, with no backfill, so an old row says `None` because what
+    # its authorisation was, if any, is genuinely unknown, not because
+    # none took place.
+    authorisation_id: AuthorisationId | None = None
 
     @model_validator(mode="after")
     def total_must_match_lines(self) -> Self:

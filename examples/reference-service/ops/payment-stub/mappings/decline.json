@@ -1,0 +1,13 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/authorisations",
+    "bodyPatterns": [{ "matchesJsonPath": "$.[?(@.amount == '999.99')]" }]
+  },
+  "response": {
+    "status": 402,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "reason": "insufficient_funds" }
+  }
+}

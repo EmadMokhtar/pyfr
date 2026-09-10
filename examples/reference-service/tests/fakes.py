@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from reference_service.domain.order import Order, OrderId
+from reference_service.domain.errors import PaymentDeclinedError
+from reference_service.domain.order import AuthorisationId, Money, Order, OrderId
+from reference_service.domain.payments import Authorisation
+from reference_service.infrastructure.errors import PaymentUnavailableError
 
 
 class FakeOrderRepository:
@@ -20,3 +23,34 @@ class FakeOrderRepository:
 
     async def save(self, order: Order) -> None:
         self.saved.append(order)
+
+
+class FakePaymentGateway:
+    """Authorises everything, and remembers what it was asked."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[OrderId, Money]] = []
+
+    async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
+        self.calls.append((order_id, total))
+        return Authorisation(id=AuthorisationId("auth_fake_0001"))
+
+
+class DecliningPaymentGateway:
+    async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
+        raise PaymentDeclinedError(order_id, "insufficient_funds")
+
+
+class UnavailablePaymentGateway:
+    async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
+        # Deliberately realistic: names a provider and a URL, the same
+        # shape a real gateway's failure message would take (see
+        # infrastructure/http/payment_gateway.py). The old message,
+        # "payment provider did not answer", contained no "http" either
+        # way, so a test asserting "http" is absent from the response
+        # could not tell the fixed public `detail` apart from a
+        # regression that echoes `str(exc)` straight to the client. This
+        # message can — see tests/api/test_orders.py's 503 test.
+        raise PaymentUnavailableError(
+            "acme-pay at https://pay.acme.example did not answer"
+        )

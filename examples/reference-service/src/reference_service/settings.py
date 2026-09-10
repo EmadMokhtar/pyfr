@@ -30,7 +30,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    HttpUrl,
     PostgresDsn,
+    SecretStr,
     ValidationError,
     field_validator,
     model_validator,
@@ -198,6 +200,46 @@ class DatabaseSettings(BaseModel):
         return dsn
 
 
+class HttpClientSettings(BaseModel):
+    # See LogSettings.model_config for why each sub-model needs its own
+    # frozen=True rather than inheriting it.
+    model_config = ConfigDict(frozen=True)
+
+    # Four phases, four separate deadlines, none of them optional. httpx
+    # accepts None for "wait forever" on any of them, and a client built
+    # that way is indistinguishable from a working one until the day the
+    # dependency stops answering.
+    connect_timeout_seconds: float = Field(default=2.0, gt=0)
+    read_timeout_seconds: float = Field(default=5.0, gt=0)
+    write_timeout_seconds: float = Field(default=5.0, gt=0)
+    # How long a request may wait for a free connection from the pool. It
+    # is the one people forget: with the pool exhausted, requests queue
+    # here rather than at the socket, and an unbounded wait turns a slow
+    # dependency into a stalled service just as effectively.
+    pool_timeout_seconds: float = Field(default=1.0, gt=0)
+
+    max_connections: int = Field(default=20, ge=1)
+    max_keepalive_connections: int = Field(default=10, ge=0)
+
+
+class PaymentSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    base_url: HttpUrl
+    # SecretStr so it cannot reach a log or a traceback by being
+    # interpolated somewhere careless — its repr is "**********".
+    api_key: SecretStr | None = None
+    http: HttpClientSettings = Field(default_factory=HttpClientSettings)
+
+    # Attempts, not retries: 3 means one call and two further tries.
+    retry_attempts: int = Field(default=3, ge=1)
+    retry_initial_wait_seconds: float = Field(default=0.1, gt=0)
+    retry_max_wait_seconds: float = Field(default=2.0, gt=0)
+
+    breaker_failure_threshold: int = Field(default=5, ge=1)
+    breaker_reset_after_seconds: float = Field(default=30.0, gt=0)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="APP_",
@@ -223,6 +265,11 @@ class Settings(BaseSettings):
     # Optional on purpose: None selects the in-memory adapter, which is the
     # path a service generated with database=none takes. See container.py.
     database: DatabaseSettings | None = None
+    # Optional on purpose: None selects the in-memory gateway, which is
+    # what keeps `just dev` working with no payment provider anywhere —
+    # the same arrangement `database` above has with the in-memory
+    # repository.
+    payment: PaymentSettings | None = None
 
 
 def load_settings(env_file: str | None = ".env") -> Settings:

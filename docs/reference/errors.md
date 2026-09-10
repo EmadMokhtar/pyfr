@@ -39,12 +39,42 @@ publishes.
 
 | Status | `type` suffix | When |
 | --- | --- | --- |
+| 400 | `http_error` | The request could not be read at all — for example, a body that is not valid UTF-8. Raised by the framework itself, before routing gets a chance to run. |
+| 402 | `payment_declined` | The payment provider declined the card. |
 | 404 | `order_not_found` | No order has that id. |
+| 404 | `http_error` | No route matches this path. **Same status as the row above, different `type`** — see the warning below. |
+| 405 | `http_error` | The path exists, but not for this HTTP method. Carries an `Allow` header naming the methods that do work. |
 | 422 | `validation_error` | The request body broke a rule. |
 | 500 | `internal_error` | An unhandled failure. |
+| 503 | `payment_unavailable` | The payment provider could not be reached, or its circuit breaker is open. Carries a `Retry-After` header set from the configured breaker cool-down. |
 
 422 is used for a request that is well-formed JSON but breaks a rule —
 a quantity of zero, a currency of `eur`, two lines in different currencies.
+
+402 and 503 are specific to `POST /api/v1/orders`, the only route that talks
+to a payment provider — see [HTTP API](http-api.md#post-apiv1orders) and
+[Outbound HTTP calls](../guides/outbound-http.md).
+
+The 400, 404 `http_error` and 405 rows are not raised by this service's own
+route handlers at all — they come from the framework, before a route handler
+ever runs: an unreadable body, an unmatched path, or a path matched to the
+wrong method. All three share the one `type` suffix, `http_error`, because
+they are the same kind of fact — "the framework could not even dispatch
+this request" — reported at three different statuses.
+
+!!! warning "Two different 404s, one status, two `type`s"
+
+    `order_not_found` and this `http_error` row both answer 404, and that is
+    not a coincidence to resolve — they are genuinely different facts that
+    happen to share a status code. `order_not_found` means "the path was
+    valid and led to a real route, but no order has that id." `http_error`
+    means "no route matches this path at all." A client that branches on
+    `type`, per the rule stated above ("Match on `type`, never on `title`
+    or `detail`"), sees the two correctly as unrelated. A client that
+    branches on `status` alone — which that rule does not cover, because
+    until now nothing on this page needed two `type`s behind one status —
+    cannot tell them apart. Treat `status` the same way: never the sole
+    thing you branch on.
 
 ### A 500 tells you nothing about the internals
 

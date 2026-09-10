@@ -24,7 +24,7 @@ Run these from `examples/reference-service/`.
 | `just imports` | import-linter: verify the [dependency rule](../explanation/layers.md). |
 | `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
-| `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the SLO rule gates. Needs Docker. |
+| `just check-all` | Everything `just check` does, plus the container tier, all five schema gates, the SLO rule gates and the contract gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. |
 | `just down` | Stop the stack and remove its volumes. |
 
@@ -38,6 +38,30 @@ Run these from `examples/reference-service/`.
 
 See [Observability](observability.md) for what the dashboards show and how
 the objectives are defined.
+
+## The API contract
+
+| Command | What it does |
+| --- | --- |
+| `just openapi` | Regenerate the committed `openapi.json` from the running app. Read the diff before committing it — it is your API change, stated completely. |
+| `just test-contract` | The contract tier: generated conformance testing over ASGI (Schemathesis). Needs no Docker. The drift check runs in `just test` / `just check` instead. |
+| `just contract-gates` | `just test-contract`, then the breaking-change check (`oasdiff` against `openapi.baseline.json`, cross-checked against the version in `pyproject.toml`). Needs Docker, for the `oasdiff` image. |
+| `just contract-release` | Promote the current `openapi.json` to the baseline. Run this when cutting a release — never to make a red `contract-gates` pass. |
+
+See [The API contract](contract.md) for what each of the three gates
+catches and the workflow that goes with them.
+
+## Outbound HTTP and mutation testing
+
+| Command | What it does |
+| --- | --- |
+| `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub. Needs Docker, to start the stub. |
+| `just mutants` | Mutation testing over `domain/` and `services/`. Slow relative to `just test`; run it when you have changed business logic and read the survivors, not the percentage. |
+| `just mutants-changed` | The same, restricted to files changed against `main` — what a pull request actually needs. |
+| `just mutants-gate` | Fail if the mutation score falls below the recorded floor (`pyproject.toml`'s `mutation_threshold_percent`). |
+
+See [Outbound HTTP calls](../guides/outbound-http.md) for the retry policy,
+the circuit breaker, and what the recorded cassettes do and do not prove.
 
 ## The database
 

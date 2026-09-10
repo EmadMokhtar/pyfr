@@ -29,6 +29,7 @@ from reference_service.observability.otel import (
     configure_otel,
     instrument_database,
     instrument_fastapi,
+    instrument_http_client,
 )
 from reference_service.settings import Settings, load_settings
 
@@ -67,26 +68,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # assigned inside the try, an exception raised earlier would make
         # the finally hit an unbound name and mask the real startup error.
         runtime_metrics: RuntimeMetrics | None = None
-        if otel_runtime is not None:
-            if container.engine is not None:
-                # Here rather than in create_app because the engine does
-                # not exist until the container is built, and here rather
-                # than in container.py because the composition root has no
-                # business importing an SDK.
-                instrument_database(container.engine, otel_runtime)
-            # Here, not in create_app: the probe task needs a running
-            # event loop, and create_app runs before there is one.
-            runtime_metrics = register_runtime_metrics(
-                otel_runtime,
-                service_version=__version__,
-                engine=container.engine,
-            )
-        container.started = True
+        # Everything from here down is inside the try, including the
+        # instrumentation block below and `container.started = True` —
+        # not only the `yield`. `build_container` above has, by this
+        # point, already opened `container.engine` and/or
+        # `container.http_client` when either is configured, so if
+        # `instrument_database`, `instrument_http_client` or
+        # `register_runtime_metrics` raises, those resources are already
+        # open and need the same `close_container` cleanup a normal
+        # shutdown gets. Before this comment, the block below sat OUTSIDE
+        # this try, so a failure inside it skipped `close_container`
+        # entirely and leaked whichever of the two was already open —
+        # `try`/`finally` runs its `finally` on an exception raised
+        # anywhere in the `try`, including before the first `yield`, so
+        # moving the block in is sufficient; nothing else has to change.
         try:
+            if otel_runtime is not None:
+                if container.engine is not None:
+                    # Here rather than in create_app because the engine does
+                    # not exist until the container is built, and here rather
+                    # than in container.py because the composition root has no
+                    # business importing an SDK.
+                    instrument_database(container.engine, otel_runtime)
+                if container.http_client is not None:
+                    # Only when a real payment provider is configured. The
+                    # in-memory gateway makes no HTTP request, so there is no
+                    # client and nothing to instrument.
+                    instrument_http_client(container.http_client, otel_runtime)
+                # Here, not in create_app: the probe task needs a running
+                # event loop, and create_app runs before there is one.
+                runtime_metrics = register_runtime_metrics(
+                    otel_runtime,
+                    service_version=__version__,
+                    engine=container.engine,
+                )
+            container.started = True
             yield
         finally:
-            # Runs on SIGTERM, after in-flight requests finish. uvicorn's
-            # --timeout-graceful-shutdown bounds how long that may take.
+            # Runs on SIGTERM, after in-flight requests finish, AND on a
+            # startup failure raised anywhere above — see the comment at
+            # the top of this try for why the latter case matters.
+            # uvicorn's --timeout-graceful-shutdown bounds how long a
+            # normal shutdown may take.
             container.started = False
             await close_container(container)
             if runtime_metrics is not None:

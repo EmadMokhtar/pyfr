@@ -352,3 +352,115 @@ def test_sample_ratio_outside_zero_to_one_is_rejected(
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_payment_is_absent_by_default() -> None:
+    """No provider configured means the in-memory gateway, not a crash.
+
+    Same reasoning as `database`: a service with no payment provider set
+    anywhere must still start, so the sub-model is optional rather than
+    required.
+    """
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.payment is None
+
+
+def test_payment_settings_are_read_from_a_nested_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://localhost:9099")
+    monkeypatch.setenv("APP_PAYMENT__API_KEY", "sk-test-123")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.payment is not None
+    assert str(settings.payment.base_url) == "http://localhost:9099/"
+    assert settings.payment.api_key is not None
+    assert settings.payment.api_key.get_secret_value() == "sk-test-123"
+    # Defaults come from HttpClientSettings and PaymentSettings themselves,
+    # not silently zero — nothing above overrode them.
+    assert settings.payment.http.connect_timeout_seconds == 2.0
+    assert settings.payment.retry_attempts == 3
+
+
+def test_payment_settings_are_read_from_a_two_level_nested_environment_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`.env.example` documents `APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS`
+    as a working example — a variable that reaches through TWO levels of
+    nesting (`Settings.payment`, then `PaymentSettings.http`), not one.
+    Every other nested-env-var test in this file only exercises one level;
+    this one pins the two-level form so the `.env.example` claim is
+    actually exercised somewhere rather than merely documented.
+    """
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://localhost:9099")
+    monkeypatch.setenv("APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS", "7.5")
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.payment is not None
+    assert settings.payment.http.connect_timeout_seconds == 7.5
+    # The sibling fields on the same nested model are untouched.
+    assert settings.payment.http.read_timeout_seconds == 5.0
+
+
+def test_payment_settings_are_frozen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same reasoning as LogSettings, OtelSettings and DatabaseSettings.
+
+    Settings.model_config's frozen=True governs Settings's own fields only.
+    Without its own frozen=True, `settings.payment.retry_attempts = 99`
+    would succeed silently while Settings claims to be frozen.
+    """
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://localhost:9099")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.payment is not None
+
+    with pytest.raises(ValidationError):
+        settings.payment.retry_attempts = 99
+
+
+def test_http_client_settings_nested_two_levels_deep_are_frozen_too(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The `frozen=True`-is-not-inherited hazard, one level further down.
+
+    `PaymentSettings.model_config`'s own `frozen=True` (needed because
+    `Settings`'s frozen=True does not reach `settings.payment`, see
+    `test_payment_settings_are_frozen`) does not reach `settings.payment.http`
+    either — `HttpClientSettings` needs its own `model_config`, independent
+    of both of its parents, for exactly the reason the module docstring
+    describes for `LogSettings` and `OtelSettings`.
+    """
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://localhost:9099")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.payment is not None
+
+    with pytest.raises(ValidationError):
+        settings.payment.http.connect_timeout_seconds = 99.0
+
+
+def test_connect_timeout_seconds_must_be_positive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`gt=0`: httpx treats 0 as a valid deadline, not "immediately fail",
+    so a boundary of `ge=0` would silently accept a setting that makes
+    every outbound call time out at once. It must be strictly positive.
+    """
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://localhost:9099")
+    monkeypatch.setenv("APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS", "0")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_retry_attempts_must_be_at_least_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ge=1`: 0 attempts would mean the call is never made at all, which
+    is not "no retries" but "no request" — a different setting entirely.
+    """
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://localhost:9099")
+    monkeypatch.setenv("APP_PAYMENT__RETRY_ATTEMPTS", "0")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]

@@ -73,10 +73,12 @@ nav:
       - Add an endpoint: guides/add-an-endpoint.md
       - Add a backend: guides/add-a-backend.md
       - Run in a container: guides/run-in-a-container.md
+      - Outbound HTTP calls: guides/outbound-http.md
   - Reference:
       - Commands: reference/commands.md
       - Configuration: reference/configuration.md
       - HTTP API: reference/http-api.md
+      - The API contract: reference/contract.md
       - Errors: reference/errors.md
       - Logging: reference/logging.md
       - Observability: reference/observability.md

@@ -1,0 +1,13 @@
+{
+  "priority": 2,
+  "request": {
+    "method": "POST",
+    "urlPath": "/authorisations",
+    "bodyPatterns": [{ "matchesJsonPath": "$.order_id" }]
+  },
+  "response": {
+    "status": 201,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "id": "auth_stub_0001", "status": "authorised" }
+  }
+}

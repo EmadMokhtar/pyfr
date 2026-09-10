@@ -42,6 +42,7 @@ CREATE TABLE public.orders (
     total_amount numeric(14,2) NOT NULL,
     total_currency character(3) NOT NULL,
     internal_note text,
+    authorisation_id text,
     CONSTRAINT orders_total_amount_non_negative CHECK ((total_amount >= (0)::numeric))
 );
 

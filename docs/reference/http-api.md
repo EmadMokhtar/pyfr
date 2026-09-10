@@ -104,6 +104,25 @@ Request:
 Responds **201 Created** with a `Location` header pointing at the new order,
 and the order as the body. `subtotal` and `total` are computed by the service.
 
+Placing an order authorises payment first, so it can also answer:
+
+- **402 Payment Required** — the payment provider declined the card. A
+  successful call with a negative answer, not a failure on this service's
+  part; it is never retried automatically. See
+  [Outbound HTTP calls](../guides/outbound-http.md#the-retry-rule-and-why-it-is-narrow).
+- **503 Service Unavailable** — the payment provider could not be reached,
+  or its circuit breaker is open. Carries a `Retry-After` header, whose
+  value is the configured breaker cool-down
+  (`APP_PAYMENT__BREAKER_RESET_AFTER_SECONDS`, 30 seconds by default,
+  rounded up to a whole number of seconds); waiting that long and
+  retrying is the correct client behaviour, not treating this as a
+  permanent failure. See
+  [Outbound HTTP calls](../guides/outbound-http.md#the-breakers-three-states).
+
+Both use the same [Problem Details](errors.md) body shape as every other
+error. `GET /api/v1/orders/{order_id}` cannot produce either — it never
+talks to the payment provider.
+
 ### `GET /api/v1/orders/{order_id}`
 
 Responds 200 with the order, or [404](errors.md) when no order has that id.

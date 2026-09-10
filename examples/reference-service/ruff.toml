@@ -21,6 +21,11 @@ select = [
 # Scoped to this directory rather than all of tests/ so a real credential
 # appearing anywhere else is still caught.
 "tests/integration/*" = ["S101", "B017", "S105"]
+# S603/S607: the whole point of this script is to shell out to `docker`,
+# resolved via PATH rather than an absolute path so it works on any
+# contributor's machine; the argument list is a fixed literal, not
+# untrusted input.
+"scripts/*" = ["S603", "S607"]
 
 [lint.isort]
-known-first-party = ["reference_service"]
+known-first-party = ["reference_service", "scripts"]

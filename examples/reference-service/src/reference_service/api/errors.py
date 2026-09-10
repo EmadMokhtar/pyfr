@@ -7,6 +7,8 @@ statement about a transport protocol and belongs here.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from typing import Any
 
 import structlog
@@ -15,18 +17,61 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from reference_service.api.middleware import CORRELATION_HEADER, _route_template
-from reference_service.domain.errors import DomainError, OrderNotFoundError
+from reference_service.domain.errors import (
+    DomainError,
+    OrderNotFoundError,
+    PaymentDeclinedError,
+)
+from reference_service.infrastructure.errors import PaymentUnavailableError
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 PROBLEM_TYPE_BASE = "https://errors.example.com"
 
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     OrderNotFoundError: status.HTTP_404_NOT_FOUND,
+    PaymentDeclinedError: status.HTTP_402_PAYMENT_REQUIRED,
 }
 
 _DEFAULT_DOMAIN_STATUS = status.HTTP_422_UNPROCESSABLE_CONTENT
+
+# The fallback only, for when no payment provider is configured and there
+# is therefore no breaker window to read. Matches
+# PaymentSettings.breaker_reset_after_seconds's own default in
+# settings.py; `_retry_after_seconds` below prefers the CONFIGURED value,
+# because telling a client to come back before the circuit could possibly
+# have closed just wastes both sides' time.
+RETRY_AFTER_SECONDS = 30
+
+
+def _retry_after_seconds(request: Request) -> int:
+    """How long to tell a client to wait, from the settings in force.
+
+    Derived per request rather than fixed at import, because
+    `breaker_reset_after_seconds` is configurable: an operator who widens
+    the breaker's cool-down to 120s would otherwise still see the service
+    advertise 30, inviting every client back four times too early — while
+    the circuit is still open, so each of those requests earns another
+    503. The header and the breaker have to move together.
+
+    Rounded UP. The value is a float and the header is defined as a
+    whole number of seconds (RFC 9110 delay-seconds), and of the two
+    directions to be wrong in, early is the one that costs something.
+
+    Falls back to the module default defensively: `app.state.container`
+    is only bound once the lifespan has run, and while this handler
+    cannot fire before then in practice — reaching it means a request
+    already got as far as the service layer — an error handler is a bad
+    place to raise a second error.
+    """
+    container = getattr(request.app.state, "container", None)
+    payment = getattr(getattr(container, "settings", None), "payment", None)
+    if payment is None:
+        return RETRY_AFTER_SECONDS
+    return math.ceil(payment.breaker_reset_after_seconds)
+
 
 _logger = structlog.get_logger(__name__)
 
@@ -71,11 +116,32 @@ def problem_response(description: str) -> dict[str, Any]:
 
 # Every route can hit request validation (422, via RequestValidationError)
 # or an unexpected failure (500, via the catch-all Exception handler), so
-# these are applied globally, in main.py's `FastAPI(responses=...)`. The
-# 404 for OrderNotFoundError is NOT included here: unlike 422 and 500, only
-# some routes can actually produce it, so it is applied per-route instead,
-# where it is true — see api/v1/router.py's `get_order`.
+# these are applied globally, in main.py's `FastAPI(responses=...)`.
+#
+# 404 belongs here too, and this is NOT the same 404 as `get_order`'s
+# per-route one below. This one describes "the framework could not match
+# any route at all" — the `_http_exception` handler's `StarletteHTTPException`
+# path, reachable under ANY prefix, on literally every request the router
+# does not recognise. `get_order`'s is "this specific order id does not
+# exist", raised by `OrderNotFoundError` and reachable ONLY from that one
+# route. Both are genuinely 404, both are genuinely global-vs-per-route in
+# the sense that matters, and they carry different `type` values precisely
+# because they mean different things: `.../http_error` here,
+# `.../order_not_found` there. See docs/reference/errors.md for both rows.
+# (An earlier version of this comment claimed the global 404 was NOT
+# registered here "because only some routes can produce it" — that was
+# true of OrderNotFoundError, but false of this one, and the two were
+# conflated. Read `_http_exception` below before touching this again.)
 DEFAULT_PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
+    # 400 is reachable on EVERY route, not only ones with a body: it is
+    # what FastAPI raises when it cannot read the request at all.
+    status.HTTP_400_BAD_REQUEST: problem_response("Malformed request"),
+    # "No such resource at this path" — an unmatched route, from
+    # `_http_exception` below. Not to be confused with `get_order`'s
+    # "this order id does not exist", which is a different 404 with a
+    # different `type`, documented per-route in api/v1/router.py instead.
+    status.HTTP_404_NOT_FOUND: problem_response("No such resource"),
+    status.HTTP_405_METHOD_NOT_ALLOWED: problem_response("Method not allowed"),
     status.HTTP_422_UNPROCESSABLE_CONTENT: problem_response(
         "Request validation failed"
     ),
@@ -97,11 +163,14 @@ def status_for(error: DomainError) -> int:
     return _DEFAULT_DOMAIN_STATUS
 
 
-def _problem_response(problem: ProblemDetail) -> JSONResponse:
+def _problem_response(
+    problem: ProblemDetail, headers: Mapping[str, str] | None = None
+) -> JSONResponse:
     return JSONResponse(
         status_code=problem.status,
         content=problem.model_dump(exclude_none=True),
         media_type=PROBLEM_MEDIA_TYPE,
+        headers=headers,
     )
 
 
@@ -126,6 +195,74 @@ def register_error_handlers(app: FastAPI) -> None:
                 detail=str(exc),
                 instance=request.url.path,
             )
+        )
+
+    @app.exception_handler(PaymentUnavailableError)
+    async def _payment_unavailable(
+        request: Request, exc: PaymentUnavailableError
+    ) -> JSONResponse:
+        """503, not 500. The caller did nothing wrong and the same request
+        may well succeed later — which is exactly what 503 means and 500
+        does not.
+
+        `detail` is a fixed string, never `str(exc)`: the exception
+        carries the provider's name and sometimes its URL, and this
+        response is public. The full exception goes to the log instead,
+        the same division ReadinessRegistry already makes.
+        """
+        _logger.warning("request.payment_unavailable", exc_info=exc)
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/payment_unavailable",
+                title="Payment provider unavailable",
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The payment provider could not be reached. Try again.",
+                instance=request.url.path,
+            ),
+            headers={"Retry-After": str(_retry_after_seconds(request))},
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_exception(
+        request: Request, exc: StarletteHTTPException
+    ) -> JSONResponse:
+        """Problem Details for errors raised by the framework itself.
+
+        Starlette answers routing and body-reading failures by raising
+        HTTPException, and it handles that type before the catch-all
+        `Exception` handler below can ever see it. Without this handler its
+        default takes over and returns `{"detail": "..."}` as
+        `application/json` — so a service that documents RFC 9457
+        everywhere silently returns a different shape for three of its most
+        common responses: 405 on a wrong method, 404 on an unknown path,
+        and 400 when a request body is not decodable as UTF-8. Found by
+        Schemathesis, which reported the 400 as an undocumented status code.
+
+        `StarletteHTTPException`, not `fastapi.HTTPException`: FastAPI's is
+        a subclass, and the routing and body-reading failures raise the
+        Starlette one. Registering the subclass would miss exactly the
+        cases this exists for.
+
+        `exc.detail` is safe to echo. For these framework errors it is a
+        fixed string chosen by Starlette ("Not Found", "Method Not
+        Allowed"), never assembled from request content — contrast the
+        deliberate silence about exception messages in ReadinessRegistry.
+        """
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/http_error",
+                title=str(exc.detail),
+                status=exc.status_code,
+                instance=request.url.path,
+            ),
+            # Load-bearing, and easy to leave out. Starlette's own 405
+            # sets `Allow: POST`, which RFC 9110 REQUIRES on a 405, and it
+            # carries it on `exc.headers`. A handler built only from
+            # `detail` and `status_code` drops it. Verified: without this
+            # argument every operation failed Schemathesis's
+            # `unsupported_method` check with "TRACE returned 405 without
+            # required Allow header".
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

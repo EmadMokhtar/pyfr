@@ -57,6 +57,7 @@ def test_order_values_flattens_money_into_two_columns() -> None:
         "total_amount": Decimal("6.75"),
         "total_currency": "EUR",
         "internal_note": "staff pick",
+        "authorisation_id": None,
     }
 
 

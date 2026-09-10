@@ -23,13 +23,135 @@ typecheck:
 test:
     uv run pytest
 
+# Re-record the outbound cassettes against the local payment stub.
+# Commit the result, and READ it first: a cassette is a committed copy of
+# somebody else's response, so anything secret in it becomes public with
+# the repository. vcr_config's filter_headers strips the credential
+# headers we know about; a new upstream means a new entry there.
+#
+# A `#!`-shebang recipe, not three plain lines: a plain-line recipe stops
+# at the first failing line, so if pytest below failed, `docker compose
+# stop payment-stub` was never reached and the stub stayed running. `set
+# -euo pipefail` keeps that same "stop on failure" behaviour for genuine
+# script errors, and `trap ... EXIT` is what makes the stub stop
+# regardless — on a pytest failure, on success, or on Ctrl-C. `--wait`
+# added to `up -d` makes this wait for the healthcheck in compose.yaml
+# instead of racing WireMock's boot with the first recorded request.
+test-record:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The trap goes in BEFORE the container is started, not after: with
+    # `set -e`, a healthcheck timeout in `--wait` exits the recipe on the
+    # spot, and a trap installed on the next line would never have been
+    # armed — leaving the stub running, which is the one thing the trap
+    # exists to prevent. Stopping a container that was never started is a
+    # harmless no-op, so arming it early costs nothing.
+    trap 'docker compose stop payment-stub' EXIT
+    docker compose up -d --wait payment-stub
+    uv run pytest tests/recorded --record-mode=once
+
 # The container-backed tier. Needs a running Docker daemon; `just test` does not.
 test-integration:
     uv run pytest -m integration
 
-# Everything: unit, api and integration.
+# The contract tier. Separate from `just test` because Schemathesis's ASGI
+# transport leaks anyio streams under filterwarnings=error and takes the
+# blame out on unrelated tests — see the `contract` marker's comment in
+# pyproject.toml.
+test-contract:
+    uv run pytest -m contract
+
+# Mutation testing over domain/ and services/. Slow relative to `just
+# test`, so it is NOT part of `just check`: run it when you have changed
+# business logic, and read the survivors rather than the percentage.
+#
+# What it measures that coverage does not: coverage says a line RAN, this
+# says a test would have NOTICED if the line were wrong.
+mutants:
+    uv run mutmut run
+    uv run mutmut results
+
+# The same, restricted to files changed against main — what a pull
+# request actually needs.
+#
+# `git diff --name-only` prints paths relative to the repository ROOT,
+# not to this justfile's directory, even though the pathspec below is
+# matched relative to here — `--relative` is what converts the output
+# back to paths relative to this directory, which is what the glob
+# conversion below needs.
+#
+# `mutmut run`'s positional arguments are MUTANT NAMES (glob patterns
+# matched against the dotted identifier `mutmut results` prints, e.g.
+# "reference_service.domain.order.x_total_of__mutmut_2"), not file
+# paths — mutmut always mutates the whole `only_mutate` scope first and
+# only uses these arguments to pick which resulting mutants to run
+# tests for. Passing a bare path like "src/reference_service/domain/
+# order.py" matches nothing and mutmut exits with "Filtered for
+# specific mutants, but nothing matches". Each changed path is
+# therefore turned into the matching glob: drop the "src/" prefix and
+# the ".py" suffix, turn "/" into ".", and append ".*".
+mutants-changed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    changed=$(git diff --name-only --relative origin/main...HEAD \
+        -- 'src/reference_service/domain/*' 'src/reference_service/services/*')
+    if [ -z "$changed" ]; then
+        echo "No domain or services files changed; nothing to mutate."
+        exit 0
+    fi
+    echo "Mutating: $changed"
+    patterns=()
+    for f in $changed; do
+        module="${f#src/}"
+        module="${module%.py}"
+        patterns+=("${module//\//.}.*")
+    done
+    uv run mutmut run "${patterns[@]}"
+    uv run mutmut results
+
+# Fail if the mutation score falls below the recorded floor. Separate
+# from `mutants` so a developer can look at survivors without the run
+# failing on them.
+mutants-gate: mutants
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv run mutmut export-cicd-stats
+    uv run python -c "
+    import json, tomllib
+    from pathlib import Path
+    stats = json.loads(Path('mutants/mutmut-cicd-stats.json').read_text())
+    floor = tomllib.loads(Path('pyproject.toml').read_text())['tool']['mutmut'][
+        'mutation_threshold_percent'
+    ]
+    score = 100 * stats['killed'] / stats['total'] if stats['total'] else 100
+    print(f\"mutation score {score:.1f}% ({stats['killed']}/{stats['total']} killed), floor {floor}%\")
+    raise SystemExit(0 if score >= floor else 1)
+    "
+
+# Everything: unit, api, integration and contract.
 test-all:
     uv run pytest -m ''
+
+# Schemathesis conformance (`pytest -m contract`, no Docker) plus the
+# breaking-change gate against the committed baseline (needs Docker, for
+# the oasdiff image). The drift gate needs neither and does NOT run here:
+# it lives in the default `just test` / `just check` tier instead — see
+# tests/unit/test_contract_drift.py for why.
+contract-gates:
+    uv run pytest -m contract
+    uv run python scripts/check_contract_compatibility.py
+
+# Promote the current contract to the baseline. Run this as part of
+# CUTTING a release, never to make `contract-gates` stop complaining:
+# silencing it that way is precisely the silent breaking change the gate
+# exists to catch (spec 10.2).
+contract-release:
+    cp openapi.json openapi.baseline.json
+
+# Regenerate the committed contract from the code, then commit the result.
+# Read the diff before you do: it is your API change, in full.
+openapi:
+    uv run python -c "from tests.unit.test_contract_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
 
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
@@ -148,7 +270,7 @@ check: lint typecheck imports test precommit
 # and usable without Docker.
 #
 # Everything `check` does, plus the container tier and all five gates.
-check-all: check test-integration gates o11y-gates
+check-all: check test-integration gates o11y-gates contract-gates
 
 up:
     docker compose up --build

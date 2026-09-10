@@ -5,8 +5,10 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from reference_service.domain.order import (
+    AuthorisationId,
     CustomerId,
     Money,
     Order,
@@ -14,6 +16,7 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
+from reference_service.domain.payments import Authorisation, PaymentGateway
 
 
 def money(amount: str, currency: str = "EUR") -> Money:
@@ -76,11 +79,13 @@ def test_line_rejects_a_quantity_above_int4_max() -> None:
     """order_lines.quantity is INTEGER (PostgreSQL int4, max 2_147_483_647).
 
     Without this bound, a larger quantity passed construction here and
-    failed only when asyncpg sent it to PostgreSQL, as DataError: value out
-    of int32 range — a 500 for schema-valid input instead of a 422 at
-    construction. See tests/api/test_orders.py's
+    failed only once the adapter sent it to PostgreSQL, as DataError:
+    value out of int32 range — a storage failure raised from
+    infrastructure, mid-write, for a value this model had already declared
+    valid. See tests/api/test_orders.py's
     test_a_quantity_above_int4_max_is_refused_with_422_not_500 for the
-    live-database confirmation of that adapter failure.
+    live-database confirmation of that adapter failure, and for what the
+    api layer turns it into for a caller.
     """
     with pytest.raises(ValidationError):
         line(quantity=2_147_483_648)
@@ -88,6 +93,22 @@ def test_line_rejects_a_quantity_above_int4_max() -> None:
 
 def test_line_accepts_the_int4_boundary_quantity() -> None:
     assert line(quantity=2_147_483_647).quantity == 2_147_483_647
+
+
+def test_line_rejects_a_boolean_quantity() -> None:
+    """`bool` is an `int` subclass in Python, so without `strict=True` this
+    field would accept `True`/`False` as `1`/`0` instead of refusing them.
+    Mirrors api/v1/schemas.py's OrderLineIn.quantity and
+    services/order.py's PlaceOrderLine.quantity — see the api schema's
+    comment for the live Schemathesis failure this was found by. This is
+    the domain layer, so a non-HTTP caller constructing OrderLine directly
+    must be refused too, not only the HTTP edge.
+    """
+    with pytest.raises(ValidationError):
+        # No `type: ignore` needed: `bool` is a subtype of `int`, so mypy
+        # accepts `True` for a parameter typed `int` — which is exactly
+        # the ambiguity `strict=True` closes at runtime.
+        line(quantity=True)
 
 
 def test_order_requires_at_least_one_line() -> None:
@@ -189,3 +210,55 @@ def test_total_always_equals_the_sum_of_lines(
 def test_order_id_is_a_uuid() -> None:
     order = build_order()
     assert isinstance(order.id, UUID)
+
+
+def test_an_authorisation_is_a_frozen_value_object() -> None:
+    authorisation = Authorisation(id=AuthorisationId("auth_123"))
+
+    with pytest.raises(PydanticValidationError):
+        # unused-ignore: same reason as test_money_is_immutable above — this
+        # project does not enable the pydantic.mypy plugin, so mypy does not
+        # know the model is frozen and reports `misc` as unused.
+        authorisation.id = AuthorisationId(  # type: ignore[misc, unused-ignore]
+            "auth_456"
+        )
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_an_authorisation_reference_may_not_be_blank(blank: str) -> None:
+    """A blank reference is proof of nothing.
+
+    A provider answering 201 with `{"id": ""}` would otherwise produce an
+    Authorisation that satisfies this model and cannot be used to
+    capture, reconcile or refund the payment it claims to prove — while
+    the order it belongs to is stored as paid.
+    """
+    with pytest.raises(ValidationError):
+        Authorisation(id=AuthorisationId(blank))
+
+
+def test_an_authorisation_reference_is_stored_stripped() -> None:
+    assert Authorisation(id=AuthorisationId("  auth_1  ")).id == "auth_1"
+
+
+def test_the_payment_gateway_port_is_structural() -> None:
+    """Guard the decorator and the method name — nothing more.
+
+    `runtime_checkable` makes `isinstance` check only that an attribute
+    with this NAME exists. It does not check parameter types, return
+    types, or even that the method is async: `Stub.authorise` below could
+    take entirely different arguments and this would still pass. That is
+    deliberate here — the real signature conformance check is static,
+    performed by mypy at the call site that assigns an implementer to a
+    `PaymentGateway`-typed field. What this test does catch is a missing
+    `@runtime_checkable` decorator (isinstance would raise TypeError) and
+    a renamed or misspelled method — which is what makes the domain able
+    to name the operation without knowing who performs it: no base class,
+    no import of ours in the implementer.
+    """
+
+    class Stub:
+        async def authorise(self, *, order_id: OrderId, total: Money) -> Authorisation:
+            return Authorisation(id=AuthorisationId("auth_123"))
+
+    assert isinstance(Stub(), PaymentGateway)

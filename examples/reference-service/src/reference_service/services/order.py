@@ -33,8 +33,15 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
+from reference_service.domain.payments import PaymentGateway
 from reference_service.domain.repositories import OrderRepository
 from reference_service.services.errors import ServiceDefectError
+
+# NUMERIC(14, 2) in migrations/000001, mirroring api/v1/schemas.py's
+# MAX_MONEY. The service layer must not import from api, so the constant
+# is repeated rather than shared, exactly as the field constraints below
+# already are.
+MAX_ORDER_TOTAL = Decimal("999999999999.99")
 
 
 class PlaceOrderLine(BaseModel):
@@ -48,7 +55,14 @@ class PlaceOrderLine(BaseModel):
     # le=2_147_483_647 mirrors order_lines.quantity's storage type, INTEGER
     # (PostgreSQL int4, max 2_147_483_647) — same reasoning as
     # domain.order.OrderLine.quantity and api/v1/schemas.py's OrderLineIn.
-    quantity: Annotated[int, Field(gt=0, le=2_147_483_647)]
+    #
+    # strict=True mirrors the same two: `bool` is an `int` subclass in
+    # Python, so without it pydantic's default LAX int validation would
+    # accept quantity=True as quantity=1. A command is the service
+    # layer's own input type (see the class-level comment above) — it
+    # must refuse that on its own, not rely on api/v1/schemas.py having
+    # already filtered it out for HTTP callers.
+    quantity: Annotated[int, Field(gt=0, le=2_147_483_647, strict=True)]
     unit_amount: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=2)]
     currency: Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}$")]
 
@@ -79,12 +93,34 @@ class PlaceOrderCommand(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def total_must_fit_in_money(self) -> Self:
+        # Mirrors api/v1/schemas.py's validator of the same name, for the
+        # reason the rest of this module's constraints mirror that
+        # module's: a command must stand on its own for a non-HTTP caller.
+        total = sum(
+            (line.unit_amount * line.quantity for line in self.lines), Decimal(0)
+        )
+        if total > MAX_ORDER_TOTAL:
+            raise ValueError(
+                f"order total {total} exceeds the maximum representable "
+                f"amount {MAX_ORDER_TOTAL}"
+            )
+        return self
+
 
 class PlaceOrder:
-    def __init__(self, orders: OrderRepository) -> None:
+    def __init__(self, orders: OrderRepository, payments: PaymentGateway) -> None:
         self._orders = orders
+        self._payments = payments
 
     async def __call__(self, command: PlaceOrderCommand) -> Order:
+        # Generated BEFORE the try below, not inside it: the payment
+        # gateway's idempotency key (infrastructure/http/payment_gateway.py)
+        # is this same id, so it must exist even if line assembly below
+        # were ever to fail before reaching the gateway.
+        order_id = OrderId(uuid4())
+
         # The boundary. Everything below this point works from a command that
         # has ALREADY validated, so any validation failure here means this use
         # case assembled the aggregate wrongly — a server defect. Letting the
@@ -99,12 +135,7 @@ class PlaceOrder:
                 )
                 for item in command.lines
             )
-            order = Order(
-                id=OrderId(uuid4()),
-                customer_id=CustomerId(command.customer_id),
-                lines=lines,
-                total=total_of(lines),
-            )
+            total = total_of(lines)
         except (PydanticValidationError, ValueError) as exc:
             # ValueError as well as ValidationError: total_of raises a plain
             # ValueError on mixed currencies. PlaceOrderCommand already rejects
@@ -114,9 +145,52 @@ class PlaceOrder:
                 "failed to build a valid Order from a valid PlaceOrderCommand"
             ) from exc
 
-        # Outside the try: a repository failure is not a validation problem,
+        # Authorise BEFORE saving. The other order — save, then authorise —
+        # persists an order for every declined card and leaves someone to
+        # clean them up later.
+        #
+        # Neither error is caught here. PaymentDeclinedError is a
+        # DomainError and api/errors.py turns it into a 402;
+        # PaymentUnavailableError has its own handler and becomes a 503.
+        # Wrapping either in ServiceDefectError would relabel a working
+        # gateway's "no" as a bug in this service.
+        authorisation = await self._payments.authorise(order_id=order_id, total=total)
+
+        try:
+            order = Order(
+                id=order_id,
+                customer_id=CustomerId(command.customer_id),
+                lines=lines,
+                total=total,
+                authorisation_id=authorisation.id,
+            )
+        except (PydanticValidationError, ValueError) as exc:
+            # Same defect class as the try above (see its comment): a
+            # command that validated but produced an Order whose total
+            # disagrees with its lines is this use case's bug, not the
+            # caller's — even though it is only reachable here because the
+            # payment has, by this point, already been authorised.
+            raise ServiceDefectError(
+                "failed to build a valid Order from a valid PlaceOrderCommand"
+            ) from exc
+
+        # Outside any try: a repository failure is not a validation problem,
         # and wrapping it here would relabel a database outage as a defect in
         # this use case. It propagates to the catch-all handler as itself.
+        #
+        # The window: if this raises, the payment above is authorised and no
+        # order exists. Deliberately not "cleaned up" here with a call that
+        # voids the authorisation — that call can fail too, and then there
+        # are two windows instead of one.
+        #
+        # This gap stays open past M3 — it is not scheduled to close. What
+        # it looks like when it happens: an authorisation the payment
+        # provider holds with no order row to match it. Closing it properly
+        # needs an outbox or a reconciliation job, and either is its own
+        # design round: message queues are excluded from this project
+        # entirely (see the roadmap's excluded-features table). Task 15
+        # records this gap in the project documentation — writing it down
+        # is not the same as closing it.
         await self._orders.save(order)
         return order
 

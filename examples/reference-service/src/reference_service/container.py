@@ -13,10 +13,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+import httpx
 import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from reference_service.domain.payments import PaymentGateway
 from reference_service.domain.repositories import OrderRepository
 from reference_service.infrastructure.db.engine import (
     build_engine,
@@ -25,8 +27,14 @@ from reference_service.infrastructure.db.engine import (
 from reference_service.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
+from reference_service.infrastructure.http.breaker import CircuitBreaker
+from reference_service.infrastructure.http.client import build_http_client
+from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
+)
+from reference_service.infrastructure.memory.payment_gateway import (
+    InMemoryPaymentGateway,
 )
 from reference_service.settings import Settings
 
@@ -101,24 +109,67 @@ class ReadinessRegistry:
 class Container:
     settings: Settings
     orders: OrderRepository
+    payments: PaymentGateway
     # None when no database is configured. Held only so close_container can
     # dispose the pool at shutdown; nothing else reaches for it.
     engine: AsyncEngine | None = None
+    # None when no payment provider is configured (the in-memory gateway's
+    # case). Held for the same reason `engine` is: only close_container
+    # reaches for it, to close the pooled connections at shutdown.
+    http_client: httpx.AsyncClient | None = None
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
 
 
 def build_container(settings: Settings) -> Container:
+    if settings.payment is None:
+        # No payment provider configured: the in-memory gateway, which
+        # authorises everything — the same arrangement `database` below has
+        # with the in-memory order repository.
+        payments: PaymentGateway = InMemoryPaymentGateway()
+        http_client = None
+    else:
+        http_client = build_http_client(
+            settings.payment.http,
+            base_url=str(settings.payment.base_url),
+            headers=(
+                {
+                    "Authorization": (
+                        f"Bearer {settings.payment.api_key.get_secret_value()}"
+                    )
+                }
+                if settings.payment.api_key is not None
+                else None
+            ),
+        )
+        payments = HttpPaymentGateway(
+            http_client,
+            breaker=CircuitBreaker(
+                failure_threshold=settings.payment.breaker_failure_threshold,
+                reset_after_seconds=settings.payment.breaker_reset_after_seconds,
+            ),
+            attempts=settings.payment.retry_attempts,
+            wait_initial_seconds=settings.payment.retry_initial_wait_seconds,
+            wait_max_seconds=settings.payment.retry_max_wait_seconds,
+        )
+
     if settings.database is None:
         # No database configured: the in-memory adapter, and no readiness
         # check, because there is no dependency to report on.
-        return Container(settings=settings, orders=InMemoryOrderRepository())
+        return Container(
+            settings=settings,
+            orders=InMemoryOrderRepository(),
+            payments=payments,
+            http_client=http_client,
+        )
 
     engine = build_engine(settings.database)
     container = Container(
         settings=settings,
         orders=PostgresOrderRepository(build_sessionmaker(engine)),
+        payments=payments,
         engine=engine,
+        http_client=http_client,
     )
 
     async def database_is_reachable() -> None:
@@ -133,14 +184,31 @@ def build_container(settings: Settings) -> Container:
             await connection.execute(text("SELECT 1"))
 
     container.readiness.register("database", database_is_reachable)
+    # Deliberately no readiness check registered for the payment provider.
+    # /readyz removing this pod from load balancing because someone else's
+    # API is slow turns their outage into ours, and the circuit breaker
+    # already handles that case properly — see HttpPaymentGateway.
     return container
 
 
 async def close_container(container: Container) -> None:
-    """Release resources. Runs after in-flight requests finish."""
-    if container.engine is not None:
-        # Closes every pooled connection. Without this, shutdown leaves
-        # connections open until the server times them out, and a rolling
-        # deployment can exhaust the database's connection limit with the
-        # sockets of pods that have already stopped serving.
-        await container.engine.dispose()
+    """Release resources. Runs after in-flight requests finish.
+
+    `try`/`finally`, not two sequential `if`s: without it, an exception
+    from `engine.dispose()` would skip `http_client.aclose()` entirely,
+    leaking every pooled HTTP connection on a shutdown that also happened
+    to have database trouble — exactly the moment a leak is least
+    affordable. Each resource's own close call is independent of the
+    other's success, so nothing here should let one's failure hide the
+    other's cleanup.
+    """
+    try:
+        if container.engine is not None:
+            # Closes every pooled connection. Without this, shutdown leaves
+            # connections open until the server times them out, and a rolling
+            # deployment can exhaust the database's connection limit with the
+            # sockets of pods that have already stopped serving.
+            await container.engine.dispose()
+    finally:
+        if container.http_client is not None:
+            await container.http_client.aclose()

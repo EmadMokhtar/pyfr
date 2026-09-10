@@ -431,3 +431,56 @@ def test_a_subclass_inherits_its_parent_status() -> None:
         title = "Order already shipped"
 
     assert status_for(OrderAlreadyShippedError(OrderId(uuid4()))) == 404
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body", "expected_status"),
+    [
+        ("PUT", "/api/v1/orders", None, 405),
+        ("GET", "/api/v1/nope", None, 404),
+        # Undecodable bytes, NOT merely malformed JSON. A body of
+        # b"{not json" is valid UTF-8 and reaches request validation, which
+        # already answers a correct 422 Problem Details. These bytes fail
+        # earlier, inside FastAPI's body reading, which raises an
+        # HTTPException(400) — and before this task nothing handled it.
+        ("POST", "/api/v1/orders", b"\xff\x11", 400),
+    ],
+)
+def test_framework_errors_are_problem_details(
+    client: TestClient,
+    method: str,
+    path: str,
+    body: bytes | None,
+    expected_status: int,
+) -> None:
+    # Declaring the body as JSON is what makes the undecodable-bytes case
+    # actually undecodable-bytes, on the FastAPI version pinned here: a
+    # request with no Content-Type header skips JSON parsing entirely
+    # (`strict_content_type` defaults to True) and hands the raw bytes to
+    # pydantic instead, which answers a 422 the existing validation handler
+    # already renders correctly — not the bug this test exists to catch.
+    # Declaring application/json forces `await request.json()`, which is
+    # where the UnicodeDecodeError this task is about actually gets
+    # raised. Harmless on the other two cases: neither has a body, so the
+    # header does not change their routing/method-lookup failures.
+    response = client.request(
+        method, path, content=body, headers={"content-type": "application/json"}
+    )
+
+    assert response.status_code == expected_status
+    assert response.headers["content-type"] == "application/problem+json"
+    problem = response.json()
+    assert problem["status"] == expected_status
+    assert problem["title"]
+    assert problem["instance"] == path
+    # The shape clients are promised. `detail` is optional in RFC 9457;
+    # `type`, `title` and `status` are not.
+    assert set(problem) >= {"type", "title", "status"}
+
+
+def test_a_405_still_carries_the_allow_header(client: TestClient) -> None:
+    """RFC 9110 requires it, and a hand-written handler is where it is lost."""
+    response = client.put("/api/v1/orders", json={})
+
+    assert response.status_code == 405
+    assert response.headers["allow"] == "POST"

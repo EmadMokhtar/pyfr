@@ -18,6 +18,7 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
+import httpx
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
 from opentelemetry._logs import set_logger_provider
@@ -25,6 +26,7 @@ from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
@@ -327,4 +329,24 @@ def instrument_database(engine: AsyncEngine, runtime: OtelRuntime) -> None:
     _opt_in_to_stable_semconv()
     SQLAlchemyInstrumentor().instrument(
         engine=engine.sync_engine, tracer_provider=runtime.tracer_provider
+    )
+
+
+def instrument_http_client(client: httpx.AsyncClient, runtime: OtelRuntime) -> None:
+    """Add a CLIENT span per outbound request to one client.
+
+    `instrument_client`, not the global `instrument()`: this attaches to
+    the single instance the composition root built, so a service running
+    with APP_OTEL__ENABLED false has nothing patched anywhere. The global
+    form would monkey-patch httpx itself, which is both wider than we
+    need and impossible to undo cleanly in tests.
+
+    `_opt_in_to_stable_semconv()` first, for the reason spelled out in the
+    M2 plan: the opt-in is read on the FIRST instrument*() call in a
+    process and cached forever, so every instrumentor must be preceded by
+    it or the first one to run decides for all of them.
+    """
+    _opt_in_to_stable_semconv()
+    HTTPXClientInstrumentor.instrument_client(
+        client, tracer_provider=runtime.tracer_provider
     )
