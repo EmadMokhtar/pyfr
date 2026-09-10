@@ -45,6 +45,24 @@ dependencies = [
     # Outbound spans for the payment call. Closes the first row of the M2
     # plan's "deliberately does not include" table.
     "opentelemetry-instrumentation-httpx>=0.65b0",
+    # The cache client. redis-py's own asyncio interface (redis.asyncio) —
+    # aioredis was merged into it years ago and is archived, so there is no
+    # separate async package to choose. Used ONLY by
+    # infrastructure/cache/, which is the one place allowed to import it.
+    "redis>=8.1",
+    # The S3-compatible object store client. aioboto3 wraps aiobotocore,
+    # which wraps botocore: one adapter serves MinIO, Amazon S3, Cloudflare
+    # R2, Ceph and Backblaze B2, distinguished only by endpoint_url (spec
+    # 9.1). boto3 itself is synchronous and would block the event loop on
+    # every call.
+    "aioboto3>=15.5",
+    # Spans for Redis commands and for S3 calls. Same 0.65b0 line as every
+    # other opentelemetry-instrumentation-* dependency above; the `b` is
+    # upstream's permanent beta versioning, not a typo. Whether the
+    # botocore instrumentation actually sees aioboto3's async calls is
+    # measured in Task 12 rather than assumed.
+    "opentelemetry-instrumentation-redis>=0.65b0",
+    "opentelemetry-instrumentation-botocore>=0.65b0",
 ]
 
 [dependency-groups]
@@ -63,7 +81,12 @@ dev = [
     # model/schema drift gate in tests/integration/test_schema_drift.py. Deleting
     # this dependency silently removes that gate. See Task 9 of the M1 plan.
     "alembic>=1.19",
-    "testcontainers[postgres]>=4.15",
+    "testcontainers[postgres,redis,minio]>=4.15",
+    # Imported at module scope by testcontainers.community.minio (its first
+    # line is `from minio import Minio`), so collection fails without it.
+    # The production adapter uses aioboto3 and never imports this — it is
+    # purely a test-container dependency.
+    "minio>=7.2",
     # Reads ops/prometheus/rules/*.yml in the SLO gate (tests/unit/
     # test_slo_rules.py), so the PromQL and the Python constants cannot
     # drift. Available transitively through pre-commit today; depended on
