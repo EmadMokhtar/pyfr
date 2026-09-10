@@ -32,21 +32,33 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from testcontainers.community.postgres import PostgresContainer
+from testcontainers.community.redis import RedisContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
+from reference_service.infrastructure.cache.client import build_redis_client
 from reference_service.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
-from reference_service.settings import DatabaseSettings
+from reference_service.settings import CacheSettings, DatabaseSettings
 
 # Pinned, and pinned to the same versions compose uses. A gate that passes
 # against a different PostgreSQL than production runs is not a gate.
 POSTGRES_IMAGE = "postgres:16-alpine"
 MIGRATE_IMAGE = "migrate/migrate:v4.19.0"
+
+# Pinned, and pinned to the same tag compose.yaml uses. A gate that passes
+# against a different Redis than the local stack runs is not a gate.
+#
+# testcontainers.redis (the short path) is a deprecated shim that calls
+# warnings.warn on import, and this project runs filterwarnings=["error"],
+# so importing it would fail outright. The community path above is the
+# supported one and is what this module already uses for PostgreSQL.
+REDIS_IMAGE = "redis:8-alpine"
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
@@ -270,3 +282,40 @@ def clean_database(migrated_database: PostgresContainer) -> None:
         ]
     )
     assert result.exit_code == 0, result.output.decode()
+
+
+@pytest.fixture(scope="session")
+def redis_container() -> Iterator[RedisContainer]:
+    """One Redis for the whole session, as with PostgreSQL above.
+
+    RedisContainer, deliberately, and NOT AsyncRedisContainer: the latter's
+    get_async_client() is `return await asyncRedis(...)`, and
+    redis.asyncio.Redis is an ordinary constructor returning a client rather
+    than a coroutine, so awaiting it raises `TypeError: object Redis can't
+    be used in 'await' expression`. This fixture uses the sync container for
+    lifecycle only and builds the async client from its host and port.
+    """
+    with RedisContainer(image=REDIS_IMAGE) as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def cache_settings(redis_container: RedisContainer) -> CacheSettings:
+    host = redis_container.get_container_host_ip()
+    port = redis_container.get_exposed_port(6379)
+    return CacheSettings(dsn=f"redis://{host}:{port}/0")  # type: ignore[arg-type]
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def redis_client(cache_settings: CacheSettings) -> AsyncIterator[Redis]:
+    """A client per test, flushed before each one.
+
+    Function-scoped rather than session-scoped even though the container is
+    shared: leftover keys from a previous test are exactly the kind of
+    cross-test coupling that makes a cache suite pass in one order and fail
+    in another. Flushing is milliseconds; a container per test is not.
+    """
+    client = build_redis_client(cache_settings)
+    await client.flushdb()
+    yield client
+    await client.aclose()
