@@ -92,6 +92,25 @@ These need Docker. The schema is owned by
     genuinely applied. Running it first, to make the error go away, tells the
     tool a lie it will believe for the rest of the database's life.
 
+## The cache and the object store
+
+`just up` starts Redis and MinIO alongside PostgreSQL — neither is behind a
+profile, so the containerised stack always exercises the same cached,
+receipt-storing path production runs.
+
+| Command | What it does |
+| --- | --- |
+| `just redis-cli` | An interactive `redis-cli` session against the running compose cache. |
+| `just minio-console` | Print, and try to open, the MinIO web console at <http://localhost:9001> — log in with the local-only `minioadmin` / `minioadmin` credentials from `compose.yaml`. Use it to look at what the receipt store actually holds. |
+
+The bucket itself is created by a one-shot `minio-bootstrap` container that
+runs `mc mb` once MinIO reports healthy, because MinIO does not create a
+bucket on demand and the application deliberately does not create its own —
+that would need `CreateBucket` permission in production, on top of the
+`GetObject`/`PutObject` the receipt store actually needs. `just up` waits for
+`minio-bootstrap` to exit successfully before starting the API, the same
+arrangement it already has with the migration container.
+
 ## Tests and schema gates
 
 | Command | What it does |

@@ -29,7 +29,7 @@ async def test_checks_run_concurrently_not_one_after_another() -> None:
 
     results = await registry.run(timeout=1.0)
 
-    assert results == {"waiter": "ok", "releaser": "ok"}
+    assert results.gating == {"waiter": "ok", "releaser": "ok"}
 
 
 async def test_a_failing_check_does_not_prevent_others_from_reporting() -> None:
@@ -46,8 +46,8 @@ async def test_a_failing_check_does_not_prevent_others_from_reporting() -> None:
 
     results = await registry.run(timeout=1.0)
 
-    assert results["cache"] == "ok"
-    assert results["database"].startswith("error")
+    assert results.gating["cache"] == "ok"
+    assert results.gating["database"].startswith("error")
 
 
 async def test_a_failing_check_reports_the_exception_type_not_its_message() -> None:
@@ -68,10 +68,10 @@ async def test_a_failing_check_reports_the_exception_type_not_its_message() -> N
 
     results = await registry.run(timeout=1.0)
 
-    assert results["database"] == "error: RuntimeError"
-    assert "hunter2" not in results["database"]
-    assert "db.internal" not in results["database"]
+    assert results.gating["database"] == "error: RuntimeError"
+    assert "hunter2" not in results.gating["database"]
+    assert "db.internal" not in results.gating["database"]
 
 
 async def test_no_checks_returns_an_empty_mapping() -> None:
-    assert await ReadinessRegistry().run(timeout=1.0) == {}
+    assert (await ReadinessRegistry().run(timeout=1.0)).gating == {}

@@ -15,11 +15,17 @@ from dataclasses import dataclass, field
 
 import httpx
 import structlog
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.domain.payments import PaymentGateway
+from reference_service.domain.receipts import ReceiptStore
 from reference_service.domain.repositories import OrderRepository
+from reference_service.infrastructure.cache.client import build_redis_client
+from reference_service.infrastructure.cache.order_repository import (
+    CachedOrderRepository,
+)
 from reference_service.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
@@ -36,6 +42,14 @@ from reference_service.infrastructure.memory.order_repository import (
 from reference_service.infrastructure.memory.payment_gateway import (
     InMemoryPaymentGateway,
 )
+from reference_service.infrastructure.memory.receipt_store import (
+    InMemoryReceiptStore,
+)
+from reference_service.infrastructure.storage.client import (
+    build_client_config,
+    build_s3_session,
+)
+from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
 from reference_service.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]
@@ -45,38 +59,83 @@ READINESS_TIMEOUT_SECONDS = 2.0
 _logger = structlog.get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class ReadinessReport:
+    """What /readyz learned, split by whether it is allowed to matter.
+
+    `gating` decides the HTTP status. `informational` is reported and
+    decides nothing — see register_informational for why the split exists.
+    """
+
+    gating: dict[str, str]
+    informational: dict[str, str]
+
+    @property
+    def healthy(self) -> bool:
+        return all(result == "ok" for result in self.gating.values())
+
+
 class ReadinessRegistry:
     """Dependencies register themselves here; /readyz runs them all.
 
     Lives beside the container rather than in the api layer so the import
     chain stays acyclic: api.health -> api.deps -> container.
+
+    Two tiers, and which one a dependency belongs in is a judgement about
+    BLAST RADIUS, not about importance:
+
+      gating        — losing it means this instance cannot do useful work.
+                      A failure returns 503 and the orchestrator stops
+                      sending traffic here. The database is the only one.
+      informational — losing it degrades the service without breaking it.
+                      Reported so an operator can see it, and never allowed
+                      to affect the status code.
+
+    The cache is informational because it fails open: when Redis is gone,
+    PostgreSQL answers and every response is still correct. Gating on it
+    would be actively harmful, because Redis is SHARED — every pod would
+    fail the check in the same second and the whole service would leave
+    the load balancer over a degradation it was built to survive.
+
+    Object storage is informational for a different reason with the same
+    answer: losing it breaks one endpoint, so taking 100% of traffic off
+    the pod to protect that slice costs far more than it saves.
+
+    This is the same reasoning build_container already records for not
+    registering the payment provider at all. The difference is that these
+    two are REPORTED, which spec 12.1 asks for and which costs nothing.
     """
 
     def __init__(self) -> None:
-        self._checks: dict[str, ReadinessCheck] = {}
+        self._gating: dict[str, ReadinessCheck] = {}
+        self._informational: dict[str, ReadinessCheck] = {}
 
     def register(self, name: str, check: ReadinessCheck) -> None:
-        self._checks[name] = check
+        """Register a check that MAY return 503. See the class docstring."""
+        self._gating[name] = check
+
+    def register_informational(self, name: str, check: ReadinessCheck) -> None:
+        """Register a check that is reported and never returns 503."""
+        self._informational[name] = check
 
     async def run(
         self,
         timeout: float = READINESS_TIMEOUT_SECONDS,  # noqa: ASYNC109 - see docstring
-    ) -> dict[str, str]:
-        """Run every check CONCURRENTLY, each bounded by `timeout`.
+    ) -> ReadinessReport:
+        """Run every check in BOTH tiers concurrently, each bounded by `timeout`.
 
-        Concurrency is the point. Run sequentially, the endpoint's worst
-        case would be N x timeout — three dependency checks at two seconds
-        each is a six-second readiness response, which an orchestrator's own
-        probe timeout kills long before it arrives, marking the pod unready
-        for entirely the wrong reason. Concurrent, the worst case is one
-        timeout no matter how many dependencies register.
+        Concurrency is the point, and it spans the tiers rather than
+        running one after the other. Run sequentially, the endpoint's worst
+        case would be N x timeout — which an orchestrator's own probe
+        timeout kills long before it arrives, marking the pod unready for
+        entirely the wrong reason. One gather over both tiers keeps the
+        worst case at one timeout no matter how many dependencies register
+        in either.
 
         ASYNC109 is suppressed deliberately: the rule prefers callers to own
         deadlines, but this registry owns the readiness policy, and its
         callers are HTTP handlers with no better deadline to offer.
         """
-        if not self._checks:
-            return {}
 
         async def run_one(name: str, check: ReadinessCheck) -> tuple[str, str]:
             try:
@@ -89,20 +148,30 @@ class ReadinessRegistry:
                 #
                 # The exception's own message is deliberately NOT put into the
                 # response: /readyz is reachable inside a cluster, and an
-                # exception message from a database driver or an HTTP client
-                # routinely carries hostnames, connection strings, or
-                # credentials. The response gets only the bounded exception
-                # type name; the full exception — with its message and
-                # traceback — goes to the log instead, where an operator can
-                # still see it.
+                # exception message from a database driver, a Redis client or
+                # an S3 client routinely carries hostnames, connection
+                # strings, or credentials. The response gets only the bounded
+                # exception type name; the full exception — with its message
+                # and traceback — goes to the log instead, where an operator
+                # can still see it.
                 _logger.exception("readiness_check.failed", check=name)
                 return name, f"error: {type(exc).__name__}"
             return name, "ok"
 
+        gating_names = list(self._gating)
         results = await asyncio.gather(
-            *(run_one(name, check) for name, check in self._checks.items())
+            *(run_one(name, check) for name, check in self._gating.items()),
+            *(run_one(name, check) for name, check in self._informational.items()),
         )
-        return dict(results)
+        # gather preserves argument order, so the first len(gating_names)
+        # results are the gating ones. Splitting by position rather than
+        # re-looking-up the name keeps this correct even if a name were ever
+        # registered in both tiers.
+        boundary = len(gating_names)
+        return ReadinessReport(
+            gating=dict(results[:boundary]),
+            informational=dict(results[boundary:]),
+        )
 
 
 @dataclass
@@ -117,6 +186,14 @@ class Container:
     # case). Held for the same reason `engine` is: only close_container
     # reaches for it, to close the pooled connections at shutdown.
     http_client: httpx.AsyncClient | None = None
+    # None when no cache is configured. Held only so close_container can
+    # release the pool at shutdown; nothing else reaches for it.
+    redis: Redis | None = None
+    # Always present, never None — unlike engine and http_client, there is
+    # always SOME store, because the in-memory one needs no configuration.
+    # Defaults to it here; build_container below swaps in the S3 adapter
+    # when settings.storage is configured.
+    receipts: ReceiptStore = field(default_factory=InMemoryReceiptStore)
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
 
@@ -153,37 +230,109 @@ def build_container(settings: Settings) -> Container:
             wait_max_seconds=settings.payment.retry_max_wait_seconds,
         )
 
+    engine: AsyncEngine | None = None
+    orders: OrderRepository
     if settings.database is None:
         # No database configured: the in-memory adapter, and no readiness
         # check, because there is no dependency to report on.
-        return Container(
-            settings=settings,
-            orders=InMemoryOrderRepository(),
-            payments=payments,
-            http_client=http_client,
-        )
+        orders = InMemoryOrderRepository()
+    else:
+        engine = build_engine(settings.database)
+        orders = PostgresOrderRepository(build_sessionmaker(engine))
 
-    engine = build_engine(settings.database)
+    # The cache wraps whatever was selected above and satisfies the same
+    # port, so this is the ONLY place in the application that knows a cache
+    # exists. Removing the cache is deleting this block.
+    redis: Redis | None = None
+    if settings.cache is not None:
+        redis = build_redis_client(settings.cache)
+        orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
+
+    receipts: ReceiptStore = InMemoryReceiptStore()
+    s3_store: S3ReceiptStore | None = None
+    if settings.storage is not None:
+        storage_settings = settings.storage
+        s3_store = S3ReceiptStore(
+            build_s3_session(storage_settings),
+            build_client_config(storage_settings),
+            storage_settings,
+        )
+        receipts = s3_store
+
     container = Container(
         settings=settings,
-        orders=PostgresOrderRepository(build_sessionmaker(engine)),
+        orders=orders,
         payments=payments,
         engine=engine,
         http_client=http_client,
+        redis=redis,
+        receipts=receipts,
     )
 
-    async def database_is_reachable() -> None:
-        # Deliberately trivial. /readyz answers "can this process reach its
-        # dependencies", not "is the schema correct" — a readiness probe that
-        # runs a real query turns a slow database into an unready pod and takes
-        # the service out of rotation for a problem it could have served
-        # through. ReadinessRegistry.run bounds this with its own timeout and
-        # reports only the exception TYPE, so a connection string in a driver's
-        # error message never reaches the response body.
-        async with engine.connect() as connection:
-            await connection.execute(text("SELECT 1"))
+    if engine is not None:
 
-    container.readiness.register("database", database_is_reachable)
+        async def database_is_reachable() -> None:
+            # Deliberately trivial. /readyz answers "can this process reach
+            # its dependencies", not "is the schema correct" — a readiness
+            # probe that runs a real query turns a slow database into an
+            # unready pod and takes the service out of rotation for a
+            # problem it could have served through. ReadinessRegistry.run
+            # bounds this with its own timeout and reports only the
+            # exception TYPE, so a connection string in a driver's error
+            # message never reaches the response body.
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+
+        container.readiness.register("database", database_is_reachable)
+
+    if redis is not None:
+        cache_client = redis
+
+        async def cache_is_reachable() -> None:
+            await cache_client.ping()
+
+        # INFORMATIONAL, not gating, and the difference is deliberate.
+        # Redis is shared across every pod, and this cache fails open — with
+        # Redis gone, PostgreSQL answers and every response is still
+        # correct. A gating check would make every pod report itself unready
+        # in the same second, taking the whole service out of the load
+        # balancer over a degradation it was built to survive. Reporting it
+        # gives an operator the signal without the outage.
+        container.readiness.register_informational("cache", cache_is_reachable)
+
+    # Both halves of the condition are checked on purpose, even though
+    # `s3_store` is non-None only when `settings.storage` is. That coupling
+    # is real but IMPLICIT — it lives twenty lines up, in a different
+    # block — and reading `storage_settings` down here would depend on it
+    # silently: correct today only because Python scopes locals to the whole
+    # function, and an UnboundLocalError the moment someone moves the
+    # construction above into a helper. Naming `settings.storage` again
+    # makes this block self-contained, and narrows the type for mypy
+    # without an assertion.
+    if s3_store is not None and settings.storage is not None:
+        store = s3_store
+        bucket = settings.storage.bucket
+
+        async def storage_is_reachable() -> None:
+            # head_bucket, not a get or a list: it is the cheapest call that
+            # proves the endpoint answers, the credentials are accepted AND
+            # the bucket exists — which is the whole question. Listing keys
+            # would also work and gets slower as the bucket fills.
+            #
+            # _client() is private, and reaching into it here is deliberate:
+            # the alternative is a public ping() on the port, which would
+            # put a health-check concern into the domain's ReceiptStore
+            # Protocol where it does not belong. Keeping the reach-in here
+            # keeps that leak inside the composition root, which already
+            # knows exactly which adapter it built — `store` above is typed
+            # as the concrete S3ReceiptStore, not the ReceiptStore Protocol,
+            # so no suppression is needed to call it.
+            client_cm = store._client()
+            async with client_cm as s3:
+                await s3.head_bucket(Bucket=bucket)
+
+        container.readiness.register_informational("storage", storage_is_reachable)
+
     # Deliberately no readiness check registered for the payment provider.
     # /readyz removing this pod from load balancing because someone else's
     # API is slow turns their outage into ours, and the circuit breaker
@@ -194,13 +343,11 @@ def build_container(settings: Settings) -> Container:
 async def close_container(container: Container) -> None:
     """Release resources. Runs after in-flight requests finish.
 
-    `try`/`finally`, not two sequential `if`s: without it, an exception
-    from `engine.dispose()` would skip `http_client.aclose()` entirely,
-    leaking every pooled HTTP connection on a shutdown that also happened
-    to have database trouble — exactly the moment a leak is least
-    affordable. Each resource's own close call is independent of the
-    other's success, so nothing here should let one's failure hide the
-    other's cleanup.
+    Nested `try`/`finally` rather than sequential `if`s: without it, an
+    exception from one close would skip every close after it, leaking
+    pooled connections on exactly the shutdown that also had trouble —
+    the moment a leak is least affordable. Each resource's cleanup is
+    independent of the others' success.
     """
     try:
         if container.engine is not None:
@@ -210,5 +357,14 @@ async def close_container(container: Container) -> None:
             # sockets of pods that have already stopped serving.
             await container.engine.dispose()
     finally:
-        if container.http_client is not None:
-            await container.http_client.aclose()
+        try:
+            if container.http_client is not None:
+                await container.http_client.aclose()
+        finally:
+            if container.redis is not None:
+                # aclose(), not close(): the sync name is deprecated in
+                # redis-py 5+ and warns, which filterwarnings=["error"]
+                # turns into a failure in any test that shuts a container
+                # down. Redis.from_pool means this owns the pool and
+                # disconnects it.
+                await container.redis.aclose()

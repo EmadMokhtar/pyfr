@@ -31,6 +31,7 @@ from reference_service.observability.otel import (
     build_views,
     configure_otel,
     instrument_http_client,
+    instrument_redis,
 )
 from reference_service.observability.slo import (
     HTTP_DURATION_BUCKET_BOUNDARIES,
@@ -140,6 +141,39 @@ def test_configure_otel_returns_none_when_disabled() -> None:
     settings = Settings(_env_file=None, environment="production")  # type: ignore[call-arg]
 
     assert configure_otel(settings, "1.2.3") is None
+
+
+def test_redis_is_not_instrumented_when_telemetry_is_off() -> None:
+    """The default path. With APP_OTEL__ENABLED false the process must
+    import no exporter, open no socket and start no background task — and
+    that now covers the two new instrumentations (redis; botocore stays
+    unimplemented, see instrument_redis's docstring for why).
+    """
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.otel.enabled is False
+    assert configure_otel(settings, "0.0.0") is None
+
+
+def test_instrumenting_redis_twice_does_not_raise() -> None:
+    """RedisInstrumentor patches the library GLOBALLY, unlike
+    HTTPXClientInstrumentor.instrument_client which attaches per client. A
+    second call must be a no-op rather than a double-patch — the test suite
+    builds many apps in one process, and each one runs the lifespan.
+
+    Builds the runtime with `configure_otel`, not `build_providers`: the
+    module docstring's "every test here uses build_providers" rule holds
+    everywhere else in this file, but `instrument_redis` decides whether to
+    instrument by reading `RedisInstrumentor.is_instrumented_by_opentelemetry`,
+    which is unaffected by which function built the runtime. `configure_otel`
+    is used here only because it is the one exercised in production and its
+    installing the global providers exactly once is harmless — no other
+    test in this module calls it on the enabled path.
+    """
+    runtime = configure_otel(_enabled_settings(), "0.0.0")
+    assert runtime is not None
+
+    instrument_redis(runtime)
+    instrument_redis(runtime)
 
 
 @pytest.fixture

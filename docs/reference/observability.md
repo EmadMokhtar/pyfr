@@ -15,6 +15,28 @@ The local stack exists for two reasons: so a developer can see their own
 traces without wiring anything up, and so the dashboards are verified as
 actually working rather than assumed to.
 
+## What is traced, and what is not
+
+HTTP requests, SQL statements, outbound calls to the payment provider, and
+**Redis commands** all produce spans. `GET /orders/{id}/receipt`'s calls to
+object storage do **not** — say this plainly, because a reader who assumes
+otherwise will go looking for an S3 span that does not exist.
+
+The gap is not an oversight. `opentelemetry-instrumentation-botocore` was
+added, pointed at a real MinIO container, and measured: `ListBuckets`,
+`CreateBucket`, `PutObject` and `GetObject` all succeeded and all produced
+**zero spans**, even though the instrumentor reported itself installed.
+`aioboto3` runs on `aiobotocore`, which replaces the parts of `botocore`'s
+client machinery the instrumentor patches (`botocore.client.BaseClient.
+_make_api_call`) with async equivalents the instrumentor's hooks never see —
+`AioBaseClient` shadows the method being patched. Shipping that dependency
+anyway would be worse than not shipping it: a trace search or a dashboard
+built against it would read as "S3 calls are always fast" instead of "S3
+calls are not observed", and the first of those is actively misleading. The
+dependency was removed rather than left in place doing nothing; see
+`instrument_redis` in `src/reference_service/observability/otel.py` for the
+full reasoning kept beside the code it explains.
+
 ## Turning it on
 
 ```bash
@@ -30,17 +52,66 @@ Telemetry is **off by default**, and the default costs nothing: with
 `APP_OTEL__ENABLED` false the process builds no providers, imports no
 exporter, opens no socket and starts no background task.
 
+## Readiness reports the cache and the store, and gates on neither
+
+`/readyz` carries two tiers: `checks`, which decides its status code, and
+`dependencies`, which is reported and never does. The database is the only
+entry in `checks`. The cache and the object store are informational —
+`dependencies` says whether each is reachable, but neither can turn a 200
+into a 503.
+
+The reasoning is worth having here rather than only in the HTTP reference,
+because it is an observability decision as much as an API one: Redis is
+shared across every pod and this cache fails open, so gating on it would make
+every pod report itself unready in the same second — turning a degradation
+the service is built to survive into a total, self-inflicted outage. Losing
+the object store breaks one endpoint, so pulling all traffic off a pod to
+protect that one slice would cost more than it saves. See
+[the full readiness reference](http-api.md#get-readyz-readiness) for the
+response shapes.
+
 ## The three dashboards
 
 | Dashboard | Identifier | The question it answers |
 | --- | --- | --- |
-| Service health | `pyfr-service-health` | Is the service serving? Request rate, error rate and latency percentiles by route, plus the saturation signals — database pool usage and event loop lag. |
+| Service health | `pyfr-service-health` | Is the service serving? Request rate, error rate and latency percentiles by route, plus the saturation signals — database pool usage and event loop lag — and Redis command latency. |
 | SLI and SLO | `pyfr-slo` | Are we meeting the objective, and how fast is the budget being spent? |
 | Runtime | `pyfr-runtime` | Is the process itself healthy? Memory, threads, file descriptors, processor time and garbage collection. |
 
 Saturation sits beside rate and errors deliberately. A connection pool at its
 ceiling is a queue, and a queue is latency that has not been served yet — it
 moves minutes before the error rate does.
+
+### The Redis panel shows latency, not pool usage
+
+The service health dashboard's Redis panel is titled "Redis command latency
+(p50/p99)", not "Redis pool usage" — and that title is accurate to what it
+draws, not what was originally asked for.
+
+The plan called for a Redis pool saturation panel, matching the database
+connection pool panel beside it. Building it required first checking that
+the metric exists, and it does not:
+`opentelemetry-instrumentation-redis` emits **spans, no metrics at all** —
+confirmed against a live stack by generating real cache traffic and querying
+Prometheus's own label-values endpoint for anything named `redis` or `pool`.
+Nothing came back.
+
+A panel querying a metric that is not there would not error — it would
+render empty, and an empty saturation panel reads as "zero saturation", which
+is a false "everything is fine" rather than an honest "not observed". That
+failure mode is worse than the panel not existing.
+
+What the panel draws instead: the `grafana/otel-lgtm` image runs a
+span-metrics connector by default, which turns every span into a latency
+histogram. Redis command spans are named after the raw command —
+`GET`, `SET`, `DEL`, the three `CachedOrderRepository` issues — so the panel
+queries `traces_spanmetrics_latency_bucket` filtered to those three span
+names. It is a real, useful signal — the span is how you notice a "fast"
+cache read that is actually costing 40 milliseconds, which is exactly the
+kind of problem a fail-open cache hides from every other signal, because the
+request still succeeds and no error rate moves. It answers "is Redis slow",
+not "is the Redis pool full", and the panel title says so rather than
+implying otherwise.
 
 ## How the three signals join up
 

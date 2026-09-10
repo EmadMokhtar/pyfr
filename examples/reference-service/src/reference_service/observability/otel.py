@@ -27,6 +27,7 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
@@ -350,3 +351,56 @@ def instrument_http_client(client: httpx.AsyncClient, runtime: OtelRuntime) -> N
     HTTPXClientInstrumentor.instrument_client(
         client, tracer_provider=runtime.tracer_provider
     )
+
+
+def instrument_redis(runtime: OtelRuntime) -> None:
+    """Spans for every Redis command.
+
+    A GLOBAL instrumentor, unlike instrument_http_client's per-client
+    attachment: redis-py has no per-client hook, so this patches the
+    library. `RedisInstrumentor` is also a process-wide SINGLETON
+    (`BaseInstrumentor.__new__` always returns the same instance), so only
+    the FIRST call in a process binds `tracer_provider` — every later call
+    is a no-op regardless of which provider it is given.
+
+    A raw double call would already be harmless without this guard:
+    `RedisInstrumentor.instrument()` calls `super().instrument()`, and
+    `BaseInstrumentor.instrument()` itself checks
+    `_is_instrumented_by_opentelemetry` and returns `None` before it could
+    double-patch. What the guard here actually earns its place for is
+    quieter test output: without it, every one of the many app instances
+    the test suite builds in one process would re-trigger that base-class
+    check and log a `WARNING: Attempting to instrument while already
+    instrumented` — this short-circuits before that call, so the log stays
+    clean.
+
+    Worth having despite the cache being optional: the span is how you find
+    out that a "fast" cache read is actually costing 40ms, which is the
+    exact failure a fail-open cache hides from every other signal — the
+    request still succeeds, so no error rate moves.
+
+    No `_opt_in_to_stable_semconv()` call here, unlike the instrumentors
+    above: redis-py has no legacy/stable HTTP semantic-convention split to
+    opt into — that env var governs only the HTTP attribute set, and a
+    Redis span's attributes (`db.system`, `db.statement`) are unaffected
+    by it either way.
+
+    Deliberately no `opentelemetry-instrumentation-botocore` counterpart
+    beside this function. Task 12's Step 1 measured whether that
+    instrumentor sees `aioboto3`'s S3 calls at all: instrumenting, then
+    running ListBuckets, CreateBucket, PutObject and GetObject through an
+    `aioboto3.Session` against a real MinIO container produced zero spans
+    on an `InMemorySpanExporter`/`ConsoleSpanExporter`, even though
+    `is_instrumented_by_opentelemetry` reported `True` and every call
+    itself succeeded. `aioboto3` runs on `aiobotocore`, which replaces the
+    parts of `botocore`'s client machinery the instrumentor patches with
+    async equivalents the instrumentor's hooks never see. Shipping that
+    instrumentation would mean an S3 span that silently never appears,
+    which is worse than no span: a dashboard or trace search built against
+    it would read as "S3 calls are always fast" rather than "S3 calls are
+    not observed". See the Task 12 report for the full probe transcript.
+    """
+    instrumentor = RedisInstrumentor()
+    if instrumentor.is_instrumented_by_opentelemetry:
+        return
+    instrumentor.instrument(tracer_provider=runtime.tracer_provider)

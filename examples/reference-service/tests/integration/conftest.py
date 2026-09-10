@@ -32,21 +32,54 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from pydantic import SecretStr
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from testcontainers.community.minio import MinioContainer
 from testcontainers.community.postgres import PostgresContainer
+from testcontainers.community.redis import RedisContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
+from reference_service.infrastructure.cache.client import build_redis_client
 from reference_service.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
-from reference_service.settings import DatabaseSettings
+from reference_service.infrastructure.storage.client import (
+    build_client_config,
+    build_s3_session,
+)
+from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
+from reference_service.settings import CacheSettings, DatabaseSettings, StorageSettings
 
 # Pinned, and pinned to the same versions compose uses. A gate that passes
 # against a different PostgreSQL than production runs is not a gate.
 POSTGRES_IMAGE = "postgres:16-alpine"
 MIGRATE_IMAGE = "migrate/migrate:v4.19.0"
+
+# Pinned, and pinned to the same tag compose.yaml uses. A gate that passes
+# against a different Redis than the local stack runs is not a gate.
+#
+# testcontainers.redis (the short path) is a deprecated shim that calls
+# warnings.warn on import, and this project runs filterwarnings=["error"],
+# so importing it would fail outright. The community path above is the
+# supported one and is what this module already uses for PostgreSQL.
+REDIS_IMAGE = "redis:8-alpine"
+
+# Pinned to the same tag compose.yaml uses. MinioContainer's own default is
+# minio/minio:RELEASE.2022-12-02T19-19-22Z — nearly four years old — so this
+# is never left to the default.
+#
+# testcontainers.minio (the short path) is a deprecated shim that calls
+# warnings.warn on import, and this project runs filterwarnings=["error"],
+# so importing it would fail outright. The community path above is the
+# supported one and is what this module already uses for PostgreSQL and
+# Redis.
+MINIO_IMAGE = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
+MINIO_ACCESS_KEY = "minioadmin"
+MINIO_SECRET_KEY = "minioadmin"
+RECEIPTS_BUCKET = "receipts"
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
@@ -270,3 +303,99 @@ def clean_database(migrated_database: PostgresContainer) -> None:
         ]
     )
     assert result.exit_code == 0, result.output.decode()
+
+
+@pytest.fixture(scope="session")
+def redis_container() -> Iterator[RedisContainer]:
+    """One Redis for the whole session, as with PostgreSQL above.
+
+    RedisContainer, deliberately, and NOT AsyncRedisContainer: the latter's
+    get_async_client() is `return await asyncRedis(...)`, and
+    redis.asyncio.Redis is an ordinary constructor returning a client rather
+    than a coroutine, so awaiting it raises `TypeError: object Redis can't
+    be used in 'await' expression`. This fixture uses the sync container for
+    lifecycle only and builds the async client from its host and port.
+    """
+    with RedisContainer(image=REDIS_IMAGE) as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def cache_settings(redis_container: RedisContainer) -> CacheSettings:
+    host = redis_container.get_container_host_ip()
+    port = redis_container.get_exposed_port(6379)
+    return CacheSettings(dsn=f"redis://{host}:{port}/0")  # type: ignore[arg-type]
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def redis_client(cache_settings: CacheSettings) -> AsyncIterator[Redis]:
+    """A client per test, flushed before each one.
+
+    Function-scoped rather than session-scoped even though the container is
+    shared: leftover keys from a previous test are exactly the kind of
+    cross-test coupling that makes a cache suite pass in one order and fail
+    in another. Flushing is milliseconds; a container per test is not.
+    """
+    client = build_redis_client(cache_settings)
+    await client.flushdb()
+    yield client
+    await client.aclose()
+
+
+@pytest.fixture(scope="session")
+def minio_container() -> Iterator[MinioContainer]:
+    """One MinIO for the whole session, with the bucket created once.
+
+    MinioContainer's constructor sets the LEGACY credential variables
+    (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). This is now KNOWN, not hedged: a
+    divergent-credentials probe against the pinned MINIO_IMAGE
+    (minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
+    legacy pair with InvalidAccessKeyId and honours only MINIO_ROOT_USER /
+    MINIO_ROOT_PASSWORD, which is why both are set below, to the same
+    values, with `.with_env`.
+
+    The legacy pair is still passed to the constructor, even though this
+    release ignores it for authentication, because MinioContainer.get_client()
+    builds its client FROM those constructor arguments — both make_bucket
+    below and the key-layout test's list_objects use that client, so the
+    legacy pair still has to be correct even though the server itself never
+    checks it.
+    """
+    container = (
+        MinioContainer(
+            image=MINIO_IMAGE,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+        )
+        .with_env("MINIO_ROOT_USER", MINIO_ACCESS_KEY)
+        .with_env("MINIO_ROOT_PASSWORD", MINIO_SECRET_KEY)
+    )
+    with container as running:
+        # The bucket compose's minio-bootstrap service creates. The
+        # application deliberately never creates its own — see that service's
+        # comment — so the test environment has to.
+        running.get_client().make_bucket(RECEIPTS_BUCKET)
+        yield running
+
+
+@pytest.fixture(scope="session")
+def storage_settings(minio_container: MinioContainer) -> StorageSettings:
+    config = minio_container.get_config()
+    # get_config()["endpoint"] is "host:port" with NO scheme, and botocore's
+    # endpoint_url requires one. Without this prefix every call fails with an
+    # unhelpful InvalidURL.
+    return StorageSettings(
+        bucket=RECEIPTS_BUCKET,
+        endpoint_url=f"http://{config['endpoint']}",  # type: ignore[arg-type]
+        access_key_id=SecretStr(MINIO_ACCESS_KEY),
+        secret_access_key=SecretStr(MINIO_SECRET_KEY),
+    )
+
+
+@pytest.fixture
+def receipt_store(storage_settings: StorageSettings) -> S3ReceiptStore:
+    return S3ReceiptStore(
+        build_s3_session(storage_settings),
+        build_client_config(storage_settings),
+        storage_settings,
+    )

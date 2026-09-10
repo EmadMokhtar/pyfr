@@ -464,3 +464,66 @@ def test_retry_attempts_must_be_at_least_one(
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_cache_and_storage_are_absent_by_default() -> None:
+    """Both dependencies are optional, exactly as database and payment are."""
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.cache is None
+    assert settings.storage is None
+
+
+def test_cache_settings_are_read_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
+    monkeypatch.setenv("APP_CACHE__TTL_SECONDS", "60")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.cache is not None
+    assert settings.cache.ttl_seconds == 60
+    # Defaulted, not required: a cache that needs five variables set before it
+    # works is a cache nobody turns on.
+    assert settings.cache.pool_size == 10
+
+
+def test_a_cache_timeout_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero would mean 'no deadline' to redis-py, which is the one thing a
+    fail-open cache must never do: it would hang the request it was added
+    to speed up."""
+    monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
+    monkeypatch.setenv("APP_CACHE__OPERATION_TIMEOUT_SECONDS", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_storage_settings_require_a_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "secret")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_a_bucket_name_that_s3_would_reject_is_refused_at_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Uppercase is invalid in an S3 bucket name. Catching it here turns a
+    confusing runtime 400 from the provider into an exit-78 message naming
+    the setting."""
+    monkeypatch.setenv("APP_STORAGE__BUCKET", "Receipts")
+    monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "secret")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_storage_credentials_are_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """repr must not leak them. load_settings already elides input values on a
+    validation error; this covers every OTHER path a settings object takes,
+    including a traceback frame that happens to render it."""
+    monkeypatch.setenv("APP_STORAGE__BUCKET", "receipts")
+    monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "sup3rs3cr3t")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.storage is not None
+    assert "sup3rs3cr3t" not in repr(settings.storage)
+    assert settings.storage.secret_access_key.get_secret_value() == "sup3rs3cr3t"

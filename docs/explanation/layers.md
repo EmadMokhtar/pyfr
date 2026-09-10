@@ -50,6 +50,59 @@ There is also a test, `test_layer_purity.py`, that checks the same property
 from a different angle. Two mechanisms for one rule is deliberate: the rule is
 the foundation everything else rests on.
 
+## What a port buys: the caching decorator
+
+`CachedOrderRepository` is the clearest demonstration in this codebase of
+what a port is actually for.
+
+It satisfies `OrderRepository` — the same `Protocol` the in-memory and
+PostgreSQL adapters satisfy — and it holds *another* `OrderRepository` inside
+it:
+
+```python
+class CachedOrderRepository:
+    def __init__(self, inner: OrderRepository, client: Redis, ttl_seconds: int) -> None:
+        self._inner = inner
+        self._client = client
+        ...
+
+    async def get(self, order_id: OrderId) -> Order | None:
+        cached = await self._read(order_id)
+        if cached is not None:
+            return cached
+        return await self._inner.get(order_id)
+```
+
+`get` checks Redis, and on a miss — or on any Redis failure at all — falls
+through to `inner.get`. Nothing distinguishes a genuine cache miss from a
+Redis outage at this call site, and that is deliberate: both cases have the
+identical, correct answer, which is "ask the wrapped repository."
+
+The part worth noticing is everything that stays unchanged. `GetOrder`,
+`PlaceOrder`, the router, the domain — none of them import `redis`, none of
+them know a cache exists, and none of them changed by one line when the cache
+was added. `container.py` is the *only* file that knows: it decides whether
+to wrap in one place —
+
+```python
+orders: OrderRepository = PostgresOrderRepository(...)
+if settings.cache is not None:
+    orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
+```
+
+— and every caller above that line keeps holding an `OrderRepository` and
+keeps calling `get` and `save` exactly as before. Adding the cache is writing
+this decorator and wrapping it here. Removing the cache is deleting the
+`if` block. Nothing three layers up notices either way.
+
+That is the payoff a `Protocol` port is bought for: not that PostgreSQL can
+be swapped for MySQL, but that an entirely *new* concern — a cache in front
+of an existing adapter — can be introduced without touching the code that
+uses the port at all. `infrastructure/cache/order_repository.py` is what
+makes this safe to add in the first place: every Redis failure is logged and
+swallowed, so a cache that cannot be reached degrades the service, and never
+breaks it.
+
 ## Why domain models are frozen
 
 Domain entities and value objects are immutable — `frozen=True`:

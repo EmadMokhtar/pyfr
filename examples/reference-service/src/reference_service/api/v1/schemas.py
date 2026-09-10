@@ -200,3 +200,37 @@ class OrderResponse(BaseModel):
     customer_id: UUID
     lines: list[OrderLineOut]
     total: MoneyOut
+
+
+class ReceiptLine(BaseModel):
+    """One line of a receipt. Money fields are STRINGS — see ReceiptResponse."""
+
+    sku: str
+    quantity: int
+    unit_price: str
+    subtotal: str
+
+
+class ReceiptResponse(BaseModel):
+    """The receipt document, as published in the contract.
+
+    This model documents the response; it never serialises one. The endpoint
+    returns the exact bytes that were stored, because re-serialising them
+    through a model would mean the receipt a client reads is not the object
+    that was written. tests/api/test_receipts.py's
+    test_the_documented_schema_matches_what_the_renderer_produces is what
+    keeps the two in step.
+
+    Every money field is a `str`, not a `Decimal` or a `float`, and that is
+    the document's shape rather than a limitation of this model — see
+    domain/receipt_render.py for why a financial document must not travel as
+    an IEEE 754 double.
+    """
+
+    schema_version: int
+    order_id: UUID
+    customer_id: UUID
+    authorisation_id: str | None
+    currency: str
+    total: str
+    lines: list[ReceiptLine]

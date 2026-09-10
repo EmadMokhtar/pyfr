@@ -21,6 +21,37 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # The cache. Not behind a profile: it is small, starts in under a second,
+  # and `just up` should exercise the same arrangement production runs.
+  # Losing it is survivable by design — see CachedOrderRepository — so
+  # nothing `depends_on` it with service_healthy the way `app` does for
+  # postgres.
+  redis:
+    image: redis:8-alpine
+    ports:
+      # Published so `just redis-cli` and any local tool can reach it. The
+      # application inside compose does NOT use this — it connects over the
+      # compose network to the host name `redis`.
+      - "6379:6379"
+    command:
+      # An explicit bound, because the default is unbounded: a Redis with no
+      # maxmemory grows until the host's OOM killer picks a process, and on
+      # a developer's laptop that process is as likely to be the database as
+      # this. allkeys-lru makes it a cache rather than a store — under
+      # pressure it evicts the least recently used key instead of returning
+      # errors on write, which is the correct behaviour for data whose
+      # source of truth is PostgreSQL.
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   migrate:
     build:
       context: .
@@ -48,6 +79,54 @@ services:
       - postgres://app:secret@postgres:5432/app?sslmode=disable
     command: ["up"]
 
+  # The object store. MinIO speaks the S3 API, so the same adapter that runs
+  # here runs against Amazon S3 in production with only endpoint_url
+  # changing (spec 9.1).
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # 9000 is the S3 API, published so `just test-record`-style host tools
+      # and the AWS CLI can reach it. The application inside compose does NOT
+      # use this — it connects over the compose network to `minio:9000`.
+      - "9000:9000"
+      # 9001 is the web console: `just minio-console`.
+      - "9001:9001"
+    healthcheck:
+      # MinIO's own documented healthcheck. `mc` ships inside the image and
+      # resolves the `local` alias itself, so this needs no curl (the image
+      # has none) and no credentials on the command line.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - minio-data:/data
+
+  # One-shot bucket creation. MinIO does not create a bucket on demand and
+  # the application deliberately does not create its own — doing so would
+  # need CreateBucket permission in production, where the bucket is
+  # provisioned by whoever owns the account, not by the service.
+  #
+  # The same shape as the `migrate` service above: a container that runs
+  # once, exits 0, and that `app` waits on with
+  # service_completed_successfully.
+  minio-bootstrap:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    # --ignore-existing makes this idempotent, so a second `just up` is not
+    # an error. Credentials match the MINIO_ROOT_* pair above; they are
+    # local-only values and never leave this file.
+    command: >
+      "mc alias set local http://minio:9000 minioadmin minioadmin &&
+       mc mb --ignore-existing local/receipts"
+
   app:
     build: .
     ports:
@@ -58,6 +137,10 @@ services:
       # one-shot migrate container to exit 0, so `just up` is a single command
       # that yields a migrated database and a working API.
       migrate:
+        condition: service_completed_successfully
+      # The bucket must exist before the first receipt is requested. Same
+      # arrangement as `migrate`: wait for the one-shot container to exit 0.
+      minio-bootstrap:
         condition: service_completed_successfully
       # `payment-stub` has no `profiles:` entry, so plain `docker compose up`
       # already starts it alongside `app` — but starting is not readiness,
@@ -74,6 +157,10 @@ services:
       # Host `postgres` is the compose service name. No driver suffix and no
       # sslmode — see settings.py's DatabaseSettings.dsn.
       APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
+      # `redis` is the compose service name above. Set here rather than
+      # defaulted, because `just up` should exercise the cached path — an
+      # adapter that only runs in tests is an adapter nobody has really run.
+      APP_CACHE__DSN: redis://redis:6379/0
       # Defaulted rather than hardcoded so one compose file serves both
       # `just up` (telemetry off) and `just o11y` (telemetry on), which
       # sets these two in its own environment.
@@ -89,6 +176,13 @@ services:
       # real provider — see ops/payment-stub/mappings and Task 15's
       # documentation of what that does and does not prove.
       APP_PAYMENT__BASE_URL: http://payment-stub:8080
+      # `minio` is the compose service name above. endpoint_url is the whole
+      # of "one adapter for every S3-compatible provider": unset it and the
+      # same code talks to Amazon S3.
+      APP_STORAGE__BUCKET: receipts
+      APP_STORAGE__ENDPOINT_URL: http://minio:9000
+      APP_STORAGE__ACCESS_KEY_ID: minioadmin
+      APP_STORAGE__SECRET_ACCESS_KEY: minioadmin
     # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
     # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
     # (and Docker's) own default kill deadline is 10s, so without raising
@@ -175,3 +269,4 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:

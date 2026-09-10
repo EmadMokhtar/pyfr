@@ -4,7 +4,7 @@ PyFr is built in nine milestones, M0 through M8. Every milestone ends with
 something that runs and is tested — there is no stage where the project is
 half-converted and nothing works.
 
-**M0, M1, M2 and M3 are done.** Everything on this site describes code that exists today.
+**M0, M1, M2, M3 and M4 are done.** Everything on this site describes code that exists today.
 
 The last row of the table, M9, is not one of the nine. It is a holding place
 for extras deliberately deferred out of the first plan, with no schedule
@@ -16,7 +16,7 @@ attached.
 | **M1** | Persistence | **Done** | Database migrations end to end, SQLAlchemy async models, the PostgreSQL adapter, integration tests against a real database in Docker, and four schema governance gates. |
 | **M2** | Observability | **Done** | OpenTelemetry and automatic instrumentation, trace-to-log correlation, a local Grafana stack behind a compose profile, three dashboards, and service level objective alerts. |
 | **M3** | Contract and test depth | **Done** | A committed OpenAPI document with a drift gate, generated conformance testing, a breaking-change gate, the shared outbound HTTP client, recorded HTTP cassettes, and mutation testing. |
-| **M4** | Cache and object storage | Planned | The Redis adapter, the S3-compatible adapter, MinIO in compose, and integration tests for both. |
+| **M4** | Cache and object storage | **Done** | A fail-open Redis cache as a decorator over the order repository, an S3-compatible receipt store over aioboto3, Redis and MinIO in compose, a two-tier `/readyz` that reports optional dependencies without gating on them, `GET /orders/{id}/receipt`, and integration tests against real Redis and MinIO containers. |
 | **M5** | Docs and release | Planned | The Diátaxis documentation structure, a *generated* configuration reference, decision records, an on-call runbook, all four documentation hygiene checks, and automated releases. |
 | **M6** | Supply chain | Planned | Dependency and image vulnerability scanning, a software bill of materials, automated dependency updates, multi-architecture builds, log redaction, and seed data. |
 | **M7** | Templatise | Planned | The reference service becomes the template. Generation tests across all eight backend combinations, and the golden diff. **PyFr becomes a usable template here.** |

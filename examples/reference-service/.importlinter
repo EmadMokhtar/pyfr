@@ -23,6 +23,8 @@ forbidden_modules =
     opentelemetry
     httpx
     stamina
+    redis
+    aioboto3
 
 [importlinter:contract:services-independence]
 name = Services import neither api nor infrastructure
@@ -41,3 +43,5 @@ forbidden_modules =
     opentelemetry
     httpx
     stamina
+    redis
+    aioboto3

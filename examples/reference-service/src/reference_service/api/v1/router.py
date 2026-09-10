@@ -6,11 +6,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response, status
 
-from reference_service.api.deps import GetOrderDep, PlaceOrderDep
+from reference_service.api.deps import GetOrderDep, GetReceiptDep, PlaceOrderDep
 from reference_service.api.errors import problem_response
 from reference_service.api.v1.mappers import to_command, to_response
-from reference_service.api.v1.schemas import OrderResponse, PlaceOrderRequest
+from reference_service.api.v1.schemas import (
+    OrderResponse,
+    PlaceOrderRequest,
+    ReceiptResponse,
+)
 from reference_service.domain.order import OrderId
+from reference_service.domain.receipt_render import RECEIPT_MEDIA_TYPE
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
@@ -54,3 +59,36 @@ async def place_order(
 async def get_order(order_id: UUID, fetch: GetOrderDep) -> OrderResponse:
     order = await fetch(OrderId(order_id))
     return to_response(order)
+
+
+@router.get(
+    "/{order_id}/receipt",
+    # A raw Response, not a response_model. The endpoint returns the exact
+    # bytes that were stored; handing them to a response_model would
+    # re-serialise the document and the receipt a client reads would no
+    # longer be the object that was written. `responses` below is what
+    # publishes the shape instead.
+    response_class=Response,
+    responses={
+        status.HTTP_200_OK: {
+            "model": ReceiptResponse,
+            "description": "The receipt for this order",
+            "content": {RECEIPT_MEDIA_TYPE: {}},
+        },
+        status.HTTP_404_NOT_FOUND: problem_response("Order not found"),
+        status.HTTP_503_SERVICE_UNAVAILABLE: problem_response(
+            "Receipt storage unavailable"
+        ),
+    },
+)
+async def get_receipt(order_id: UUID, fetch: GetReceiptDep) -> Response:
+    """Serve the receipt, rendering and storing it on the first request.
+
+    Deliberately not a redirect to a presigned URL. A presigned URL is
+    signed for the storage endpoint's own hostname, which inside compose is
+    `minio:9000` — a name that resolves only on the compose network, so the
+    link would be dead in a browser on the host. Streaming works identically
+    from a laptop, a container and a test.
+    """
+    content = await fetch(OrderId(order_id))
+    return Response(content=content, media_type=RECEIPT_MEDIA_TYPE)

@@ -36,21 +36,52 @@ recovered.
 ### `GET /readyz` — readiness
 
 ```json
-{"status": "ok", "checks": {}}
+{"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "ok", "storage": "ok"}}
 ```
 
-Returns 200 when every registered check passes, and **503** when any fails.
-A failing readiness probe removes the instance from load balancing but does
-not restart it, which is the correct response to "my database is unreachable".
+Two tiers, and which tier a dependency belongs in is a judgement about
+**blast radius**, not about importance.
 
-`checks` is empty in M0 because there are no dependencies yet. With a
-database registered, a failure looks like this:
+`checks` is **gating**: it decides the status code. Returns 200 when every
+gating check passes, and **503** when any fails. A failing readiness probe
+removes the instance from load balancing but does not restart it, which is
+the correct response to "my database is unreachable". The database is the
+only entry in `checks` — a failure looks like this:
 
 ```json
-{"status": "unavailable", "checks": {"postgres": "error: TimeoutError"}}
+{"status": "unavailable", "checks": {"database": "error: TimeoutError"}, "dependencies": {}}
 ```
 
-Two details are deliberate.
+`dependencies` is **informational**: it is reported and never changes the
+status code, whatever it says. The cache and the object store live here, and
+both stay `"ok"` or degrade independently of `checks` — losing either never
+turns into a 503.
+
+```json
+{"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "error: TimeoutError", "storage": "ok"}}
+```
+
+**Why gate on the database but not the other two.** This is the part of the
+milestone worth remembering, because it is not the obvious choice.
+
+The cache is informational because it **fails open**: `CachedOrderRepository`
+swallows every Redis error and falls through to PostgreSQL, so a Redis outage
+never produces a wrong answer, only a slower one. Redis is also **shared
+across every pod** — gating on it would make every pod fail the check in the
+same second, taking the whole service out of the load balancer over a
+degradation it was specifically built to survive. A cache that can take the
+service down is worse than no cache at all.
+
+Object storage is informational for a different reason with the same answer.
+Losing it breaks exactly one endpoint, `GET /orders/{id}/receipt` — see below
+— so pulling 100% of traffic off a pod to protect that one slice costs far
+more than it saves.
+
+`checks` is empty and `dependencies` is empty when no database, cache, or
+storage is configured — a service can run with none of the three, on the
+in-memory repository, no cache decorator, and the in-memory receipt store.
+
+Two further details are deliberate.
 
 **Checks run concurrently, not one after another.** Run in sequence, the
 worst case would be the number of dependencies multiplied by the timeout —
@@ -126,6 +157,48 @@ talks to the payment provider.
 ### `GET /api/v1/orders/{order_id}`
 
 Responds 200 with the order, or [404](errors.md) when no order has that id.
+
+### `GET /api/v1/orders/{order_id}/receipt`
+
+Responds 200 with the receipt document, `Content-Type: application/json`:
+
+```json
+{
+  "schema_version": 1,
+  "order_id": "cac0acf8-ea5c-4936-97b4-3b0c113f8a8f",
+  "customer_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "authorisation_id": "auth_9f2c1e",
+  "currency": "EUR",
+  "total": "19.98",
+  "lines": [
+    {"sku": "WIDGET-1", "quantity": 2, "unit_price": "9.99", "subtotal": "19.98"}
+  ]
+}
+```
+
+Also [404](errors.md) when no order has that id — checked first, so an
+unknown id never touches object storage at all — and **503 Service
+Unavailable** when the receipt store cannot be reached. Carries a
+`Retry-After` header too, like the payment provider's 503 above, but here
+the value is a fixed 30 seconds rather than derived from a setting — there
+is no circuit breaker in front of object storage for it to read a cool-down
+from.
+
+**Rendered on demand, not written when the order is placed.** The first
+request for a receipt renders it from the order and stores the result; every
+request after that serves the stored bytes unchanged. This is deliberate:
+`PlaceOrder` never touches object storage, so a storage outage can degrade
+one read endpoint but can never fail a payment. The cost is one slower first
+request per order — rendering is pure and cheap, so in practice that cost is
+small.
+
+Every amount in the document is a JSON string, for the same reason as the
+order response below. The document carries no timestamp — a receipt is
+stored once and served unchanged afterwards, and a `generated_at` field
+would make a re-render after a cache eviction produce different bytes for
+"the same" receipt. `internal_note` is absent for the same reason it is
+absent from the order response: the renderer names every field it emits
+rather than dumping the entity.
 
 ### Response shape
 

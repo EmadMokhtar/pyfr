@@ -25,7 +25,10 @@ from reference_service.domain.errors import (
     OrderNotFoundError,
     PaymentDeclinedError,
 )
-from reference_service.infrastructure.errors import PaymentUnavailableError
+from reference_service.infrastructure.errors import (
+    PaymentUnavailableError,
+    StorageUnavailableError,
+)
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 PROBLEM_TYPE_BASE = "https://errors.example.com"
@@ -220,6 +223,29 @@ def register_error_handlers(app: FastAPI) -> None:
                 instance=request.url.path,
             ),
             headers={"Retry-After": str(_retry_after_seconds(request))},
+        )
+
+    @app.exception_handler(StorageUnavailableError)
+    async def _storage_unavailable(
+        request: Request, exc: StorageUnavailableError
+    ) -> JSONResponse:
+        """503, for the same reason _payment_unavailable returns one.
+
+        `detail` is a fixed string, never `str(exc)`: a botocore error
+        carries the endpoint URL, the bucket name and sometimes a fragment
+        of the credential that failed, and this response is public. The full
+        exception goes to the log instead.
+        """
+        _logger.warning("request.storage_unavailable", exc_info=exc)
+        return _problem_response(
+            ProblemDetail(
+                type=f"{PROBLEM_TYPE_BASE}/storage_unavailable",
+                title="Receipt storage unavailable",
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Receipt storage could not be reached. Try again.",
+                instance=request.url.path,
+            ),
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
         )
 
     @app.exception_handler(StarletteHTTPException)

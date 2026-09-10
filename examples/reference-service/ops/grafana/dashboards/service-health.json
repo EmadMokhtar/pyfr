@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "10s",
   "time": {
     "from": "now-1h",
@@ -343,6 +343,54 @@
           },
           "expr": "sum(http_server_active_requests{job=\"$service\"})",
           "legendFormat": "in flight",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis command latency (p50/p99)",
+      "description": "NOT a connection-pool panel, unlike its neighbours on this row. opentelemetry-instrumentation-redis (see instrument_redis in observability/otel.py) emits spans but no metrics at all \u2014 confirmed against a live stack: after real cache traffic, `curl .../api/v1/label/__name__/values` returned no series with 'redis' or 'pool' in the name. A panel querying a metric that does not exist would render as empty and read as \"zero saturation\" rather than \"not observed\", which is worse than no panel \u2014 see Task 12's report. This queries traces_spanmetrics_latency_bucket instead: the span-metrics connector grafana/otel-lgtm runs by default turns every span into a latency histogram, and Redis command spans are named after the raw command (GET, SET, DEL \u2014 the three CachedOrderRepository issues), so this is latency, not saturation, standing in for the pool metric spec 7.4 asks for until an upstream release adds one. `span_name=~\"GET|SET|DEL\"` can in principle also match a future non-Redis CLIENT span using the same verb (SET never collides; a plain HTTP GET would) \u2014 acceptable today because the only other CLIENT spans this service produces are httpx POSTs to the payment provider.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(traces_spanmetrics_latency_bucket{service=\"$service\", span_name=~\"GET|SET|DEL\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "editorMode": "code",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(traces_spanmetrics_latency_bucket{service=\"$service\", span_name=~\"GET|SET|DEL\"}[$__rate_interval])))",
+          "legendFormat": "p99",
           "editorMode": "code",
           "range": true,
           "instant": false

@@ -45,6 +45,39 @@ dependencies = [
     # Outbound spans for the payment call. Closes the first row of the M2
     # plan's "deliberately does not include" table.
     "opentelemetry-instrumentation-httpx>=0.65b0",
+    # The cache client. redis-py's own asyncio interface (redis.asyncio) —
+    # aioredis was merged into it years ago and is archived, so there is no
+    # separate async package to choose. Used ONLY by
+    # infrastructure/cache/, which is the one place allowed to import it.
+    "redis>=8.1",
+    # The S3-compatible object store client. aioboto3 wraps aiobotocore,
+    # which wraps botocore: one adapter serves MinIO, Amazon S3, Cloudflare
+    # R2, Ceph and Backblaze B2, distinguished only by endpoint_url (spec
+    # 9.1). boto3 itself is synchronous and would block the event loop on
+    # every call.
+    "aioboto3>=15.5",
+    # Spans for Redis commands. Same 0.65b0 line as every other
+    # opentelemetry-instrumentation-* dependency above; the `b` is
+    # upstream's permanent beta versioning, not a typo. Wired up in
+    # observability/otel.py's instrument_redis, called unconditionally
+    # from main.py's lifespan whenever telemetry is enabled.
+    "opentelemetry-instrumentation-redis>=0.65b0",
+    # NO opentelemetry-instrumentation-botocore dependency here, on
+    # purpose — it was tried and removed, not merely never added. Task 12
+    # measured, rather than assumed, whether that instrumentor sees
+    # aioboto3's async S3 calls at all: it patches
+    # `botocore.client.BaseClient._make_api_call`, but `aioboto3` runs on
+    # `aiobotocore`, whose `AioBaseClient` shadows that exact method with
+    # its own async override, so the instrumentor's patch is never on the
+    # call path. Instrumenting, then running ListBuckets, CreateBucket,
+    # PutObject and GetObject through a real `aioboto3.Session` against
+    # MinIO produced zero spans, even though `is_instrumented_by_opentelemetry`
+    # reported True and every call itself succeeded — see the Task 12
+    # report for the full transcript. Re-adding this dependency without
+    # re-verifying against a current aiobotocore release would silently
+    # reintroduce a store adapter whose spans never appear, which is worse
+    # than no instrumentation: a dashboard built against it would read as
+    # "S3 calls are always fast" rather than "S3 calls are not observed".
 ]
 
 [dependency-groups]
@@ -63,7 +96,12 @@ dev = [
     # model/schema drift gate in tests/integration/test_schema_drift.py. Deleting
     # this dependency silently removes that gate. See Task 9 of the M1 plan.
     "alembic>=1.19",
-    "testcontainers[postgres]>=4.15",
+    "testcontainers[postgres,redis,minio]>=4.15",
+    # Imported at module scope by testcontainers.community.minio (its first
+    # line is `from minio import Minio`), so collection fails without it.
+    # The production adapter uses aioboto3 and never imports this — it is
+    # purely a test-container dependency.
+    "minio>=7.2",
     # Reads ops/prometheus/rules/*.yml in the SLO gate (tests/unit/
     # test_slo_rules.py), so the PromQL and the Python constants cannot
     # drift. Available transitively through pre-commit today; depended on
@@ -154,22 +192,42 @@ pytest_add_cli_args_test_selection = [
     "tests/unit/test_domain_errors.py",
     "tests/unit/test_memory_repository.py",
     "tests/api/test_orders.py",
+    # M4: render_receipt (domain/receipt_render.py) and GetReceipt
+    # (services/receipt.py), added alongside the two files above and left
+    # out of this list by the same mistake this comment is now here to
+    # prevent repeating — without them mutmut reports every mutant in
+    # both files as "no tests", which is not a mutation SCORE, it is the
+    # mutation gate never running against a financial document's renderer
+    # at all. tests/api/test_receipts.py is the receipt-endpoint analogue
+    # of tests/api/test_orders.py above.
+    "tests/unit/test_receipt_render.py",
+    "tests/unit/test_get_receipt.py",
+    "tests/api/test_receipts.py",
 ]
 
 # The floor, as a percentage of mutants killed. Measured 85.3% (64/75 killed)
 # in M3 Task 14 (2026-09-09), after the payments code (domain/payments.py,
 # PlaceOrder's authorise-then-save call) pushed the score up from the plan's
-# original baseline of 87.9% (51/58 killed), which predated that code and is
-# now stale. The floor is set to 80, deliberately below the measured 85.3%, by
-# roughly the cushion the original 85-against-87.9 gap gave: about four
-# survivors -- 64/75 killed can drop to 60/75 = 80% before the gate fails.
-# That cushion exists so the next message-only survivor (raise
-# ValueError("...") -> raise ValueError(None)) does not fail the build and
-# pressure whoever hits it into asserting on prose. Raise this floor when the
-# score improves for a real reason; never lower it to make a build pass.
-# Recompute both the measured score and this floor whenever a milestone adds a
-# substantial amount of domain or services code -- that is exactly what made
-# the 87.9 baseline stale enough to need this fix.
+# original baseline of 87.9% (51/58 killed), which predated that code and
+# was stale by then.
+#
+# Recomputed again in M4 (2026-09-10), as this comment's own instruction
+# below requires whenever a milestone adds substantial domain or services
+# code -- M4 added three such files (domain/receipt_render.py,
+# services/receipt.py, plus the test-selection entries above). The rerun
+# gave 87.3% (48/55 killed), which is what is now current.
+#
+# The floor stays at 80, deliberately below the current 87.3%, by roughly
+# the cushion the current gap gives: about four survivors -- 48/55 killed
+# can drop to 44/55 = 80% before the gate fails. That cushion exists so the
+# next message-only survivor (raise ValueError("...") -> raise
+# ValueError(None)) does not fail the build and pressure whoever hits it
+# into asserting on prose. Raise this floor when the score improves for a
+# real reason; never lower it to make a build pass. Recompute both the
+# measured score and this floor whenever a milestone adds a substantial
+# amount of domain or services code -- that is exactly what made the 87.9
+# baseline stale enough to need the M3 update, and the 85.3 measurement
+# stale enough to need this one.
 mutation_threshold_percent = 80
 
 [tool.mypy]

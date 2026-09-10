@@ -23,7 +23,7 @@ would be claiming more than the code delivers.
 from __future__ import annotations
 
 import sys
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import parse_qs, urlsplit
 
 from pydantic import (
@@ -32,7 +32,9 @@ from pydantic import (
     Field,
     HttpUrl,
     PostgresDsn,
+    RedisDsn,
     SecretStr,
+    StringConstraints,
     ValidationError,
     field_validator,
     model_validator,
@@ -240,6 +242,65 @@ class PaymentSettings(BaseModel):
     breaker_reset_after_seconds: float = Field(default=30.0, gt=0)
 
 
+class CacheSettings(BaseModel):
+    # See LogSettings.model_config for why each sub-model needs its own
+    # frozen=True rather than inheriting Settings's.
+    model_config = ConfigDict(frozen=True)
+
+    dsn: RedisDsn
+    # How long a cached order stays valid. Five minutes is short enough that
+    # a cache that somehow misses an invalidation self-corrects quickly, and
+    # long enough to be worth having. The TTL is a safety net, not the
+    # primary invalidation mechanism — CachedOrderRepository.save() deletes
+    # the key outright.
+    ttl_seconds: int = Field(default=300, ge=1)
+    pool_size: int = Field(default=10, ge=1)
+    # Both deadlines are deliberately sub-second, and both are required.
+    #
+    # This is the single most important pair of numbers in the cache. The
+    # cache exists to make reads faster; a slow Redis that is not bounded
+    # makes every read SLOWER than having no cache at all, because each
+    # request pays the full Redis stall and then still queries PostgreSQL.
+    # redis-py accepts None for "wait forever" on both, and a client built
+    # that way is indistinguishable from a working one until the day Redis
+    # starts swapping. gt=0 because 0 means "no deadline" to redis-py, not
+    # "give up immediately".
+    connect_timeout_seconds: float = Field(default=0.5, gt=0)
+    operation_timeout_seconds: float = Field(default=0.5, gt=0)
+
+
+# Amazon's bucket naming rules, the subset that is a pure string check:
+# 3-63 characters, lowercase letters, digits, hyphens and dots, starting
+# and ending alphanumeric. Deliberately not the full rule set — the
+# IP-address-shaped and `xn--`-prefixed exclusions need more than a regex
+# and their absence costs nothing here, because the provider rejects those
+# too and this check exists to catch the ORDINARY mistake (a capital
+# letter, an underscore, a trailing slash) at startup rather than on the
+# first request.
+_BUCKET_NAME_PATTERN = r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+
+
+class StorageSettings(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    bucket: Annotated[str, StringConstraints(pattern=_BUCKET_NAME_PATTERN)]
+    # None means real Amazon S3, where botocore derives the endpoint from
+    # the region. Anything else — MinIO, Cloudflare R2, Ceph — sets it.
+    # This one field is the whole of "one adapter for every S3-compatible
+    # provider" (spec 9.1): there is no provider branch anywhere below it.
+    endpoint_url: HttpUrl | None = None
+    # Required by botocore's signing even when talking to MinIO, which does
+    # not care what it is. us-east-1 is the conventional filler.
+    region: str = "us-east-1"
+    # SecretStr for the same reason PaymentSettings.api_key is: repr is
+    # "**********", so a traceback frame or a careless f-string cannot
+    # publish it.
+    access_key_id: SecretStr
+    secret_access_key: SecretStr
+    connect_timeout_seconds: float = Field(default=2.0, gt=0)
+    read_timeout_seconds: float = Field(default=5.0, gt=0)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="APP_",
@@ -270,6 +331,14 @@ class Settings(BaseSettings):
     # the same arrangement `database` above has with the in-memory
     # repository.
     payment: PaymentSettings | None = None
+    # Optional on purpose: None selects the plain repository with no cache
+    # in front of it, exactly as `database` None selects the in-memory one.
+    # A service generated with cache=none takes this path. See container.py.
+    cache: CacheSettings | None = None
+    # Optional on purpose: None selects InMemoryReceiptStore, so the receipt
+    # endpoint works with no object store anywhere — the same arrangement
+    # `payment` has with the in-memory gateway.
+    storage: StorageSettings | None = None
 
 
 def load_settings(env_file: str | None = ".env") -> Settings:
