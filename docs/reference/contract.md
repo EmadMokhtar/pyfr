@@ -152,9 +152,17 @@ simply has nothing left to compare against.
 
 ## What M5 replaces here
 
-The version cross-check in gate 3 is a placeholder for the Conventional
-Commits range check the [roadmap](../roadmap.md) schedules for M5, once tags
-and Commitizen exist to derive a version from commit history rather than
-from a number someone has to remember to bump by hand. The oasdiff half —
-the part that decides whether a change is breaking at all — stays exactly as
-it is.
+Gate 3's second half no longer cross-checks a version number. It reads the
+commit range instead: `scripts/check_contract_compatibility.py` runs
+`git log base..head` and asks whether any commit in it is marked
+breaking — a `feat!:` (or `<type>(scope)!:`) subject, or a `BREAKING
+CHANGE:` (or `BREAKING-CHANGE:`) footer starting a line in the body. If
+oasdiff found a breaking change and no commit says so, the build fails; if
+one does, it passes. The oasdiff half — the part that decides whether a
+change is breaking at all — stays exactly as it is.
+
+`just contract-release` still moves `openapi.baseline.json` forward, and
+still only as part of cutting a release. Running it to make a red gate go
+quiet is the same silent breaking change this gate exists to catch — it
+would not report anything different afterwards, only have nothing left to
+compare against.
