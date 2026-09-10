@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-09-10
+---
+
 # Glossary
 
 Terms used across this site, each in one line.

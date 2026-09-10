@@ -1,3 +1,10 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/observability/
+  - examples/reference-service/ops/
+---
+
 # Observability
 
 The service emits OpenTelemetry traces and metrics, and structured logs that

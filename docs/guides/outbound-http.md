@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/infrastructure/http/
+---
+
 # Outbound HTTP calls
 
 The reference service calls one outbound dependency: a payment provider,

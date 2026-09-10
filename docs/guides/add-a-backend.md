@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-09-10
+---
+
 # Add a backend
 
 PyFr ships a deliberately narrow set of adapters: PostgreSQL, Redis, and

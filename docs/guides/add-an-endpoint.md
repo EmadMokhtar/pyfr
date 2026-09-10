@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/api/
+---
+
 # Add an endpoint
 
 This guide adds one feature through all four layers, so you see where each

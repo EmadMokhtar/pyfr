@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/settings.py
+---
+
 # Configuration
 
 Configuration comes from environment variables. Every variable is prefixed

@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/api/errors.py
+---
+
 # Errors
 
 Every error response uses [RFC 9457 Problem Details](https://www.rfc-editor.org/rfc/rfc9457),

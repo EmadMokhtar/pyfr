@@ -22,5 +22,15 @@ docs-build:
     # each fail the build rather than printing a warning nobody reads.
     uv run mkdocs build --strict
 
+# The repository's own script tests.
+test:
+    uv run --group dev pytest tests/
+
+# Documentation hygiene warnings for a pull request range. Never fails --
+# see docs/contributing.md for why, and for what has to be true before
+# these become hard failures.
+docs-freshness base="origin/main" head="HEAD":
+    uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
+
 # Everything CI checks at the repository level.
-check: docs-build
+check: docs-build test

@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/justfile
+---
+
 # Getting started
 
 This walks you through running the reference service and placing an order

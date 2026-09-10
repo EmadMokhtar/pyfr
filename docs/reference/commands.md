@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/justfile
+---
+
 # Commands
 
 Every task is a [`just`](https://github.com/casey/just) recipe. `just` is a

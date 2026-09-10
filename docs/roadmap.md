@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-09-10
+---
+
 # Roadmap
 
 PyFr is built in nine milestones, M0 through M8. Every milestone ends with

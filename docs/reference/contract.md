@@ -1,3 +1,10 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/openapi.json
+  - examples/reference-service/scripts/check_contract_compatibility.py
+---
+
 # The API contract
 
 `openapi.json` is committed at the root of the reference service, generated

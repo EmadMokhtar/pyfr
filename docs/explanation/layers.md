@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/.importlinter
+---
+
 # Layers and the dependency rule
 
 ## The rule

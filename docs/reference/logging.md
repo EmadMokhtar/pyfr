@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/observability/
+---
+
 # Logging
 
 One JSON object per line, on standard output. Every record — the service's
