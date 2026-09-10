@@ -45,38 +45,83 @@ READINESS_TIMEOUT_SECONDS = 2.0
 _logger = structlog.get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class ReadinessReport:
+    """What /readyz learned, split by whether it is allowed to matter.
+
+    `gating` decides the HTTP status. `informational` is reported and
+    decides nothing — see register_informational for why the split exists.
+    """
+
+    gating: dict[str, str]
+    informational: dict[str, str]
+
+    @property
+    def healthy(self) -> bool:
+        return all(result == "ok" for result in self.gating.values())
+
+
 class ReadinessRegistry:
     """Dependencies register themselves here; /readyz runs them all.
 
     Lives beside the container rather than in the api layer so the import
     chain stays acyclic: api.health -> api.deps -> container.
+
+    Two tiers, and which one a dependency belongs in is a judgement about
+    BLAST RADIUS, not about importance:
+
+      gating        — losing it means this instance cannot do useful work.
+                      A failure returns 503 and the orchestrator stops
+                      sending traffic here. The database is the only one.
+      informational — losing it degrades the service without breaking it.
+                      Reported so an operator can see it, and never allowed
+                      to affect the status code.
+
+    The cache is informational because it fails open: when Redis is gone,
+    PostgreSQL answers and every response is still correct. Gating on it
+    would be actively harmful, because Redis is SHARED — every pod would
+    fail the check in the same second and the whole service would leave
+    the load balancer over a degradation it was built to survive.
+
+    Object storage is informational for a different reason with the same
+    answer: losing it breaks one endpoint, so taking 100% of traffic off
+    the pod to protect that slice costs far more than it saves.
+
+    This is the same reasoning build_container already records for not
+    registering the payment provider at all. The difference is that these
+    two are REPORTED, which spec 12.1 asks for and which costs nothing.
     """
 
     def __init__(self) -> None:
-        self._checks: dict[str, ReadinessCheck] = {}
+        self._gating: dict[str, ReadinessCheck] = {}
+        self._informational: dict[str, ReadinessCheck] = {}
 
     def register(self, name: str, check: ReadinessCheck) -> None:
-        self._checks[name] = check
+        """Register a check that MAY return 503. See the class docstring."""
+        self._gating[name] = check
+
+    def register_informational(self, name: str, check: ReadinessCheck) -> None:
+        """Register a check that is reported and never returns 503."""
+        self._informational[name] = check
 
     async def run(
         self,
         timeout: float = READINESS_TIMEOUT_SECONDS,  # noqa: ASYNC109 - see docstring
-    ) -> dict[str, str]:
-        """Run every check CONCURRENTLY, each bounded by `timeout`.
+    ) -> ReadinessReport:
+        """Run every check in BOTH tiers concurrently, each bounded by `timeout`.
 
-        Concurrency is the point. Run sequentially, the endpoint's worst
-        case would be N x timeout — three dependency checks at two seconds
-        each is a six-second readiness response, which an orchestrator's own
-        probe timeout kills long before it arrives, marking the pod unready
-        for entirely the wrong reason. Concurrent, the worst case is one
-        timeout no matter how many dependencies register.
+        Concurrency is the point, and it spans the tiers rather than
+        running one after the other. Run sequentially, the endpoint's worst
+        case would be N x timeout — which an orchestrator's own probe
+        timeout kills long before it arrives, marking the pod unready for
+        entirely the wrong reason. One gather over both tiers keeps the
+        worst case at one timeout no matter how many dependencies register
+        in either.
 
         ASYNC109 is suppressed deliberately: the rule prefers callers to own
         deadlines, but this registry owns the readiness policy, and its
         callers are HTTP handlers with no better deadline to offer.
         """
-        if not self._checks:
-            return {}
 
         async def run_one(name: str, check: ReadinessCheck) -> tuple[str, str]:
             try:
@@ -89,20 +134,30 @@ class ReadinessRegistry:
                 #
                 # The exception's own message is deliberately NOT put into the
                 # response: /readyz is reachable inside a cluster, and an
-                # exception message from a database driver or an HTTP client
-                # routinely carries hostnames, connection strings, or
-                # credentials. The response gets only the bounded exception
-                # type name; the full exception — with its message and
-                # traceback — goes to the log instead, where an operator can
-                # still see it.
+                # exception message from a database driver, a Redis client or
+                # an S3 client routinely carries hostnames, connection
+                # strings, or credentials. The response gets only the bounded
+                # exception type name; the full exception — with its message
+                # and traceback — goes to the log instead, where an operator
+                # can still see it.
                 _logger.exception("readiness_check.failed", check=name)
                 return name, f"error: {type(exc).__name__}"
             return name, "ok"
 
+        gating_names = list(self._gating)
         results = await asyncio.gather(
-            *(run_one(name, check) for name, check in self._checks.items())
+            *(run_one(name, check) for name, check in self._gating.items()),
+            *(run_one(name, check) for name, check in self._informational.items()),
         )
-        return dict(results)
+        # gather preserves argument order, so the first len(gating_names)
+        # results are the gating ones. Splitting by position rather than
+        # re-looking-up the name keeps this correct even if a name were ever
+        # registered in both tiers.
+        boundary = len(gating_names)
+        return ReadinessReport(
+            gating=dict(results[:boundary]),
+            informational=dict(results[boundary:]),
+        )
 
 
 @dataclass

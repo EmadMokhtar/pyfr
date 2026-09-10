@@ -172,6 +172,13 @@
             "title": "Checks",
             "type": "object"
           },
+          "dependencies": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dependencies",
+            "type": "object"
+          },
           "status": {
             "title": "Status",
             "type": "string"

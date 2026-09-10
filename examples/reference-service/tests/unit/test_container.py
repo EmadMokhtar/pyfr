@@ -33,7 +33,7 @@ def test_no_database_configured_registers_no_readiness_check() -> None:
 
     container = build_container(settings)
 
-    assert container.readiness._checks == {}
+    assert container.readiness._gating == {}
 
 
 def test_a_configured_dsn_selects_the_postgresql_adapter(
@@ -56,7 +56,7 @@ def test_a_configured_dsn_registers_a_database_readiness_check(
 
     container = build_container(settings)
 
-    assert "database" in container.readiness._checks
+    assert "database" in container.readiness._gating
 
 
 async def test_close_container_disposes_the_pool(
