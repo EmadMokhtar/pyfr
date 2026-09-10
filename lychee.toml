@@ -39,4 +39,10 @@ exclude = [
 
 # Checked as text, not as a rendered site: the source is the thing under
 # review, and site/ is a build artifact that may not exist.
-exclude_path = ["site", ".venv", "examples/reference-service/.venv", "docs/superpowers"]
+exclude_path = [
+    "site",
+    ".venv",
+    "examples/reference-service/.venv",
+    "docs/superpowers",
+    "docs/adr/template.md",  # A skeleton to copy, not a page to read; placeholder link is intentionally unresolvable. Already excluded from mkdocs.yml.
+]
