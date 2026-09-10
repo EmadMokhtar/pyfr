@@ -32,8 +32,10 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from pydantic import SecretStr
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from testcontainers.community.minio import MinioContainer
 from testcontainers.community.postgres import PostgresContainer
 from testcontainers.community.redis import RedisContainer
 from testcontainers.core.container import DockerContainer
@@ -44,7 +46,12 @@ from reference_service.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
-from reference_service.settings import CacheSettings, DatabaseSettings
+from reference_service.infrastructure.storage.client import (
+    build_client_config,
+    build_s3_session,
+)
+from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
+from reference_service.settings import CacheSettings, DatabaseSettings, StorageSettings
 
 # Pinned, and pinned to the same versions compose uses. A gate that passes
 # against a different PostgreSQL than production runs is not a gate.
@@ -59,6 +66,20 @@ MIGRATE_IMAGE = "migrate/migrate:v4.19.0"
 # so importing it would fail outright. The community path above is the
 # supported one and is what this module already uses for PostgreSQL.
 REDIS_IMAGE = "redis:8-alpine"
+
+# Pinned to the same tag compose.yaml uses. MinioContainer's own default is
+# minio/minio:RELEASE.2022-12-02T19-19-22Z — nearly four years old — so this
+# is never left to the default.
+#
+# testcontainers.minio (the short path) is a deprecated shim that calls
+# warnings.warn on import, and this project runs filterwarnings=["error"],
+# so importing it would fail outright. The community path above is the
+# supported one and is what this module already uses for PostgreSQL and
+# Redis.
+MINIO_IMAGE = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
+MINIO_ACCESS_KEY = "minioadmin"
+MINIO_SECRET_KEY = "minioadmin"
+RECEIPTS_BUCKET = "receipts"
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
@@ -319,3 +340,55 @@ async def redis_client(cache_settings: CacheSettings) -> AsyncIterator[Redis]:
     await client.flushdb()
     yield client
     await client.aclose()
+
+
+@pytest.fixture(scope="session")
+def minio_container() -> Iterator[MinioContainer]:
+    """One MinIO for the whole session, with the bucket created once.
+
+    MinioContainer's constructor sets the LEGACY credential variables
+    (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). Modern MinIO releases read
+    MINIO_ROOT_USER / MINIO_ROOT_PASSWORD, and a release that ignores the
+    legacy pair comes up with its built-in minioadmin/minioadmin instead —
+    so every test using the requested credentials would fail to
+    authenticate. Both pairs are set below, to the same values, so this
+    works whichever the pinned release honours.
+    """
+    container = (
+        MinioContainer(
+            image=MINIO_IMAGE,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+        )
+        .with_env("MINIO_ROOT_USER", MINIO_ACCESS_KEY)
+        .with_env("MINIO_ROOT_PASSWORD", MINIO_SECRET_KEY)
+    )
+    with container as running:
+        # The bucket compose's minio-bootstrap service creates. The
+        # application deliberately never creates its own — see that service's
+        # comment — so the test environment has to.
+        running.get_client().make_bucket(RECEIPTS_BUCKET)
+        yield running
+
+
+@pytest.fixture(scope="session")
+def storage_settings(minio_container: MinioContainer) -> StorageSettings:
+    config = minio_container.get_config()
+    # get_config()["endpoint"] is "host:port" with NO scheme, and botocore's
+    # endpoint_url requires one. Without this prefix every call fails with an
+    # unhelpful InvalidURL.
+    return StorageSettings(
+        bucket=RECEIPTS_BUCKET,
+        endpoint_url=f"http://{config['endpoint']}",  # type: ignore[arg-type]
+        access_key_id=SecretStr(MINIO_ACCESS_KEY),
+        secret_access_key=SecretStr(MINIO_SECRET_KEY),
+    )
+
+
+@pytest.fixture
+def receipt_store(storage_settings: StorageSettings) -> S3ReceiptStore:
+    return S3ReceiptStore(
+        build_s3_session(storage_settings),
+        build_client_config(storage_settings),
+        storage_settings,
+    )
