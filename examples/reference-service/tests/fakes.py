@@ -54,3 +54,38 @@ class UnavailablePaymentGateway:
         raise PaymentUnavailableError(
             "acme-pay at https://pay.acme.example did not answer"
         )
+
+
+class FakeRedis:
+    """The three commands CachedOrderRepository uses, plus a fault switch.
+
+    `fail_with` makes every command raise, which is how the fail-open tests
+    simulate a Redis outage without a container. `calls` records command
+    names so a test can assert the cache was CONSULTED, not merely that the
+    right value came back — a decorator that silently stopped calling Redis
+    would still pass a value-only assertion.
+    """
+
+    def __init__(self) -> None:
+        self.store: dict[str, bytes] = {}
+        self.calls: list[str] = []
+        self.fail_with: Exception | None = None
+        self.last_ttl_seconds: int | None = None
+
+    def _maybe_fail(self, command: str) -> None:
+        self.calls.append(command)
+        if self.fail_with is not None:
+            raise self.fail_with
+
+    async def get(self, key: str) -> bytes | None:
+        self._maybe_fail("get")
+        return self.store.get(key)
+
+    async def set(self, key: str, value: bytes, ex: int | None = None) -> None:
+        self._maybe_fail("set")
+        self.store[key] = value
+        self.last_ttl_seconds = ex
+
+    async def delete(self, key: str) -> None:
+        self._maybe_fail("delete")
+        self.store.pop(key, None)
