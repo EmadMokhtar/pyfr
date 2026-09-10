@@ -36,3 +36,13 @@ reconstruction, and it shows.
 |---|---|---|
 | 0001 | [The four-layer dependency rule](0001-four-layer-dependency-rule.md) | M0 |
 | 0002 | [cookiecutter over Copier and cruft](0002-cookiecutter-over-copier-and-cruft.md) | M0 |
+| 0003 | [uv, not pip or Poetry](0003-uv-over-pip-and-poetry.md) | M0 |
+| 0004 | [golang-migrate owns the schema](0004-golang-migrate-owns-the-schema.md) | M1 |
+| 0005 | [In-memory adapters are a supported configuration](0005-in-memory-adapters-are-a-supported-configuration.md) | M0 |
+| 0006 | [The cache is fail-open, always](0006-the-cache-is-fail-open-always.md) | M4 |
+| 0007 | [Emit OpenTelemetry and stop there](0007-emit-opentelemetry-and-stop.md) | M2 |
+| 0008 | [Standard output is the source of truth for logs](0008-standard-output-is-the-source-of-truth-for-logs.md) | M2 |
+| 0009 | [RFC 9457 Problem Details for every error](0009-rfc-9457-problem-details-for-every-error.md) | M0 |
+| 0010 | [The OpenAPI document is committed and drift-gated](0010-the-openapi-document-is-committed-and-drift-gated.md) | M3 |
+| 0011 | [`/readyz` reports optional dependencies without gating](0011-readyz-reports-optional-dependencies-without-gating.md) | M4 |
+| 0012 | [mypy is strict on the inner layers only](0012-mypy-is-strict-on-the-inner-layers-only.md) | M0 |
