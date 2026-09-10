@@ -192,6 +192,17 @@ pytest_add_cli_args_test_selection = [
     "tests/unit/test_domain_errors.py",
     "tests/unit/test_memory_repository.py",
     "tests/api/test_orders.py",
+    # M4: render_receipt (domain/receipt_render.py) and GetReceipt
+    # (services/receipt.py), added alongside the two files above and left
+    # out of this list by the same mistake this comment is now here to
+    # prevent repeating — without them mutmut reports every mutant in
+    # both files as "no tests", which is not a mutation SCORE, it is the
+    # mutation gate never running against a financial document's renderer
+    # at all. tests/api/test_receipts.py is the receipt-endpoint analogue
+    # of tests/api/test_orders.py above.
+    "tests/unit/test_receipt_render.py",
+    "tests/unit/test_get_receipt.py",
+    "tests/api/test_receipts.py",
 ]
 
 # The floor, as a percentage of mutants killed. Measured 85.3% (64/75 killed)

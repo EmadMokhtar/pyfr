@@ -347,12 +347,19 @@ def minio_container() -> Iterator[MinioContainer]:
     """One MinIO for the whole session, with the bucket created once.
 
     MinioContainer's constructor sets the LEGACY credential variables
-    (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). Modern MinIO releases read
-    MINIO_ROOT_USER / MINIO_ROOT_PASSWORD, and a release that ignores the
-    legacy pair comes up with its built-in minioadmin/minioadmin instead —
-    so every test using the requested credentials would fail to
-    authenticate. Both pairs are set below, to the same values, so this
-    works whichever the pinned release honours.
+    (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). This is now KNOWN, not hedged: a
+    divergent-credentials probe against the pinned MINIO_IMAGE
+    (minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
+    legacy pair with InvalidAccessKeyId and honours only MINIO_ROOT_USER /
+    MINIO_ROOT_PASSWORD, which is why both are set below, to the same
+    values, with `.with_env`.
+
+    The legacy pair is still passed to the constructor, even though this
+    release ignores it for authentication, because MinioContainer.get_client()
+    builds its client FROM those constructor arguments — both make_bucket
+    below and the key-layout test's list_objects use that client, so the
+    legacy pair still has to be correct even though the server itself never
+    checks it.
     """
     container = (
         MinioContainer(

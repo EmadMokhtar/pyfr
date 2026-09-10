@@ -8,12 +8,21 @@ here](../explanation/why-a-template.md#the-narrow-backend-matrix).
 If you need one of those, you write one adapter. This guide is the shape of
 that work.
 
-!!! note "M0 status"
+!!! note "Worked examples in the codebase"
 
-    M0 ships only the in-memory repository, so there is no database adapter to
-    copy from yet. M1 adds PostgreSQL and this guide will point at it as the
-    worked example. The structure below is already correct and already
-    enforced — the in-memory adapter follows it exactly.
+    Three real adapters follow the structure below exactly, and are worth
+    reading beside it: `infrastructure/db/order_repository.py`
+    (`PostgresOrderRepository`, an ordinary adapter over SQLAlchemy — the
+    version of this guide to copy from for a plain storage port),
+    `infrastructure/storage/receipt_store.py` (`S3ReceiptStore`, the same
+    shape over `aioboto3`, and the worked example of "one adapter per
+    S3-compatible provider" rather than one adapter per vendor), and
+    `infrastructure/cache/order_repository.py` (`CachedOrderRepository`, a
+    *decorating* adapter — it satisfies `OrderRepository` by holding another
+    `OrderRepository` rather than a driver. See [what a port
+    buys](../explanation/layers.md#what-a-port-buys-the-caching-decorator)
+    for why that shape is worth understanding even if the backend you are
+    adding is not a cache).
 
 ## What you are actually writing
 
@@ -113,21 +122,46 @@ def build_container(settings: Settings) -> Container:
 Release the resource in `close_container`. It runs at shutdown, after
 in-flight requests have finished.
 
-## 5. Register a readiness check
+## 5. Register a readiness check — and choose the right tier
 
 A dependency that can be unavailable belongs in
-[`/readyz`](../reference/http-api.md#get-readyz-readiness):
+[`/readyz`](../reference/http-api.md#get-readyz-readiness), but which of its
+two tiers depends on what losing the dependency actually costs, not on how
+important it feels.
+
+**`register`** is gating: a failure returns 503 and takes the instance out of
+load balancing.
 
 ```python
 container.readiness.register("mysql", check_mysql)
 ```
 
-Checks run concurrently, each under a short timeout, and a failure marks the
-instance unready without restarting it.
+**`register_informational`** is reported but never changes the status code —
+the choice M4 makes for both the cache and the object store:
 
-Do **not** add it to `/healthz`. A liveness probe that checks a database
-restarts every instance at once when that database hiccups, turning a small
-problem into an outage.
+```python
+container.readiness.register_informational("cache", check_redis)
+```
+
+Ask two questions before picking. **Does losing it make this instance unable
+to do useful work?** If yes — the primary datastore, say — gate on it. **Is
+it shared across every pod, and does the code already survive its loss?** If
+so, gating is actively harmful: every pod fails the check in the same
+instant, and a degradation the service was built to tolerate becomes a total
+outage instead. That is exactly the cache's situation —
+`CachedOrderRepository` fails open, so PostgreSQL already answers every
+request when Redis is down — and it is why the cache is informational, not
+gating. The object store is informational for a related but distinct reason:
+losing it breaks one endpoint, not the whole instance, so taking all traffic
+off the pod to protect that one endpoint would cost more than it saves.
+
+Checks in both tiers run concurrently, each under a short timeout, so
+registering in either never multiplies the endpoint's worst-case latency.
+
+Do **not** add either tier to `/healthz`. A liveness probe that checks a
+dependency restarts every instance at once when that dependency hiccups,
+turning a small problem into an outage — the same reasoning that keeps a
+gating `/readyz` check off Redis, one level more severe.
 
 ## 6. Test it
 

@@ -43,6 +43,27 @@ cp .env.example .env
 | `APP_PAYMENT__RETRY_MAX_WAIT_SECONDS` | float, > 0 | `2.0` | The backoff's ceiling *before* jitter. `stamina` adds up to a further second of random jitter on top (`wait_jitter`, fixed, not configured by this variable), and the whole retry loop separately stops at a fixed 45-second wall-clock budget regardless of this value — see the payment gateway's `infrastructure/http/payment_gateway.py`. |
 | `APP_PAYMENT__BREAKER_FAILURE_THRESHOLD` | integer, ≥ 1 | `5` | Consecutive failures before the circuit opens. |
 | `APP_PAYMENT__BREAKER_RESET_AFTER_SECONDS` | float, > 0 | `30.0` | How long the circuit stays open before admitting one probe. |
+| `APP_CACHE__DSN` | Redis URL | unset | Where the order cache lives. **Leave it unset to run with no cache at all** — the service reads and writes PostgreSQL directly, the same supported arrangement `APP_DATABASE__DSN` has with the in-memory repository. See [`CachedOrderRepository`](../explanation/layers.md#what-a-port-buys-the-caching-decorator). |
+| `APP_CACHE__TTL_SECONDS` | integer, ≥ 1 | `300` | How long a cached order stays valid. A safety net, not the primary invalidation path — saving an order deletes its cache entry outright; the TTL only bounds how stale a value can get if that delete itself fails. |
+| `APP_CACHE__POOL_SIZE` | integer, ≥ 1 | `10` | Connections held open to Redis. |
+| `APP_CACHE__CONNECT_TIMEOUT_SECONDS` | float, > 0 | `0.5` | How long to wait for the connection to Redis. Deliberately sub-second: a cache that can stall a request for longer than the database query it is trying to avoid has made the service slower than having no cache. `redis-py` treats `0` as "wait forever", not "give up immediately", which is why this is `> 0` rather than `≥ 0`. |
+| `APP_CACHE__OPERATION_TIMEOUT_SECONDS` | float, > 0 | `0.5` | How long to wait for a single Redis command. Same reasoning as the connect timeout, and the same `redis-py` `0`-means-forever trap. |
+| `APP_STORAGE__BUCKET` | string, 3–63 chars | unset, required once any `APP_STORAGE__*` variable is set | The S3 bucket receipts are stored in. Checked against Amazon's naming rule (lowercase, digits, hyphens, dots) at startup, so a typo like a capital letter fails as exit 78, not as the first failed `PutObject`. |
+| `APP_STORAGE__ENDPOINT_URL` | URL | unset | **Leave it unset for real Amazon S3** — botocore derives the endpoint from the region on its own. **Set it for everything else** — MinIO, Cloudflare R2, Ceph, or any other S3-compatible provider. This one field is the whole of "one adapter for every provider": there is no provider branch anywhere in `S3ReceiptStore`. |
+| `APP_STORAGE__REGION` | string | `us-east-1` | Required by botocore's request signing even against a provider, like MinIO, that ignores it. `us-east-1` is the conventional filler value. |
+| `APP_STORAGE__ACCESS_KEY_ID` | secret | unset, required once any `APP_STORAGE__*` variable is set | `SecretStr`, so it cannot reach a log line or a traceback by accident. |
+| `APP_STORAGE__SECRET_ACCESS_KEY` | secret | unset, required once any `APP_STORAGE__*` variable is set | `SecretStr`, same reasoning. |
+| `APP_STORAGE__CONNECT_TIMEOUT_SECONDS` | float, > 0 | `2.0` | How long to wait for the connection to the storage endpoint. |
+| `APP_STORAGE__READ_TIMEOUT_SECONDS` | float, > 0 | `5.0` | How long to wait for a response once the request is sent. |
+
+**Both settings are optional, and absent is a supported configuration, not a
+broken one.** Leave `APP_CACHE__DSN` unset and the service serves every order
+read straight from PostgreSQL, exactly as if the cache decorator were never
+wrapped around the repository. Leave `APP_STORAGE__BUCKET` (and the rest of
+the `storage` block) unset and `GET /orders/{id}/receipt` serves from an
+in-memory store that vanishes on restart, instead of 503ing. Neither gap
+shows up on `/readyz` as a failure — see
+[the readiness change](http-api.md#get-readyz-readiness).
 
 ### The database URL carries no driver and no `sslmode`
 

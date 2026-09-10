@@ -1,18 +1,22 @@
 # Reference Service
 
 The PyFr reference service: the walking skeleton every generated project
-starts from. It runs, it is tested, and as of M1 it persists orders to a real
-PostgreSQL database, with the schema under migration control. A cache and
-object storage still arrive in later milestones.
+starts from. It persists orders to a real PostgreSQL database with the
+schema under migration control, authorises payment over a retrying,
+circuit-breaking HTTP client, caches order reads in Redis behind a fail-open
+decorator, and renders and stores one receipt per order in S3-compatible
+object storage. All four dependencies are optional and absent by default —
+the service starts and serves correctly with none of them configured.
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) — the only Python tool you need
 - Docker, for `just up` and for the integration test tier (`just test-integration`,
-  `just gates`) — both start real containers, PostgreSQL included
+  `just gates`) — real containers throughout: PostgreSQL, Redis and MinIO
 - [just](https://github.com/casey/just) — the command runner
-- PostgreSQL 16 — never installed locally; pulled as the `postgres:16-alpine`
-  image by `just up` and by the integration tests
+- PostgreSQL 16, Redis 8 and MinIO — none installed locally; pulled as
+  `postgres:16-alpine`, `redis:8-alpine` and the pinned `minio/minio` image by
+  `just up` and by the integration tests
 
 ## Five-minute start
 
@@ -22,10 +26,11 @@ uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
 just dev                   # http://localhost:8000/docs — in-memory repository
 ```
 
-`just up` is the containerized alternative: one command starts PostgreSQL, waits
-for it to report healthy, applies every migration, and only then starts the API —
-in that order, so there is no window where the API is up against a schema that
-is not there yet.
+`just up` is the containerized alternative: one command starts PostgreSQL,
+Redis and MinIO, waits for PostgreSQL and MinIO to report healthy, applies
+every migration and creates the receipts bucket, and only then starts the
+API — in that order, so there is no window where the API is up against a
+schema that is not there yet, or a bucket that does not exist yet.
 
 ## Commands
 
@@ -57,17 +62,46 @@ is not there yet.
 | `just contract-release` | Promote `openapi.json` to the baseline. Only at a release — never to silence a red `contract-gates` |
 | `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub — see [Outbound payments](#outbound-payments) |
 | `just mutants` / `just mutants-gate` | Mutation testing over `domain/` and `services/`, and the gate against the recorded floor |
+| `just redis-cli` | An interactive `redis-cli` session against the running compose cache |
+| `just minio-console` | Print, and try to open, the MinIO web console — see [Object storage](#object-storage) |
 
 ## Endpoints
 
 | Path | Purpose |
 |---|---|
 | `GET /healthz` | Liveness. Never checks a dependency. |
-| `GET /readyz` | Readiness. Checks dependencies with short timeouts. |
+| `GET /readyz` | Readiness. Gates on the database only; reports the cache and object storage without gating on either — see [Readiness: two tiers](#readiness-two-tiers). |
 | `GET /startupz` | Whether startup has finished. |
 | `POST /api/v1/orders` | Place an order. |
 | `GET /api/v1/orders/{order_id}` | Fetch an order. |
+| `GET /api/v1/orders/{order_id}/receipt` | Fetch the order's receipt, rendering and storing it on first request — see [Object storage](#object-storage). |
 | `GET /docs` | Interactive API documentation. |
+
+### Readiness: two tiers
+
+`/readyz`'s response carries `checks` (gating — decides the status code) and
+`dependencies` (informational — reported, never decisive):
+
+```json
+{"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "ok", "storage": "ok"}}
+```
+
+Only the database is gating. The cache and the object store are always
+informational, and that split is deliberate rather than an oversight:
+
+- The cache **fails open** — `CachedOrderRepository` swallows every Redis
+  error and falls through to PostgreSQL — and Redis is **shared across every
+  pod**. Gating on it would make every pod report itself unready in the same
+  second, turning a degradation the service is built to survive into a total,
+  self-inflicted outage.
+- Losing object storage breaks exactly one endpoint
+  (`GET /orders/{id}/receipt`), so taking 100% of traffic off a pod to
+  protect that one endpoint would cost far more than it saves.
+
+Verified against a real stack, not just reasoned about: with Redis stopped, an
+order read still returned 200; with MinIO stopped, the receipt endpoint
+returned 503 while the order endpoint kept returning 200; with either
+stopped, `/readyz` itself still returned 200.
 
 ## Contract governance
 
@@ -151,6 +185,35 @@ Alembic appears in the development dependencies **only** as the comparison engin
 behind the model drift gate. There is no `alembic/` directory and no Alembic
 migration; golang-migrate owns the schema.
 
+## Cache
+
+`CachedOrderRepository` is a decorator, not a second adapter beside
+`PostgresOrderRepository` — it satisfies `OrderRepository` and holds another
+`OrderRepository` inside it. That is the whole reason it can be added and
+removed by editing `container.py` alone: nothing above the infrastructure
+layer — not the service, not the router, not the domain — imports `redis` or
+knows a cache exists.
+
+It is **fail open** by rule, not by accident: every Redis failure (a
+connection error, a timeout, an unparseable cached payload) is logged and
+swallowed, and the wrapped repository answers instead. There is no setting
+that changes this, because a cache that can make a request *fail* has made
+the service strictly worse than having no cache at all. Verified against a
+real stack: with Redis stopped, an order read still returned 200.
+
+Reads check Redis first and populate it on a miss. Saves write to PostgreSQL
+first and then delete the cache key — never the other way around, because
+delete-then-save leaves a window where a concurrent reader can repopulate the
+cache with the value that is about to become stale.
+
+```
+just redis-cli   an interactive redis-cli session against the running compose cache
+```
+
+Leave `APP_CACHE__DSN` unset to run with no cache at all — every order read
+goes straight to PostgreSQL, the same supported arrangement `database` above
+has with the in-memory repository. `just up` points it at the compose Redis.
+
 ## Outbound payments
 
 `PlaceOrder` authorises a payment before saving the order, through one
@@ -180,6 +243,44 @@ an authorisation with no order to match it — a gap M3 records rather than
 closes, because closing it needs an outbox or a reconciliation job, and
 message queues are excluded from this project entirely.
 
+## Object storage
+
+`GET /api/v1/orders/{order_id}/receipt` serves a receipt document over
+`S3ReceiptStore`, one adapter over `aioboto3` for every S3-compatible
+provider — Amazon S3, MinIO, Cloudflare R2, Ceph — distinguished only by
+`APP_STORAGE__ENDPOINT_URL`. There is no provider branch anywhere in the
+adapter.
+
+**Receipts are rendered on demand, never written when the order is placed.**
+The first request for a given order renders the document and stores it;
+every request after that serves the stored bytes unchanged. This keeps
+object storage entirely out of the order-placement write path, so a storage
+outage can never fail a payment — it can only make one read endpoint 503.
+Verified against a real stack: with MinIO stopped, the receipt endpoint
+returned 503 while the order endpoint kept returning 200.
+
+```
+just minio-console   print, and try to open, the MinIO web console (minioadmin / minioadmin)
+```
+
+Leave the `APP_STORAGE__*` block unset to run with no object store at all —
+receipts are held in memory and vanish on restart, the same supported
+arrangement `database` and `cache` have with their own in-memory fallbacks.
+`just up` starts MinIO and a one-shot `minio-bootstrap` container that
+creates the bucket, because MinIO does not create one on demand and the
+application deliberately does not create its own — that would need
+`CreateBucket` permission in production, on top of the narrower
+`GetObject`/`PutObject`/`HeadBucket` the receipt store actually uses.
+
+Object storage calls are **not traced**, unlike everything else this service
+instruments. `opentelemetry-instrumentation-botocore` was tried against a
+real MinIO container and produced zero spans for any `aioboto3` call — traced
+`ListBuckets`, `PutObject` and `GetObject` all succeeded and all produced
+nothing, because `aiobotocore`'s async client replaces the exact method the
+instrumentor patches. The dependency was removed rather than shipped doing
+nothing; see `instrument_redis` in `src/reference_service/observability/otel.py`
+for the full measurement. Redis commands, by contrast, are traced normally.
+
 ## Observability
 
 Telemetry is off by default and costs nothing when off — no providers built,
@@ -197,6 +298,17 @@ objective rules from `ops/` mounted in. Grafana is on
 Make a request and you can follow it three ways: as a trace in Tempo, as log
 lines carrying that trace's `trace_id`, and as metrics on the service-health
 dashboard.
+
+The service-health dashboard's Redis panel is titled "Redis command latency
+(p50/p99)", not "Redis pool usage" — that was the original plan, and it
+turned out not to exist to draw. `opentelemetry-instrumentation-redis` emits
+spans but no metrics at all; confirmed against a live stack by generating
+real cache traffic and finding no Prometheus series with `redis` or `pool` in
+its name. The panel instead turns Redis command spans into a latency
+histogram through the span-metrics connector `grafana/otel-lgtm` runs by
+default — a real, useful signal (it is how a "fast" cache read that is
+actually costing 40ms gets noticed), just not the saturation signal that was
+asked for.
 
 `just o11y-gates` validates the objective rules with `promtool`, which runs
 from inside the pinned image rather than needing its own install.
@@ -232,6 +344,11 @@ instead of falling back to the in-memory repository.
 | `APP_OTEL__LOGS_ENABLED` | `false` | Export logs over OTLP too, in addition to standard output. Doubles log ingest if enabled alongside a platform log agent — leave it off in production |
 | `APP_OTEL__ENDPOINT` | unset | The OTLP collector endpoint. **Required** when `APP_OTEL__ENABLED` is true |
 | `APP_PAYMENT__BASE_URL` | unset | The payment provider's base URL — see [Outbound payments](#outbound-payments). Leave unset for the in-memory gateway, which authorises everything |
+| `APP_CACHE__DSN` | unset | Redis connection string — see [Cache](#cache). Leave unset to run with no cache at all; every order read goes straight to PostgreSQL |
+| `APP_CACHE__TTL_SECONDS` | `300` | How long a cached order stays valid. A safety net, not the primary invalidation path — saving an order deletes its cache entry outright |
+| `APP_STORAGE__BUCKET` | unset | The S3 bucket receipts are stored in — see [Object storage](#object-storage). Required, along with the access key pair, once any `APP_STORAGE__*` variable is set |
+| `APP_STORAGE__ENDPOINT_URL` | unset | **Leave unset for real Amazon S3** — botocore derives the endpoint from the region itself. **Set it for everything else** — MinIO, Cloudflare R2, Ceph. This one field is the whole of "one adapter per provider" |
+| `APP_STORAGE__ACCESS_KEY_ID` / `APP_STORAGE__SECRET_ACCESS_KEY` | unset | `SecretStr`, so neither can reach a log line or a traceback by accident |
 
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later.

@@ -22,6 +22,10 @@ src/<package>/
 
   infrastructure/     adapters: the only code that knows a storage technology
     memory/             the in-memory repository (M0)
+    db/                 the PostgreSQL repository (M1)
+    http/               the outbound payment gateway (M3)
+    cache/              a Redis decorator OVER the repository, not beside it (M4)
+    storage/            the S3-compatible receipt store (M4)
 
   api/                the only code that knows HTTP exists
     deps.py             FastAPI dependencies reading from application state
@@ -74,6 +78,18 @@ choreography.
 **`infrastructure/`** holds adapters: the only code that knows a specific
 technology. M0 ships an in-memory repository. M1 adds PostgreSQL behind the
 identical interface, and nothing above this layer changes.
+
+M4 adds two more adapters, and one of them is a different shape from the
+rest. `infrastructure/storage/` is an ordinary adapter: `S3ReceiptStore`
+satisfies the `ReceiptStore` port over `aioboto3`, the same way
+`PostgresOrderRepository` satisfies `OrderRepository` over SQLAlchemy.
+`infrastructure/cache/` is not beside the repository it works with — it
+wraps it. `CachedOrderRepository` satisfies `OrderRepository` and holds
+*another* `OrderRepository` inside it, so a cache is added by wrapping in
+`container.py` and removed by not wrapping; nothing above the infrastructure
+layer ever learns a cache exists. See [what a port buys](layers.md#what-a-port-buys-the-caching-decorator)
+for why that is the clearest demonstration of the port pattern in this
+codebase.
 
 **`api/`** holds the only code that knows HTTP exists: routes, request and
 response schemas, middleware, and the mapping from domain errors to status
