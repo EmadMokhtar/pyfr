@@ -21,6 +21,37 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
+  # The cache. Not behind a profile: it is small, starts in under a second,
+  # and `just up` should exercise the same arrangement production runs.
+  # Losing it is survivable by design — see CachedOrderRepository — so
+  # nothing `depends_on` it with service_healthy the way `app` does for
+  # postgres.
+  redis:
+    image: redis:8-alpine
+    ports:
+      # Published so `just redis-cli` and any local tool can reach it. The
+      # application inside compose does NOT use this — it connects over the
+      # compose network to the host name `redis`.
+      - "6379:6379"
+    command:
+      # An explicit bound, because the default is unbounded: a Redis with no
+      # maxmemory grows until the host's OOM killer picks a process, and on
+      # a developer's laptop that process is as likely to be the database as
+      # this. allkeys-lru makes it a cache rather than a store — under
+      # pressure it evicts the least recently used key instead of returning
+      # errors on write, which is the correct behaviour for data whose
+      # source of truth is PostgreSQL.
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   migrate:
     build:
       context: .
@@ -74,6 +105,10 @@ services:
       # Host `postgres` is the compose service name. No driver suffix and no
       # sslmode — see settings.py's DatabaseSettings.dsn.
       APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
+      # `redis` is the compose service name above. Set here rather than
+      # defaulted, because `just up` should exercise the cached path — an
+      # adapter that only runs in tests is an adapter nobody has really run.
+      APP_CACHE__DSN: redis://redis:6379/0
       # Defaulted rather than hardcoded so one compose file serves both
       # `just up` (telemetry off) and `just o11y` (telemetry on), which
       # sets these two in its own environment.

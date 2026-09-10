@@ -244,6 +244,10 @@ migrate-force version:
 psql:
     docker compose exec postgres psql -U app -d app
 
+# An interactive redis-cli session against the running compose cache.
+redis-cli:
+    docker compose exec redis redis-cli
+
 # Run the pre-commit hooks over this project's own files.
 precommit:
     # `git ls-files` scopes this to the project's own files. `--all-files`

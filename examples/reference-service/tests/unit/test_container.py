@@ -6,6 +6,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.container import build_container, close_container
+from reference_service.infrastructure.cache.order_repository import (
+    CachedOrderRepository,
+)
 from reference_service.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
@@ -97,3 +100,39 @@ async def test_close_container_is_safe_without_a_database() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     await close_container(build_container(settings))  # must not raise
+
+
+def test_no_cache_settings_means_no_cache_and_no_report() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    container = build_container(settings)
+
+    assert container.redis is None
+    assert "cache" not in container.readiness._informational
+
+
+def test_cache_settings_wrap_the_repository_and_register_a_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "APP_DATABASE__DSN", "postgresql://app:secret@localhost:5432/app"
+    )
+    monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
+    container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
+
+    assert isinstance(container.orders, CachedOrderRepository)
+    assert container.redis is not None
+    # Reported, and NOT gating — the distinction Task 2 exists for.
+    assert "cache" in container.readiness._informational
+    assert "cache" not in container.readiness._gating
+
+
+def test_a_cache_without_a_database_still_wraps_the_in_memory_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An odd combination, but it must not crash: the decorator wraps
+    whatever repository was selected, and neither one knows about the
+    other."""
+    monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
+    container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
+
+    assert isinstance(container.orders, CachedOrderRepository)

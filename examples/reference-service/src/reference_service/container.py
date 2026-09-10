@@ -15,11 +15,16 @@ from dataclasses import dataclass, field
 
 import httpx
 import structlog
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.domain.payments import PaymentGateway
 from reference_service.domain.repositories import OrderRepository
+from reference_service.infrastructure.cache.client import build_redis_client
+from reference_service.infrastructure.cache.order_repository import (
+    CachedOrderRepository,
+)
 from reference_service.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
@@ -172,6 +177,9 @@ class Container:
     # case). Held for the same reason `engine` is: only close_container
     # reaches for it, to close the pooled connections at shutdown.
     http_client: httpx.AsyncClient | None = None
+    # None when no cache is configured. Held only so close_container can
+    # release the pool at shutdown; nothing else reaches for it.
+    redis: Redis | None = None
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
 
@@ -208,37 +216,64 @@ def build_container(settings: Settings) -> Container:
             wait_max_seconds=settings.payment.retry_max_wait_seconds,
         )
 
+    engine: AsyncEngine | None = None
+    orders: OrderRepository
     if settings.database is None:
         # No database configured: the in-memory adapter, and no readiness
         # check, because there is no dependency to report on.
-        return Container(
-            settings=settings,
-            orders=InMemoryOrderRepository(),
-            payments=payments,
-            http_client=http_client,
-        )
+        orders = InMemoryOrderRepository()
+    else:
+        engine = build_engine(settings.database)
+        orders = PostgresOrderRepository(build_sessionmaker(engine))
 
-    engine = build_engine(settings.database)
+    # The cache wraps whatever was selected above and satisfies the same
+    # port, so this is the ONLY place in the application that knows a cache
+    # exists. Removing the cache is deleting this block.
+    redis: Redis | None = None
+    if settings.cache is not None:
+        redis = build_redis_client(settings.cache)
+        orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
+
     container = Container(
         settings=settings,
-        orders=PostgresOrderRepository(build_sessionmaker(engine)),
+        orders=orders,
         payments=payments,
         engine=engine,
         http_client=http_client,
+        redis=redis,
     )
 
-    async def database_is_reachable() -> None:
-        # Deliberately trivial. /readyz answers "can this process reach its
-        # dependencies", not "is the schema correct" — a readiness probe that
-        # runs a real query turns a slow database into an unready pod and takes
-        # the service out of rotation for a problem it could have served
-        # through. ReadinessRegistry.run bounds this with its own timeout and
-        # reports only the exception TYPE, so a connection string in a driver's
-        # error message never reaches the response body.
-        async with engine.connect() as connection:
-            await connection.execute(text("SELECT 1"))
+    if engine is not None:
 
-    container.readiness.register("database", database_is_reachable)
+        async def database_is_reachable() -> None:
+            # Deliberately trivial. /readyz answers "can this process reach
+            # its dependencies", not "is the schema correct" — a readiness
+            # probe that runs a real query turns a slow database into an
+            # unready pod and takes the service out of rotation for a
+            # problem it could have served through. ReadinessRegistry.run
+            # bounds this with its own timeout and reports only the
+            # exception TYPE, so a connection string in a driver's error
+            # message never reaches the response body.
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+
+        container.readiness.register("database", database_is_reachable)
+
+    if redis is not None:
+        cache_client = redis
+
+        async def cache_is_reachable() -> None:
+            await cache_client.ping()
+
+        # INFORMATIONAL, not gating, and the difference is deliberate.
+        # Redis is shared across every pod, and this cache fails open — with
+        # Redis gone, PostgreSQL answers and every response is still
+        # correct. A gating check would make every pod report itself unready
+        # in the same second, taking the whole service out of the load
+        # balancer over a degradation it was built to survive. Reporting it
+        # gives an operator the signal without the outage.
+        container.readiness.register_informational("cache", cache_is_reachable)
+
     # Deliberately no readiness check registered for the payment provider.
     # /readyz removing this pod from load balancing because someone else's
     # API is slow turns their outage into ours, and the circuit breaker
@@ -249,13 +284,11 @@ def build_container(settings: Settings) -> Container:
 async def close_container(container: Container) -> None:
     """Release resources. Runs after in-flight requests finish.
 
-    `try`/`finally`, not two sequential `if`s: without it, an exception
-    from `engine.dispose()` would skip `http_client.aclose()` entirely,
-    leaking every pooled HTTP connection on a shutdown that also happened
-    to have database trouble — exactly the moment a leak is least
-    affordable. Each resource's own close call is independent of the
-    other's success, so nothing here should let one's failure hide the
-    other's cleanup.
+    Nested `try`/`finally` rather than sequential `if`s: without it, an
+    exception from one close would skip every close after it, leaking
+    pooled connections on exactly the shutdown that also had trouble —
+    the moment a leak is least affordable. Each resource's cleanup is
+    independent of the others' success.
     """
     try:
         if container.engine is not None:
@@ -265,5 +298,14 @@ async def close_container(container: Container) -> None:
             # sockets of pods that have already stopped serving.
             await container.engine.dispose()
     finally:
-        if container.http_client is not None:
-            await container.http_client.aclose()
+        try:
+            if container.http_client is not None:
+                await container.http_client.aclose()
+        finally:
+            if container.redis is not None:
+                # aclose(), not close(): the sync name is deprecated in
+                # redis-py 5+ and warns, which filterwarnings=["error"]
+                # turns into a failure in any test that shuts a container
+                # down. Redis.from_pool means this owns the pool and
+                # disconnects it.
+                await container.redis.aclose()
