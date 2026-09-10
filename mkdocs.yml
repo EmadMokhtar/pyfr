@@ -70,6 +70,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Runbook: runbook.md
   - Guides:
       - Add an endpoint: guides/add-an-endpoint.md
       - Add a backend: guides/add-a-backend.md
