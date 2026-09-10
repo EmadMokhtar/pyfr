@@ -20,6 +20,7 @@ from check_docs_freshness import (  # noqa: E402
     Page,
     parse_frontmatter,
     stale_pages,
+    undeclared_pages,
     uncovered_changes,
 )
 
@@ -78,6 +79,28 @@ def test_a_page_with_no_review_date_is_not_reported_as_stale() -> None:
     today = dt.date(2026, 9, 10)
     page = Page(path="docs/index.md", last_reviewed=None, covers=[])
     assert stale_pages([page], today=today) == []
+
+
+def test_undeclared_pages_returns_only_pages_without_review_dates() -> None:
+    """undeclared_pages() pins the second, separate review-date warning.
+
+    Without this test, the `undeclared_pages()` filter can be deleted or
+    inverted (e.g., to `if page.last_reviewed is not None`) and the suite
+    stays green. A check that silently stops firing is the exact failure
+    mode this script exists to prevent.
+
+    This test must include both pages with and without `last_reviewed` to
+    catch an inverted filter -- a test that passed only pages without dates
+    would still pass if the filter were inverted to return everything.
+    """
+    page_with_date = Page(
+        path="docs/with-date.md", last_reviewed=dt.date(2026, 9, 10), covers=[]
+    )
+    page_without_date = Page(
+        path="docs/without-date.md", last_reviewed=None, covers=[]
+    )
+    result = undeclared_pages([page_with_date, page_without_date])
+    assert [page.path for page in result] == ["docs/without-date.md"]
 
 
 def test_a_covered_path_that_changed_without_the_page_is_reported() -> None:
