@@ -56,8 +56,12 @@ server restarts itself. Interactive API documentation is at
 
 ## Check that it is alive
 
+<!-- exec -->
 ```bash
-curl -i http://localhost:8000/healthz
+response=$(curl -si http://localhost:8000/healthz)
+echo "$response"
+grep -q '^HTTP/1.1 200' <<< "$response"
+grep -q '"status":"ok"' <<< "$response"
 ```
 
 ```http
@@ -80,8 +84,12 @@ that distinction prevents an outage.
 
 ## Place an order
 
+<!-- exec -->
 ```bash
-curl -i -X POST http://localhost:8000/api/v1/orders -H 'Content-Type: application/json' -d '{"customer_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","lines":[{"sku":"WIDGET-1","quantity":2,"unit_amount":"9.99","currency":"EUR"}]}'
+response=$(curl -si -X POST http://localhost:8000/api/v1/orders -H 'Content-Type: application/json' -d '{"customer_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","lines":[{"sku":"WIDGET-1","quantity":2,"unit_amount":"9.99","currency":"EUR"}]}')
+echo "$response"
+grep -q '^HTTP/1.1 201' <<< "$response"
+grep -q '"amount":"19.98"' <<< "$response"
 ```
 
 ```http
@@ -123,8 +131,12 @@ That is [why API schemas are separate](explanation/layers.md#why-api-schemas-are
 
 ## Ask for one that does not exist
 
+<!-- exec -->
 ```bash
-curl -i http://localhost:8000/api/v1/orders/3fa85f64-5717-4562-b3fc-2c963f66afa6
+response=$(curl -si http://localhost:8000/api/v1/orders/3fa85f64-5717-4562-b3fc-2c963f66afa6)
+echo "$response"
+grep -q '^HTTP/1.1 404' <<< "$response"
+grep -q '^content-type: application/problem+json' <<< "$response"
 ```
 
 ```http
