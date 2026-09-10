@@ -7,6 +7,7 @@ incorrect rather than obviously broken -- which is the worse failure.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -238,6 +239,78 @@ def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
         if line.startswith("| `APP_STORAGE__BUCKET`")
     )
     assert "required once any" in row
+
+
+def _columns(row: str) -> list[str]:
+    """Split a table row on column-separator pipes, not escaped ones.
+
+    `_escape_table_cell` turns a literal `|` inside a cell's own content
+    into `\\|` before the cells are joined. Splitting a row on every `|`
+    character -- escaped or not -- counts those escaped pipes as extra
+    delimiters too, so it either hides a real regression (an unescaped `|`
+    then looks exactly like a correctly escaped one) or flags a perfectly
+    correct row as broken. Only a `|` with no backslash immediately before
+    it is an actual column boundary. The row itself opens and closes with
+    its own delimiter pipe, so the first and last elements of the result
+    are always the empty string either side of it.
+    """
+    return re.split(r"(?<!\\)\|", row)
+
+
+def test_every_markdown_row_has_exactly_four_columns() -> None:
+    """Pins the column count so a reintroduced unescaped `|` fails here.
+
+    `render_markdown_table()` drops `variable.type_label` and
+    `variable.description` straight into a `| a | b | c | d |` row. Two
+    fields have a `Literal` type, whose type_label is built by joining
+    alternatives with `" | "` -- a string that is itself full of `|`
+    characters and, unescaped, reads as extra column separators rather
+    than the word "or". That is exactly the bug the escaping in
+    `_escape_table_cell` exists to fix (see the task report's "A bug found
+    in step 6"), and it shipped past the unit-test loop once already:
+    `test_markdown_table_has_a_header_and_one_row_per_variable` only
+    counts lines starting with `|`, and
+    `test_markdown_never_emits_a_raw_newline_inside_a_row` only checks
+    that a row *ends* with `|` -- an eight-column row satisfies both.
+    `mkdocs build --strict` does not catch it either: an extra-wide row is
+    syntactically valid Markdown, so `--strict` builds it without warning
+    and it only shows up as a visibly broken table in the rendered HTML.
+    A future edit to the escaping, or a new field whose description or
+    default happens to gain a `|`, silently reintroduces the same
+    corruption unless something here counts columns -- so this test does,
+    for every row, not only the two known `Literal` fields.
+    """
+    for line in render_markdown_table().splitlines():
+        if not line.startswith("| `APP_"):
+            continue
+        columns = _columns(line)
+        assert columns[0] == ""
+        assert columns[-1] == ""
+        content_columns = len(columns) - 2
+        assert content_columns == 4, (
+            f"expected 4 columns, got {content_columns}: {line!r}"
+        )
+
+
+def test_environment_literal_alternatives_stay_in_one_cell() -> None:
+    """The bug this file's column-count test exists to catch, made concrete.
+
+    `APP_ENVIRONMENT.type_label` is the literal string "`local` | `staging`
+    | `production`" (see `test_literals_render_as_alternatives` above) --
+    three escaped pipes that must still add up to a single Type cell.
+    Rendered the way the bug did it, those pipes split the row instead,
+    and `staging`/`production` land in the Default and Meaning columns
+    rather than the Type column.
+    """
+    row = next(
+        line
+        for line in render_markdown_table().splitlines()
+        if line.startswith("| `APP_ENVIRONMENT`")
+    )
+    type_column = _columns(row)[2]
+    assert "`local`" in type_column
+    assert "`staging`" in type_column
+    assert "`production`" in type_column
 
 
 def test_env_example_strips_markdown_links() -> None:
