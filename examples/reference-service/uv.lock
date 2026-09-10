@@ -2434,6 +2434,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aioboto3" },
+    { name = "annotated-types" },
     { name = "asyncpg" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -2447,6 +2448,7 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "orjson" },
     { name = "pydantic" },
+    { name = "pydantic-core" },
     { name = "pydantic-settings" },
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -2477,6 +2479,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aioboto3", specifier = ">=15.5" },
+    { name = "annotated-types", specifier = ">=0.4" },
     { name = "asyncpg", specifier = ">=0.31" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
@@ -2490,6 +2493,7 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.44,<2" },
     { name = "orjson", specifier = ">=3.10" },
     { name = "pydantic", specifier = ">=2.9" },
+    { name = "pydantic-core", specifier = ">=2.23.2" },
     { name = "pydantic-settings", specifier = ">=2.6" },
     { name = "redis", specifier = ">=8.1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.52" },
