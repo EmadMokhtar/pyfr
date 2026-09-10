@@ -151,3 +151,41 @@ def test_groups_are_returned_in_declaration_order(
         ("cache",),
         ("storage",),
     ]
+
+
+def test_every_variable_has_a_description(by_name: dict[str, ConfigVariable]) -> None:
+    """A new setting must not be able to arrive undocumented.
+
+    This is the gate that makes `Field(description=...)` the single source
+    of truth rather than a convention people remember unevenly. Without it,
+    the generated table quietly grows a row with an empty Meaning column.
+    """
+    undocumented = sorted(
+        name for name, variable in by_name.items() if not variable.description.strip()
+    )
+    assert undocumented == [], (
+        f"{len(undocumented)} setting(s) have no Field(description=...): {undocumented}"
+    )
+
+
+def test_every_group_has_a_docstring(groups: list[ConfigGroup]) -> None:
+    """Group docstrings become the section headers in .env.example."""
+    undocumented = sorted(
+        "".join(group.path) or "Settings" for group in groups if not group.doc
+    )
+    assert undocumented == []
+
+
+def test_no_secret_field_has_a_default(by_name: dict[str, ConfigVariable]) -> None:
+    """A credential with a default is a credential committed to the repository.
+
+    The generator prints defaults into two published files. Today no secret
+    has one; this asserts it rather than trusting it, because the day one
+    does, the leak is silent and permanent.
+    """
+    leaked = sorted(
+        name
+        for name, variable in by_name.items()
+        if variable.secret and variable.default_label != "unset"
+    )
+    assert leaked == []
