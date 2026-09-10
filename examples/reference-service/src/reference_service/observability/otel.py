@@ -358,9 +358,21 @@ def instrument_redis(runtime: OtelRuntime) -> None:
 
     A GLOBAL instrumentor, unlike instrument_http_client's per-client
     attachment: redis-py has no per-client hook, so this patches the
-    library. `is_instrumented_by_opentelemetry` guards the second call —
-    the test suite builds many apps in one process and each runs the
-    lifespan, and instrumenting twice wraps the wrapper.
+    library. `RedisInstrumentor` is also a process-wide SINGLETON
+    (`BaseInstrumentor.__new__` always returns the same instance), so only
+    the FIRST call in a process binds `tracer_provider` — every later call
+    is a no-op regardless of which provider it is given.
+
+    A raw double call would already be harmless without this guard:
+    `RedisInstrumentor.instrument()` calls `super().instrument()`, and
+    `BaseInstrumentor.instrument()` itself checks
+    `_is_instrumented_by_opentelemetry` and returns `None` before it could
+    double-patch. What the guard here actually earns its place for is
+    quieter test output: without it, every one of the many app instances
+    the test suite builds in one process would re-trigger that base-class
+    check and log a `WARNING: Attempting to instrument while already
+    instrumented` — this short-circuits before that call, so the log stays
+    clean.
 
     Worth having despite the cache being optional: the span is how you find
     out that a "fast" cache read is actually costing 40ms, which is the
