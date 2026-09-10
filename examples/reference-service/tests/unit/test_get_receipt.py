@@ -16,6 +16,7 @@ from reference_service.domain.order import (
     OrderLine,
 )
 from reference_service.domain.receipt_render import render_receipt
+from reference_service.domain.receipts import ReceiptStore
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
@@ -39,6 +40,18 @@ def build_order() -> Order:
         lines=(line,),
         total=Money(amount=Decimal("21.00"), currency="EUR"),
     )
+
+
+async def test_it_satisfies_the_port_at_runtime() -> None:
+    """Catches a renamed or missing method — nothing more.
+
+    `runtime_checkable` makes isinstance check that attributes with these
+    NAMES exist. It does not check parameter types, return types, or
+    async-ness. See test_memory_repository.py for the same caveat against
+    OrderRepository, and for the mypy-backed static check that does cover
+    signatures — no equivalent static assertion is added here.
+    """
+    assert isinstance(InMemoryReceiptStore(), ReceiptStore)
 
 
 async def test_a_first_request_renders_and_stores() -> None:
@@ -87,3 +100,30 @@ async def test_an_unknown_order_writes_nothing_to_the_store() -> None:
         await GetReceipt(orders, receipts)(missing)
 
     assert await receipts.get(missing) is None
+
+
+async def test_a_stored_receipt_for_an_unknown_order_is_not_served() -> None:
+    """The only test that would catch a regression to store-first order.
+
+    The module docstring on GetReceipt states that the order is looked up
+    BEFORE the store, and explains why: a store-first service would return
+    a receipt for an order that no longer resolves. Every other test above
+    that exercises an unknown order pairs it with an EMPTY store, so it
+    cannot tell the two orderings apart — an empty store returns None
+    whether it is consulted first or second, and a store-first
+    implementation would pass all four of them.
+
+    Here the store is seeded with bytes for an order id the repository does
+    not have. An order-first implementation still raises
+    OrderNotFoundError, because it never gets as far as the store. A
+    service that checked the store first would find the seeded bytes and
+    return them — silently serving a receipt for an order that, as far as
+    the rest of the system is concerned, does not exist.
+    """
+    orders = InMemoryOrderRepository()
+    receipts = InMemoryReceiptStore()
+    unknown = OrderId(uuid4())
+    await receipts.put(unknown, b"a receipt for an order nobody can find")
+
+    with pytest.raises(OrderNotFoundError):
+        await GetReceipt(orders, receipts)(unknown)
