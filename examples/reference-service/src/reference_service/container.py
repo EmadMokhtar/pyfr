@@ -45,6 +45,11 @@ from reference_service.infrastructure.memory.payment_gateway import (
 from reference_service.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
+from reference_service.infrastructure.storage.client import (
+    build_client_config,
+    build_s3_session,
+)
+from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
 from reference_service.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]
@@ -242,6 +247,15 @@ def build_container(settings: Settings) -> Container:
         redis = build_redis_client(settings.cache)
         orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
 
+    receipts: ReceiptStore = InMemoryReceiptStore()
+    if settings.storage is not None:
+        storage_settings = settings.storage
+        receipts = S3ReceiptStore(
+            build_s3_session(storage_settings),
+            build_client_config(storage_settings),
+            storage_settings,
+        )
+
     container = Container(
         settings=settings,
         orders=orders,
@@ -249,6 +263,7 @@ def build_container(settings: Settings) -> Container:
         engine=engine,
         http_client=http_client,
         redis=redis,
+        receipts=receipts,
     )
 
     if engine is not None:
@@ -281,6 +296,30 @@ def build_container(settings: Settings) -> Container:
         # balancer over a degradation it was built to survive. Reporting it
         # gives an operator the signal without the outage.
         container.readiness.register_informational("cache", cache_is_reachable)
+
+    if settings.storage is not None:
+        store = receipts
+        bucket = settings.storage.bucket
+
+        async def storage_is_reachable() -> None:
+            # head_bucket, not a get or a list: it is the cheapest call that
+            # proves the endpoint answers, the credentials are accepted AND
+            # the bucket exists — which is the whole question. Listing keys
+            # would also work and gets slower as the bucket fills.
+            #
+            # _client() is private and SLF001 is suppressed deliberately:
+            # the alternative is a public ping() on the port, which would
+            # put a health-check concern into the domain's ReceiptStore
+            # Protocol where it does not belong. The suppression keeps the
+            # leak inside the composition root, which already knows
+            # exactly which adapter it built. attr-defined is suppressed
+            # for the same reason: ReceiptStore's Protocol has no
+            # _client, only the concrete S3ReceiptStore built above does.
+            client_cm = store._client()  # type: ignore[attr-defined] # noqa: SLF001
+            async with client_cm as s3:
+                await s3.head_bucket(Bucket=bucket)
+
+        container.readiness.register_informational("storage", storage_is_reachable)
 
     # Deliberately no readiness check registered for the payment provider.
     # /readyz removing this pod from load balancing because someone else's

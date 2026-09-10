@@ -15,6 +15,10 @@ from reference_service.infrastructure.db.order_repository import (
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
+from reference_service.infrastructure.memory.receipt_store import (
+    InMemoryReceiptStore,
+)
+from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
 from reference_service.settings import Settings
 
 DSN = "postgresql://app:secret@localhost:5432/app"
@@ -136,3 +140,26 @@ def test_a_cache_without_a_database_still_wraps_the_in_memory_repository(
     container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
 
     assert isinstance(container.orders, CachedOrderRepository)
+
+
+def test_no_storage_settings_means_the_in_memory_store() -> None:
+    container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
+
+    assert isinstance(container.receipts, InMemoryReceiptStore)
+    assert "storage" not in container.readiness._informational
+
+
+def test_storage_settings_select_the_s3_store_and_register_a_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_STORAGE__BUCKET", "receipts")
+    monkeypatch.setenv("APP_STORAGE__ENDPOINT_URL", "http://localhost:9000")
+    monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "secret")
+    container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
+
+    assert isinstance(container.receipts, S3ReceiptStore)
+    # Reported, never gating: losing the store breaks ONE endpoint, so
+    # taking the pod out of rotation would cost far more than it saves.
+    assert "storage" in container.readiness._informational
+    assert "storage" not in container.readiness._gating

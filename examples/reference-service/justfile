@@ -248,6 +248,13 @@ psql:
 redis-cli:
     docker compose exec redis redis-cli
 
+# The MinIO web console, for looking at what the receipt store actually
+# holds. Log in with minioadmin / minioadmin — local-only credentials from
+# compose.yaml.
+minio-console:
+    @echo "http://localhost:9001 — minioadmin / minioadmin"
+    @open http://localhost:9001 2>/dev/null || true
+
 # Run the pre-commit hooks over this project's own files.
 precommit:
     # `git ls-files` scopes this to the project's own files. `--all-files`
