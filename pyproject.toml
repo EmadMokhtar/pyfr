@@ -10,7 +10,7 @@
 # examples/reference-service/. The two are never synced together.
 [project]
 name = "pyfr"
-version = "0.0.0"
+version = "0.5.0"
 description = "PyFr — a cookiecutter template for production-ready Python microservices"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -21,6 +21,22 @@ license = { file = "LICENSE" }
 # project. Stated explicitly so the intent survives someone later adding
 # dependencies here and wondering why nothing installs `pyfr` itself.
 package = false
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+# Writes BOTH pyproject.toml's [project].version and uv.lock's matching
+# [[package]] entry. `pep621` writes only the first, which leaves the lock
+# file stale and fails the uv-lock hook -- inside the release workflow,
+# after the tag has already been pushed.
+version_provider = "uv"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+# Pre-1.0: a breaking change bumps the MINOR number (0.5.0 -> 0.6.0)
+# rather than jumping to 1.0.0. Semver puts no compatibility promise on
+# the major number below 1.0.0, and 1.0.0 should be a deliberate decision
+# about stability, not a side effect of the first `feat!:`.
+major_version_zero = true
 
 [dependency-groups]
 docs = [
