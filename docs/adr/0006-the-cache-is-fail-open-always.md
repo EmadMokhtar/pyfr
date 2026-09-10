@@ -22,8 +22,10 @@ We make every Redis failure fail open. `CachedOrderRepository` catches
 Redis — connection failures, timeouts, and a payload that fails to
 parse as a valid `Order` are all logged at `warning` and swallowed, and
 the wrapped repository answers instead. There is no setting that changes
-this: `CacheSettings` carries a DSN and a TTL and nothing that selects a
-different failure behaviour.
+this: `CacheSettings` carries a DSN, a TTL, a connection pool size and a
+connect and an operation timeout — tuning knobs for how the service
+talks to Redis — and nothing that selects a different failure
+behaviour.
 
 ## Alternatives considered
 
@@ -52,5 +54,16 @@ background noise rather than an alert. The cache hit rate has to be a
 dashboard panel and an alert of its own, because a health check built to
 survive a broken cache is, by construction, not going to be the thing
 that notices one.
+
+The specification itself, in the section cited below, describes
+`/readyz` as checking "database, cache and storage" and removing the pod
+from load balancing "when they fail" — read literally, that gates on
+Redis too. This record and 0011 deliberately narrow gating to the
+database alone: Redis is one shared instance behind every pod, not
+one-per-pod the way the database connection is, so gating on it would
+make every pod unready in the same second the cache degraded, turning
+the latency-only cost above into a total outage. The specification has
+no dedicated section on cache resilience or readiness tiering, so
+section 12 is still the closest citation despite that wording gap.
 
 Full reasoning: [spec section 12](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/specs/2026-08-28-pyfr-cookiecutter-template-design.md).

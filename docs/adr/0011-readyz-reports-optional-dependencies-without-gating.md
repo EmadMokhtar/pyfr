@@ -59,4 +59,16 @@ is added, since the natural instinct is to register every new check the
 same way as the first one, and only the database is supposed to answer
 `True` to "does losing this make the pod unready".
 
+The specification itself, in the section cited below, describes
+`/readyz` as checking "database, cache and storage" and removing the pod
+from load balancing "when they fail" — read literally, gating on all
+three. This record deliberately narrows that to the database alone:
+Redis and the object store are shared across every pod rather than
+one-per-pod, so gating on either would make every instance unready in
+the same second it degraded, converting an individually survivable
+degradation — the cache is fail-open by design (0006) — into a total
+outage neither dependency was ever supposed to be able to cause. The
+specification has no dedicated section on readiness tiering, so section
+12 is still the closest citation despite that wording gap.
+
 Full reasoning: [spec section 12](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/specs/2026-08-28-pyfr-cookiecutter-template-design.md).
