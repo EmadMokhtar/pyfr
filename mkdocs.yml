@@ -22,6 +22,7 @@ validation:
 # a milestone lands.
 exclude_docs: |
   superpowers/
+  adr/template.md
 
 theme:
   name: material
@@ -82,6 +83,10 @@ nav:
       - Errors: reference/errors.md
       - Logging: reference/logging.md
       - Observability: reference/observability.md
+  - Decisions:
+      - Overview: adr/README.md
+      - 0001 Four-layer dependency rule: adr/0001-four-layer-dependency-rule.md
+      - 0002 cookiecutter over Copier and cruft: adr/0002-cookiecutter-over-copier-and-cruft.md
   - Explanation:
       - Architecture: explanation/architecture.md
       - Why a template, not a framework: explanation/why-a-template.md
