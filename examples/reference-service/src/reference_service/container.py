@@ -189,9 +189,10 @@ class Container:
     # None when no cache is configured. Held only so close_container can
     # release the pool at shutdown; nothing else reaches for it.
     redis: Redis | None = None
-    # The in-memory store until Task 10 wires the S3 adapter in. Never None:
-    # unlike engine and http_client, there is always SOME store, because the
-    # in-memory one needs no configuration.
+    # Always present, never None — unlike engine and http_client, there is
+    # always SOME store, because the in-memory one needs no configuration.
+    # Defaults to it here; build_container below swaps in the S3 adapter
+    # when settings.storage is configured.
     receipts: ReceiptStore = field(default_factory=InMemoryReceiptStore)
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False

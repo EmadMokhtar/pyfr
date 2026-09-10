@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.container import build_container, close_container
@@ -106,6 +107,37 @@ async def test_close_container_is_safe_without_a_database() -> None:
     await close_container(build_container(settings))  # must not raise
 
 
+async def test_close_container_closes_the_redis_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pool left open holds connections after shutdown begins — the same
+    concern test_close_container_disposes_the_pool covers for the database,
+    now for the cache. Before this test, deleting `await
+    container.redis.aclose()` from close_container left the whole suite
+    green: a resource-leak path with no regression net.
+
+    Patched on the class, for the same reason as
+    test_close_container_disposes_the_pool: `Redis` is a concrete class
+    from redis-py, and monkeypatch reverts this after the test either way.
+    """
+    monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    container = build_container(settings)
+    assert container.redis is not None
+
+    closed = False
+
+    async def record_aclose(self: Redis) -> None:
+        nonlocal closed
+        closed = True
+
+    monkeypatch.setattr(Redis, "aclose", record_aclose)
+
+    await close_container(container)
+
+    assert closed
+
+
 def test_no_cache_settings_means_no_cache_and_no_report() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     container = build_container(settings)
@@ -163,3 +195,26 @@ def test_storage_settings_select_the_s3_store_and_register_a_report(
     # taking the pod out of rotation would cost far more than it saves.
     assert "storage" in container.readiness._informational
     assert "storage" not in container.readiness._gating
+
+
+def test_all_three_dependencies_together_split_into_the_right_tiers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each dependency's readiness split was tested alone above; this is
+    the INTERACTION, which is exactly what a whole-branch review worries
+    about and what no single-dependency test can show.
+
+    No real connections are made: build_container constructs its clients
+    lazily and opens no sockets, so this needs no Docker, the same as
+    every other test in this module.
+    """
+    monkeypatch.setenv("APP_DATABASE__DSN", DSN)
+    monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
+    monkeypatch.setenv("APP_STORAGE__BUCKET", "receipts")
+    monkeypatch.setenv("APP_STORAGE__ENDPOINT_URL", "http://localhost:9000")
+    monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "key")
+    monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "secret")
+    container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
+
+    assert set(container.readiness._gating) == {"database"}
+    assert set(container.readiness._informational) == {"cache", "storage"}

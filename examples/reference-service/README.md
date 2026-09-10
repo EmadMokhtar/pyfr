@@ -255,7 +255,9 @@ adapter.
 The first request for a given order renders the document and stores it;
 every request after that serves the stored bytes unchanged. This keeps
 object storage entirely out of the order-placement write path, so a storage
-outage can never fail a payment — it can only make one read endpoint 503.
+outage can never fail a payment — it can only make one read endpoint 503
+with `Retry-After` (fixed at 30 seconds, unlike the payment provider's
+breaker-derived one above — object storage has no breaker in front of it).
 Verified against a real stack: with MinIO stopped, the receipt endpoint
 returned 503 while the order endpoint kept returning 200.
 

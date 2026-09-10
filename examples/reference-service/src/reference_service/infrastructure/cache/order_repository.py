@@ -69,8 +69,20 @@ class CachedOrderRepository:
         # delete-then-save leaves a window in which a concurrent reader
         # misses the cache, reads the OLD row from the database, and writes
         # it back with a full TTL — so the stale value outlives the write
-        # that was supposed to replace it. Saving first bounds the staleness
-        # to the length of the write instead.
+        # that was supposed to replace it.
+        #
+        # Saving first removes that GUARANTEED-stale window, but not every
+        # race: a reader can still fetch the OLD row before this save
+        # commits, then write that row into Redis AFTER the invalidate
+        # below has already run. That entry then sits there for up to one
+        # full TTL — this is ordinary cache-aside behaviour, and it is
+        # `ttl_seconds`, not the length of this write, that actually bounds
+        # how stale a read can be.
+        #
+        # Unreachable in this service today: OrderRepository.save has
+        # exactly one call site (services/order.py's PlaceOrder), so an
+        # order is written once and never again. A second call site would
+        # make this race reachable.
         await self._inner.save(order)
         await self._invalidate(_key(order.id))
 

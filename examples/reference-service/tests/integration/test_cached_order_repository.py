@@ -131,6 +131,12 @@ async def test_an_unreachable_redis_fails_open_against_a_real_client(
     actually raises when nothing is listening — the case that matters, and
     the one a hand-picked exception type can quietly fail to cover.
     Port 1 is reserved and never has a listener.
+
+    `cache_settings` is not dead code even though the body never reads it:
+    requesting the fixture is what forces the session-scoped Redis
+    container to start, keeping this module consistent with the others in
+    this directory that need it running even when this specific test talks
+    to a different, deliberately unreachable address instead.
     """
     dead = CacheSettings(dsn="redis://127.0.0.1:1/0")  # type: ignore[arg-type]
     client = build_redis_client(dead)

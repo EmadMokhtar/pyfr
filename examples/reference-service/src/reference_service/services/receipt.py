@@ -42,6 +42,17 @@ class GetReceipt:
         if stored is not None:
             return stored
 
+        # The one place the cache and the object store actually interact,
+        # and neither M4 task's own review could see it in isolation: `order`
+        # above may have come from CachedOrderRepository, and a stale read
+        # baked into `content` here is baked into the STORED object
+        # permanently — the receipt store has no invalidation path other
+        # than bumping infrastructure/storage/receipt_store.py's
+        # KEY_PREFIX, unlike the cache's own TTL-bounded staleness. In
+        # practice this is unreachable today for the same reason the race
+        # in CachedOrderRepository.save is: OrderRepository.save has one
+        # call site, so an order is written once and never changes after
+        # this can first render it.
         content = render_receipt(order)
         # Not wrapped in a try. A store that cannot be written is a store
         # that cannot be read either, and its own adapter already raises

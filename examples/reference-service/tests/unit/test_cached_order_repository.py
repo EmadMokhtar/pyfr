@@ -141,7 +141,9 @@ async def test_a_redis_outage_on_read_still_returns_the_right_answer() -> None:
     assert await cached.get(order.id) == order
 
 
-async def test_a_redis_outage_on_write_does_not_fail_the_save() -> None:
+async def test_a_redis_outage_on_invalidate_does_not_fail_the_save() -> None:
+    """save() never calls client.set — only client.delete, via
+    _invalidate. This exercises that failure, not a write one."""
     cached, inner, client = build_repository()
     order = build_order()
     client.fail_with = ConnectionError("redis is down")

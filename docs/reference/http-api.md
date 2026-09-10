@@ -178,7 +178,11 @@ Responds 200 with the receipt document, `Content-Type: application/json`:
 
 Also [404](errors.md) when no order has that id — checked first, so an
 unknown id never touches object storage at all — and **503 Service
-Unavailable** when the receipt store cannot be reached.
+Unavailable** when the receipt store cannot be reached. Carries a
+`Retry-After` header too, like the payment provider's 503 above, but here
+the value is a fixed 30 seconds rather than derived from a setting — there
+is no circuit breaker in front of object storage for it to read a cool-down
+from.
 
 **Rendered on demand, not written when the order is placed.** The first
 request for a receipt renders it from the order and stores the result; every
