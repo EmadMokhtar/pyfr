@@ -77,3 +77,20 @@ class PaymentUnavailableError(Exception):
     a client "this is broken, do not come back", which is the wrong advice
     for a dependency that is merely down right now.
     """
+
+
+class StorageUnavailableError(Exception):
+    """The object store could not be reached.
+
+    Not a DomainError, and deliberately so: the caller did nothing wrong,
+    and the request may well succeed if repeated later. Like
+    PaymentUnavailableError, and unlike its other siblings in this module,
+    it DOES get a registered handler in api/errors.py mapping it to 503
+    with a Retry-After — a 500 would tell a client "this is broken, do not
+    come back", which is the wrong advice for a dependency that is merely
+    down right now.
+
+    A MISSING object is not this error. That is a None return from
+    ReceiptStore.get, because "nobody has asked for this receipt yet" is
+    the ordinary state of most orders, not a failure.
+    """

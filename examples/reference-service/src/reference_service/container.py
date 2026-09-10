@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from reference_service.domain.payments import PaymentGateway
+from reference_service.domain.receipts import ReceiptStore
 from reference_service.domain.repositories import OrderRepository
 from reference_service.infrastructure.cache.client import build_redis_client
 from reference_service.infrastructure.cache.order_repository import (
@@ -40,6 +41,9 @@ from reference_service.infrastructure.memory.order_repository import (
 )
 from reference_service.infrastructure.memory.payment_gateway import (
     InMemoryPaymentGateway,
+)
+from reference_service.infrastructure.memory.receipt_store import (
+    InMemoryReceiptStore,
 )
 from reference_service.settings import Settings
 
@@ -180,6 +184,10 @@ class Container:
     # None when no cache is configured. Held only so close_container can
     # release the pool at shutdown; nothing else reaches for it.
     redis: Redis | None = None
+    # The in-memory store until Task 10 wires the S3 adapter in. Never None:
+    # unlike engine and http_client, there is always SOME store, because the
+    # in-memory one needs no configuration.
+    receipts: ReceiptStore = field(default_factory=InMemoryReceiptStore)
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
 
