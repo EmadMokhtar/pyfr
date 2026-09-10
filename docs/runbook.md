@@ -62,7 +62,7 @@ Prints the current version and whether the database is marked dirty.
 
 ## A dependency is down
 
-The symptom differs by dependency, which is the point of this section:
+**Symptom.** The symptom differs by dependency, which is the point of this section:
 only one of the four leaves the load balancer.
 
 | Dependency | Symptom |
@@ -144,20 +144,19 @@ and follow it through the logs; if a dependency is implicated, go to
 **Symptom.** A release is bad and forward-fixing is slower than
 reverting.
 
+**Confirm.** Establish whether the release included a migration — before touching any image:
+
+```bash
+just migrate-version
+```
+
+Compare the version this prints against the previous release's
+expected version.
+
 **Act, in this order and no other.**
 
-1. **First, establish whether the release included a migration** —
-   before touching any image:
-
-   ```bash
-   just migrate-version
-   ```
-
-   Compare the version this prints against the previous release's
-   expected version.
-
-2. **No migration:** roll the application image back. Stop here.
-3. **Migration included:** roll the application back only if the
+1. **No migration:** roll the application image back. Stop here.
+2. **Migration included:** roll the application back only if the
    previous version can run against the *current* schema. A migration
    that dropped or renamed a column the previous release reads means the
    rollback is itself a schema change:
