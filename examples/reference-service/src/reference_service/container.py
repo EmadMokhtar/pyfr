@@ -248,13 +248,15 @@ def build_container(settings: Settings) -> Container:
         orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
 
     receipts: ReceiptStore = InMemoryReceiptStore()
+    s3_store: S3ReceiptStore | None = None
     if settings.storage is not None:
         storage_settings = settings.storage
-        receipts = S3ReceiptStore(
+        s3_store = S3ReceiptStore(
             build_s3_session(storage_settings),
             build_client_config(storage_settings),
             storage_settings,
         )
+        receipts = s3_store
 
     container = Container(
         settings=settings,
@@ -297,9 +299,9 @@ def build_container(settings: Settings) -> Container:
         # gives an operator the signal without the outage.
         container.readiness.register_informational("cache", cache_is_reachable)
 
-    if settings.storage is not None:
-        store = receipts
-        bucket = settings.storage.bucket
+    if s3_store is not None:
+        store = s3_store
+        bucket = storage_settings.bucket
 
         async def storage_is_reachable() -> None:
             # head_bucket, not a get or a list: it is the cheapest call that
@@ -307,15 +309,15 @@ def build_container(settings: Settings) -> Container:
             # the bucket exists — which is the whole question. Listing keys
             # would also work and gets slower as the bucket fills.
             #
-            # _client() is private and SLF001 is suppressed deliberately:
+            # _client() is private, and reaching into it here is deliberate:
             # the alternative is a public ping() on the port, which would
             # put a health-check concern into the domain's ReceiptStore
-            # Protocol where it does not belong. The suppression keeps the
-            # leak inside the composition root, which already knows
-            # exactly which adapter it built. attr-defined is suppressed
-            # for the same reason: ReceiptStore's Protocol has no
-            # _client, only the concrete S3ReceiptStore built above does.
-            client_cm = store._client()  # type: ignore[attr-defined] # noqa: SLF001
+            # Protocol where it does not belong. Keeping the reach-in here
+            # keeps that leak inside the composition root, which already
+            # knows exactly which adapter it built — `store` above is typed
+            # as the concrete S3ReceiptStore, not the ReceiptStore Protocol,
+            # so no suppression is needed to call it.
+            client_cm = store._client()
             async with client_cm as s3:
                 await s3.head_bucket(Bucket=bucket)
 

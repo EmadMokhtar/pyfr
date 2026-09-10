@@ -14,16 +14,6 @@ select = [
     "RUF",      # ruff-specific
 ]
 
-# SLF001 (flake8-self: private member access) is not in `select` above —
-# this codebase's own tests routinely reach into `_gating` /
-# `_informational` on ReadinessRegistry (there is no public accessor, by
-# design) and enabling the whole rule would flag that established pattern
-# everywhere it is used. Declaring it "external" here keeps RUF100 from
-# calling the one `# noqa: SLF001` in container.py (the composition root
-# reaching into S3ReceiptStore._client for the storage readiness check)
-# an unused directive, while leaving the rule itself off.
-external = ["SLF001"]
-
 [lint.per-file-ignores]
 "tests/*" = ["S101", "B017"]  # assert is how tests assert; B017 is deliberately broad exception
 # Throwaway Testcontainers credentials. The container lives for one test
