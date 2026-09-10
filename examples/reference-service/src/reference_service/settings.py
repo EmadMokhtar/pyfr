@@ -90,6 +90,10 @@ class OtelSettings(BaseModel):
             "background task."
         ),
     )
+    # Standard output is the source of truth for logs (spec D15). Enabling
+    # this in production alongside a platform log agent doubles ingest
+    # volume and cost. The local compose profile turns it on; nothing else
+    # should.
     logs_enabled: bool = Field(
         default=False,
         description=(
