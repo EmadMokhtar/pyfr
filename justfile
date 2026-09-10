@@ -22,6 +22,12 @@ docs-build:
     # each fail the build rather than printing a warning nobody reads.
     uv run mkdocs build --strict
 
+# Dead external links. Internal ones are already `mkdocs build --strict`'s job.
+links:
+    # Needs the lychee binary: `brew install lychee`, or run it in CI,
+    # where the action provides it.
+    lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md
+
 # The repository's own script tests.
 test:
     uv run --group dev pytest tests/
