@@ -300,9 +300,18 @@ def build_container(settings: Settings) -> Container:
         # gives an operator the signal without the outage.
         container.readiness.register_informational("cache", cache_is_reachable)
 
-    if s3_store is not None:
+    # Both halves of the condition are checked on purpose, even though
+    # `s3_store` is non-None only when `settings.storage` is. That coupling
+    # is real but IMPLICIT — it lives twenty lines up, in a different
+    # block — and reading `storage_settings` down here would depend on it
+    # silently: correct today only because Python scopes locals to the whole
+    # function, and an UnboundLocalError the moment someone moves the
+    # construction above into a helper. Naming `settings.storage` again
+    # makes this block self-contained, and narrows the type for mypy
+    # without an assertion.
+    if s3_store is not None and settings.storage is not None:
         store = s3_store
-        bucket = storage_settings.bucket
+        bucket = settings.storage.bucket
 
         async def storage_is_reachable() -> None:
             # head_bucket, not a get or a list: it is the cheapest call that
