@@ -56,12 +56,26 @@ dependencies = [
     # 9.1). boto3 itself is synchronous and would block the event loop on
     # every call.
     "aioboto3>=15.5",
-    # Spans for Redis commands and for S3 calls. Same 0.65b0 line as every
-    # other opentelemetry-instrumentation-* dependency above; the `b` is
-    # upstream's permanent beta versioning, not a typo. Whether the
-    # botocore instrumentation actually sees aioboto3's async calls is
-    # measured in Task 12 rather than assumed.
+    # Spans for Redis commands. Same 0.65b0 line as every other
+    # opentelemetry-instrumentation-* dependency above; the `b` is
+    # upstream's permanent beta versioning, not a typo. Wired up in
+    # observability/otel.py's instrument_redis, called unconditionally
+    # from main.py's lifespan whenever telemetry is enabled.
     "opentelemetry-instrumentation-redis>=0.65b0",
+    # NOT wired up anywhere, on purpose — left declared rather than
+    # removed because a future release of this package or of aiobotocore
+    # may fix the gap described below, and re-adding the dependency would
+    # be the easy part. Task 12 measured, rather than assumed, whether
+    # this instrumentor sees aioboto3's async S3 calls at all: it patches
+    # `botocore`, and `aioboto3` runs on `aiobotocore`, which replaces the
+    # parts of botocore's client machinery this instrumentor patches with
+    # async equivalents its hooks never see. Instrumenting, then running
+    # ListBuckets, CreateBucket, PutObject and GetObject through a real
+    # `aioboto3.Session` against MinIO produced zero spans, even though
+    # `is_instrumented_by_opentelemetry` reported True and every call
+    # itself succeeded — see the Task 12 report for the full transcript.
+    # Shipping it regardless would mean an S3 span that silently never
+    # appears, which is worse than no span at all.
     "opentelemetry-instrumentation-botocore>=0.65b0",
 ]
 
