@@ -187,10 +187,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.bump.outputs.version }}
-        # --notes-from-tag would use the tag message; the changelog entry
-        # this release just generated (or, in bootstrap mode, that Task 10
-        # already generated) is better prose, and `cz changelog` can print
-        # exactly that one version's section.
+        # --notes-from-tag would use the tag message; `cz changelog`'s own
+        # rendering of this version's commits is better prose.
+        #
+        # This need not read identically to CHANGELOG.md's committed
+        # section for the same version. Pull requests are squash-merged,
+        # so `main` carries one commit per pull request, while the
+        # committed changelog can list the individual Conventional Commits
+        # a contributor made on their branch before the squash. Both
+        # describe the same release; they are not guaranteed to describe
+        # it in the same words.
         run: |
           uvx --from commitizen==4.18.0 cz changelog "v${VERSION}" \
             --dry-run > release-notes.md
