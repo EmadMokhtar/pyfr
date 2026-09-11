@@ -176,9 +176,12 @@ schema-snapshot:
         -k test_gate_1_the_committed_schema_matches_the_migrations
 
 # Version collisions and the migration manifest come from the unit tier; the
-# snapshot, reversibility and model-drift gates need a database.
+# snapshot, reversibility and model-drift gates need a database. The
+# configuration drift check needs neither, but lives here rather than in
+# `check` because it is a generated-artifact gate in the same shape as the
+# other five, not a fast per-commit lint.
 #
-# Run all five schema gates.
+# Run all five schema gates, plus the configuration reference drift check.
 gates:
     uv run pytest tests/unit/test_migration_files.py
     uv run pytest -m integration -k "schema_gates or schema_drift"
@@ -300,8 +303,14 @@ check: lint typecheck imports test precommit
     # just that the tree was already clean.
     git diff --exit-code
 
-# What CI will run at M5. Separate from `check` so the fast loop stays fast
-# and usable without Docker.
+# What running every gate locally, in one command, looks like. CI does not
+# call this recipe itself — `ci.yml` runs `check`, `test-integration`,
+# `gates`, `o11y-gates` and `contract-gates` as five separate jobs, in
+# parallel, so one failure names the gate that broke instead of an opaque
+# `check-all` exit code. This recipe is for a developer who wants the same
+# coverage before opening the pull request, without waiting on CI to say so.
+# Separate from `check` so the fast loop stays fast and usable without
+# Docker.
 #
 # Everything `check` does, plus the container tier and all five gates.
 check-all: check test-integration gates o11y-gates contract-gates

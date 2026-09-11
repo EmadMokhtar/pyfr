@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 covers:
   - examples/reference-service/.importlinter
 ---
@@ -37,8 +37,14 @@ Two contracts are declared:
 
 | Contract | Forbids |
 | --- | --- |
-| `domain-independence` | `domain` importing `api`, `services`, `infrastructure`, the container, the app factory, FastAPI, or Starlette |
-| `services-independence` | `services` importing `api`, `infrastructure`, the container, the app factory, FastAPI, or Starlette |
+| `domain-independence` | `domain` importing `api`, `services`, `infrastructure`, the container, the app factory, or any of: FastAPI, Starlette, SQLAlchemy, asyncpg, OpenTelemetry, httpx, stamina, redis, aioboto3 |
+| `services-independence` | `services` importing `api`, `infrastructure`, the container, the app factory, or that same list of frameworks and drivers |
+
+The list has grown milestone by milestone: FastAPI and Starlette were named
+from M0, and SQLAlchemy, asyncpg, OpenTelemetry, httpx, stamina, redis and
+aioboto3 were added as each adapter arrived, so that the layer rule catches a
+new dependency leaking inward the same day it is introduced, not only the
+two frameworks the project started with.
 
 Add `import fastapi` to a domain module and `just check` fails with the
 contract that broke and the import chain that broke it. Try it — the failure
@@ -47,10 +53,9 @@ message is the fastest way to understand what the rule protects.
 !!! note "`include_external_packages` is load-bearing"
 
     The import-linter configuration sets `include_external_packages = True`.
-    It is required whenever a contract names a third-party package, and
-    FastAPI and Starlette are both named above. Without it the tool refuses
-    to run at all — it does not silently skip the check, which would be
-    worse.
+    It is required whenever a contract names a third-party package, which
+    every entry in the list above is. Without it the tool refuses to run at
+    all — it does not silently skip the check, which would be worse.
 
 There is also a test, `test_layer_purity.py`, that checks the same property
 from a different angle. Two mechanisms for one rule is deliberate: the rule is

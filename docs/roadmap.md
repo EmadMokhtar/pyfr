@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 ---
 
 # Roadmap
@@ -8,7 +8,7 @@ PyFr is built in nine milestones, M0 through M8. Every milestone ends with
 something that runs and is tested — there is no stage where the project is
 half-converted and nothing works.
 
-**M0, M1, M2, M3 and M4 are done.** Everything on this site describes code that exists today.
+**M0, M1, M2, M3, M4 and M5 are done.** Everything on this site describes code that exists today.
 
 The last row of the table, M9, is not one of the nine. It is a holding place
 for extras deliberately deferred out of the first plan, with no schedule
@@ -21,7 +21,7 @@ attached.
 | **M2** | Observability | **Done** | OpenTelemetry and automatic instrumentation, trace-to-log correlation, a local Grafana stack behind a compose profile, three dashboards, and service level objective alerts. |
 | **M3** | Contract and test depth | **Done** | A committed OpenAPI document with a drift gate, generated conformance testing, a breaking-change gate, the shared outbound HTTP client, recorded HTTP cassettes, and mutation testing. |
 | **M4** | Cache and object storage | **Done** | A fail-open Redis cache as a decorator over the order repository, an S3-compatible receipt store over aioboto3, Redis and MinIO in compose, a two-tier `/readyz` that reports optional dependencies without gating on them, `GET /orders/{id}/receipt`, and integration tests against real Redis and MinIO containers. |
-| **M5** | Docs and release | Planned | The Diátaxis documentation structure, a *generated* configuration reference, decision records, an on-call runbook, all four documentation hygiene checks, and automated releases. |
+| **M5** | Docs and release | **Done** | A *generated* configuration reference — `settings.py`'s `Field(description=...)` is the single source of truth for all 38 environment variables, with `docs/reference/configuration.md`'s table and `.env.example` generated from it and drift-gated in `just gates`; `lychee` external link checking, executable `curl` examples run against a live stack, and advisory warnings for stale review dates and `covers:` path coupling, alongside the `mkdocs build --strict` check that already existed; twelve architecture decision records and an on-call runbook; Commitizen, a `CHANGELOG.md` generated from history, version `0.5.0` and a release workflow; the contract gate's version comparison replaced by a Conventional Commits range check; and continuous integration for the reference service, which had none before — `ci.yml` grown from two jobs to eleven, plus a nightly workflow for mutation testing and a full link sweep. The Diátaxis structure and GitHub Pages this site already used arrived earlier, in M0-era work — M5 did not build them, only added to what they already published. |
 | **M6** | Supply chain | Planned | Dependency and image vulnerability scanning, a software bill of materials, automated dependency updates, multi-architecture builds, log redaction, and seed data. |
 | **M7** | Templatise | Planned | The reference service becomes the template. Generation tests across all eight backend combinations, and the golden diff. **PyFr becomes a usable template here.** |
 | **M8** | Template updates | Planned | A generated project can pull in later template versions through a git merge, with a weekly job that opens a pull request when one is available. |
@@ -67,6 +67,8 @@ Not "later" — decided against, with a reason.
 | Message queues | A large subsystem that deserves its own design round. |
 | Authentication and authorisation | Too organisation-specific to guess. A documented extension point instead. |
 | Multi-tenancy | Same reason. |
+| `catalog-info.yaml`, a Backstage service-catalogue file | M5's specification justified it as making the README's Backstage integration claim true, but the README rewrite removed that claim. There is nothing left to justify, no portal to register with, and no service anyone deploys to describe. If Backstage ever matters here, it is template content for M7, not documentation for M5. |
+| A weekly job re-recording outbound HTTP cassettes | `just test-record` records against a committed, deterministic local WireMock stub, not a real upstream. A scheduled re-record against a stub that never changes would produce an empty diff every week, forever. |
 
 ## Where the detail lives
 

@@ -6,8 +6,8 @@ field and writes `fix:` -- and when they do, a client pinned to a
 compatible range breaks in production. This is the gate that stops it
 (spec 10.2).
 
-Before M5 the second half of this compared `info.version` between the
-committed contract and the baseline. That check is gone: the repository is
+This gate used to also compare `info.version` between the committed
+contract and the baseline. That comparison is gone: the repository is
 now versioned by Commitizen from commit messages, and the reference
 service's own version is a fixed 0.1.0 that nobody bumps, so the
 comparison was reading a number with no meaning. The question is now asked

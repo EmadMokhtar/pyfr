@@ -9,9 +9,9 @@ it cost. They are short on purpose. The full reasoning lives in the
 [design specification](https://github.com/EmadMokhtar/pyfr/tree/main/docs/superpowers),
 and each record links to the section that argues its case.
 
-Records 1 to 12 were written during M5 and describe decisions taken during
-M0 to M4. They are backfilled, and dated to the milestone that made them
-rather than to the day they were written down.
+Records 1 to 12 were backfilled after M0 to M4 already existed, and describe
+decisions taken during that work. They are dated to the milestone that made
+each decision rather than to the day the record itself was written.
 
 ## Why they are never edited
 

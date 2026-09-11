@@ -1,7 +1,7 @@
 """Generate the configuration reference and .env.example from the model.
 
 `settings.py` is the single source of truth for every environment variable
-this service reads. Before M5 the same 38 variables were described three
+this service reads. Previously the same 38 variables were described three
 times by hand -- in the model's own comments, in .env.example, and in the
 documentation table -- in three voices, with nothing keeping the three in
 agreement. This script deletes two of those copies.

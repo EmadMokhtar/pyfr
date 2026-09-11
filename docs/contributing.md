@@ -1,5 +1,8 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
+covers:
+  - scripts/check_docs_updated.py
+  - scripts/check_docs_freshness.py
 ---
 
 # Contributing
@@ -85,25 +88,67 @@ deliberately does not count it.
 
 ## Documentation ships with the change
 
-Two continuous integration jobs enforce this.
+Three independent mechanisms enforce this, and each catches something
+different.
 
-**`docs`** builds the site with `--strict` on every push and pull request.
-
-**`docs-freshness`** fails a pull request that changes
-`examples/reference-service/src/**` without touching `docs/`, `README.md`, or
-`mkdocs.yml`.
-
-It is a blunt heuristic, on purpose. It cannot tell a stale sentence from a
-fresh one; it only notices that source changed and no documented surface did.
-A pure refactor or a dependency bump will trip it, and that is the accepted
-cost of catching the case that matters.
-
-The escape hatch is the **`no-docs-needed`** label on the pull request. The
+**`scripts/check_docs_updated.py`** is a hard gate. It fails a pull request
+that changes `examples/reference-service/src/**` without touching `docs/`,
+`README.md`, or `mkdocs.yml`. It is a blunt heuristic, on purpose: it cannot
+tell a stale sentence from a fresh one, it only notices that source changed
+and no documented surface did. A pure refactor or a dependency bump will trip
+it, and that is the accepted cost of catching the case that matters. The
+escape hatch is the **`no-docs-needed`** label on the pull request — the
 workflow re-runs when a label is added, so applying it turns the failed check
-green without an empty commit.
+green without an empty commit. A label is used rather than a commit message
+trailer because pull requests are squash-merged, which rewrites the message.
 
-A label is used rather than a commit message trailer because pull requests are
-squash-merged, which rewrites the message.
+**`scripts/check_docs_freshness.py`** only warns; nothing it finds can fail a
+build. It reports two things: a page whose `covers:` frontmatter names a path
+that changed in this pull request while the page itself did not, and a page
+whose `last_reviewed` date is more than 180 days old. Where the hard gate
+above only notices that *some* source changed and *no* documentation did,
+this one names the page and the exact path that moved.
+
+**`lychee` and `mkdocs build --strict`** are hard gates on links, not on
+prose. `--strict` fails the build on a link to a page that no longer exists,
+a renamed heading anchor, or an unresolvable include. `lychee` does the
+equivalent check for links leaving the site, against the real internet, in
+its own CI job — kept separate from the site build so a network blip reads as
+a network blip, not as a broken site.
+
+### `just docs-freshness` is not CI's `docs-freshness` job
+
+These share a name and run different scripts, which makes it easy to reach
+for the wrong one while reproducing a red pull request.
+
+The CI job named **`docs-freshness`** runs `scripts/check_docs_updated.py` —
+the hard gate above. The **`just docs-freshness`** recipe runs
+`scripts/check_docs_freshness.py` — the advisory warnings above, which is
+what CI's separate **`docs-warnings`** job calls. Reproduce a red
+`docs-freshness` check locally with:
+
+```bash
+python3 scripts/check_docs_updated.py origin/main HEAD
+```
+
+not with `just docs-freshness`. That recipe runs the other script, never
+fails, and will tell you nothing about why the hard gate is red.
+
+### When the warnings become failures
+
+Not yet, and not on their own. Flipping `check_docs_freshness.py`'s two
+warnings to hard failures needs all three of the following to be true first,
+checkably:
+
+- **Every published page carries `covers:` wherever a genuine coupling
+  exists.** A warning that never fires because nothing declares the coupling
+  is not evidence the check works — it is evidence nobody wrote the
+  frontmatter yet.
+- **A month of pull requests has passed with the warnings producing no noise
+  that nobody acted on.** Verified by reading the pull requests, not assumed.
+- **The team has agreed to retire `check_docs_updated.py` in the same
+  change.** Keeping both as hard gates means one pull request can fail twice
+  for the same reason, under two different names, with two different fixes.
 
 ## Conventional Commits are required
 

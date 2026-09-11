@@ -195,7 +195,7 @@ Re-recording is manual today, `just test-record`, against the same local
 stub — it re-proves the same thing, on demand, rather than on a schedule.
 
 A weekly job that re-recorded against whatever the real provider currently
-does was considered for M5, and decided against, not deferred:
+does was considered, and decided against, not deferred:
 `just test-record` records against `ops/payment-stub/`, a local WireMock
 stub that is committed and deterministic, not a real payment provider. A
 scheduled job pointed at that stub would produce an empty diff every week,
