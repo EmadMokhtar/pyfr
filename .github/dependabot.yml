@@ -58,6 +58,10 @@ updates:
     groups:
       compose-images:
         patterns: ["*"]
+    ignore:
+      # `image: reference-service:compose` is built locally by `app`; there
+      # is nothing on Docker Hub to update it from.
+      - dependency-name: "reference-service"
     commit-message:
       prefix: "build(deps)"
     labels: ["dependencies", "no-docs-needed"]

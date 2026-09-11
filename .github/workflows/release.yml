@@ -214,30 +214,44 @@ jobs:
     # Both images, both architectures, tagged with the REPOSITORY version
     # just released and `latest` (ADR 0015). Builds the single-architecture
     # images first and scans them -- a fixed HIGH or CRITICAL finding stops
-    # the push rather than following it -- then writes the SBOMs, pushes,
-    # and attaches the SBOMs to the GitHub Release. The arm64 image differs
-    # from what was scanned only in architecture: same commit, same lock,
-    # same Debian package versions.
+    # the push rather than following it -- then pushes, writes the SBOMs
+    # from the PUSHED references, and attaches them to the GitHub Release.
+    # The arm64 image differs from what was scanned only in architecture:
+    # same commit, same lock, same Debian package versions.
     #
     # Checks out the TAG, not `main`: the release job's bump commit is
     # what the tag points at, and `main` may already have moved on.
+    #
+    # No `docker/setup-buildx-action`: it makes its own `docker-container`
+    # builder the CURRENT one, and on Docker >= 23 `docker build` is
+    # `docker buildx build` on the current builder -- so `just
+    # build-images` would build inside that container builder and never
+    # load `reference-service:ci` into the daemon, and `just scan` would
+    # find no such image. The `pyfr` builder `publish-images` needs is
+    # created by the recipe itself (`_buildx-builder`), never made
+    # current, and `docker buildx` is preinstalled on ubuntu-latest. QEMU
+    # stays: it registers the emulator that builder uses for arm64.
     needs: release
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write   # gh release upload
-      packages: write   # ghcr.io push
+      packages: write   # ghcr.io push; includes pull, which the SBOM step needs
     defaults:
       run:
         working-directory: examples/reference-service
     env:
       VERSION: v${{ needs.release.outputs.version }}
+      # Registry credentials for the SBOM step below, which reads the
+      # image just pushed rather than a local one. compose.yaml forwards
+      # both into the trivy container; nightly.yml uses the same pair.
+      TRIVY_USERNAME: ${{ github.actor }}
+      TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: v${{ needs.release.outputs.version }}
       - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -248,11 +262,25 @@ jobs:
         run: just build-images
       - name: Scan both images
         run: just scan
-      - name: Write the software bills of materials
-        run: just sbom
       - name: Push both images for both architectures
         run: just publish-images "$VERSION"
+      - name: Write the software bills of materials from the pushed images
+        # After the push, and from the pushed references rather than the
+        # local `:ci` build: the SBOM's subject is then the image reference
+        # people pull, so a document can be matched to the artifact it is
+        # attached to. `publish-images` rebuilds through the buildx
+        # builder, so the local `:ci` image is a different image ID from
+        # what was pushed. Trivy reads the manifest for the runner's own
+        # platform (amd64) out of the index -- the arm64 manifest resolves
+        # the same lockfile and Debian package versions.
+        run: >-
+          just sbom
+          "ghcr.io/emadmokhtar/pyfr-reference-service:$VERSION"
+          "ghcr.io/emadmokhtar/pyfr-reference-service-migrations:$VERSION"
       - name: Attach the SBOMs to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$VERSION" sbom/reference-service.cdx.json sbom/reference-service-migrations.cdx.json
+        # `--clobber` so "re-run failed jobs" after a failed upload does
+        # not die on "asset already exists" when one of the two files had
+        # already made it up.
+        run: gh release upload --clobber "$VERSION" sbom/reference-service.cdx.json sbom/reference-service-migrations.cdx.json

@@ -244,9 +244,15 @@ jobs:
     # Both images for linux/amd64 AND linux/arm64, with no output: proves
     # the Dockerfiles still build for both, which is what "Apple Silicon
     # laptops and cloud servers share one image" (spec 12) rests on. QEMU
-    # supplies the emulated architecture; buildx supplies a builder that
-    # can target two platforms at once (the default `docker` driver
-    # cannot -- M6 plan, Verified Fact 2). Pushing is release.yml's job.
+    # supplies the emulated architecture; the `pyfr` builder is created by
+    # the recipe itself (`_buildx-builder`) and is never made the current
+    # builder, so plain `docker build` elsewhere in the same job still
+    # loads into the daemon. No `docker/setup-buildx-action`: it makes its
+    # own `docker-container` builder the CURRENT one, and on Docker >= 23
+    # `docker build` then runs on that builder and `--load`s nothing (the
+    # default `docker` driver cannot target two platforms at once -- M6
+    # plan, Verified Fact 2). `docker buildx` itself is preinstalled on
+    # ubuntu-latest. Pushing is release.yml's job.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -254,7 +260,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
       - uses: extractions/setup-just@v2
       - name: Build both images for both architectures
         run: just build-multiarch
