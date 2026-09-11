@@ -29,6 +29,7 @@ from structlog.types import Processor
 
 from reference_service.observability.redaction import (
     DEFAULT_REDACT_FIELDS,
+    RedactingFilter,
     make_redactor,
 )
 
@@ -229,6 +230,9 @@ def configure_logging(
         # body come from _add_otel_context and are for whoever reads the
         # body directly.
         otlp_handler = LoggingHandler(logger_provider=logger_provider)
+        # The body goes through the redacting chain below, but the handler
+        # copies `extra=` attributes straight across -- see RedactingFilter.
+        otlp_handler.addFilter(RedactingFilter(redact_fields))
         otlp_handler.setFormatter(
             structlog.stdlib.ProcessorFormatter(
                 foreign_pre_chain=shared,

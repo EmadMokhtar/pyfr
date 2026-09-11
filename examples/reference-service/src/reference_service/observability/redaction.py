@@ -18,12 +18,20 @@ two other ways a secret enters our own records as a value —
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection, MutableMapping
 from typing import Any
 
 from structlog.types import Processor
 
 REDACTED = "[REDACTED]"
+
+# The attribute names every standard-library record carries, computed once
+# at import from a bare record. Anything else on a record came from
+# `extra={...}` at the call site, which is what RedactingFilter masks.
+_STDLIB_RECORD_ATTRIBUTES = frozenset(
+    vars(logging.LogRecord("", 0, "", 0, "", (), None))
+)
 
 # Replaced, not extended, by APP_LOG__REDACT_FIELDS (settings.py): one rule
 # for what the effective list is, with no hidden merge to reason about.
@@ -83,3 +91,28 @@ def make_redactor(field_names: Collection[str]) -> Processor:
         return event_dict
 
     return redact_sensitive_fields
+
+
+class RedactingFilter(logging.Filter):
+    """Mask matching `extra=` attributes on a standard-library record.
+
+    The OTLP handler copies a record's attributes into the exported
+    record's attributes without passing them through the processor chain;
+    this filter runs the same rule over them first. Attached only to that
+    handler: the stdout handler sees the processor output, not the
+    record's attributes.
+    """
+
+    def __init__(self, field_names: Collection[str]) -> None:
+        super().__init__()
+        self._names = frozenset(_normalise(name) for name in field_names)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        for key, value in list(vars(record).items()):
+            if key in _STDLIB_RECORD_ATTRIBUTES:
+                continue
+            if _normalise(key) in self._names:
+                setattr(record, key, REDACTED)
+            else:
+                setattr(record, key, _redact_value(value, self._names))
+        return True
