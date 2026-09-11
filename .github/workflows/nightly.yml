@@ -54,3 +54,39 @@ jobs:
         with:
           args: --config lychee.toml --no-progress 'docs/**/*.md' README.md '**/*.md'
           fail: true
+
+  security:
+    # The same audit ci.yml runs on every pull request, plus a scan of the
+    # images LAST PUBLISHED rather than freshly built: a CVE is published
+    # against a version already shipped, and nothing else here would
+    # re-check the image anyone is actually running. Fails on the night a
+    # new advisory lands, which is the point.
+    #
+    # `packages: read` and the two TRIVY_* variables are what let Trivy
+    # pull a package that has not been made public yet; once it is public
+    # they are harmless. Before the first release after M6 there is no
+    # `latest` tag and the scan step fails on "not found" -- expected, for
+    # one night at most.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    env:
+      TRIVY_USERNAME: ${{ github.actor }}
+      TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - name: Audit the reference service's lock
+        run: just audit
+      - name: Audit the documentation toolchain's lock
+        working-directory: .
+        run: just audit
+      - name: Scan the published images
+        run: just scan ghcr.io/emadmokhtar/pyfr-reference-service:latest ghcr.io/emadmokhtar/pyfr-reference-service-migrations:latest

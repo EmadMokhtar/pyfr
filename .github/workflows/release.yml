@@ -44,6 +44,9 @@ jobs:
     # manually triggered release.
     if: "!startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.bump.outputs.released }}
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -206,3 +209,50 @@ jobs:
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --notes-file release-notes.md
+
+  publish-images:
+    # Both images, both architectures, tagged with the REPOSITORY version
+    # just released and `latest` (ADR 0015). Builds the single-architecture
+    # images first and scans them -- a fixed HIGH or CRITICAL finding stops
+    # the push rather than following it -- then writes the SBOMs, pushes,
+    # and attaches the SBOMs to the GitHub Release. The arm64 image differs
+    # from what was scanned only in architecture: same commit, same lock,
+    # same Debian package versions.
+    #
+    # Checks out the TAG, not `main`: the release job's bump commit is
+    # what the tag points at, and `main` may already have moved on.
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release upload
+      packages: write   # ghcr.io push
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    env:
+      VERSION: v${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: extractions/setup-just@v2
+      - name: Build both images
+        run: just build-images
+      - name: Scan both images
+        run: just scan
+      - name: Write the software bills of materials
+        run: just sbom
+      - name: Push both images for both architectures
+        run: just publish-images "$VERSION"
+      - name: Attach the SBOMs to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$VERSION" sbom/reference-service.cdx.json sbom/reference-service-migrations.cdx.json

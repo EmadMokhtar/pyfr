@@ -314,6 +314,11 @@ services:
   trivy:
     profiles: ["tools"]
     image: aquasec/trivy:0.74.0
+    environment:
+      # Registry credentials for scanning a remote image that is not
+      # public. Empty locally, where every scan is of a local image.
+      TRIVY_USERNAME: ${TRIVY_USERNAME:-}
+      TRIVY_PASSWORD: ${TRIVY_PASSWORD:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - trivy-cache:/root/.cache/trivy
