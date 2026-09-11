@@ -241,15 +241,57 @@ jobs:
       - run: just docs-examples
 
   build:
-    # Proves the Dockerfile still builds. Deliberately no push and no
-    # multi-architecture matrix -- both are M6, with the registry and the
-    # vulnerability scanning that should accompany them.
+    # Both images for linux/amd64 AND linux/arm64, with no output: proves
+    # the Dockerfiles still build for both, which is what "Apple Silicon
+    # laptops and cloud servers share one image" (spec 12) rests on. QEMU
+    # supplies the emulated architecture; buildx supplies a builder that
+    # can target two platforms at once (the default `docker` driver
+    # cannot -- M6 plan, Verified Fact 2). Pushing is release.yml's job.
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: examples/reference-service
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
       - uses: extractions/setup-just@v2
-      - name: Build both container images
+      - name: Build both images for both architectures
+        run: just build-multiarch
+
+  security:
+    # Spec 10.4's `security` row: pip-audit, Trivy, SBOM. Four recipes as
+    # four steps, so a red job names which one. `build-images` first
+    # because `scan` and `sbom` read the locally built single-architecture
+    # images over the Docker socket. No `uv sync`: `just audit` reads the
+    # lock with `uv export` and runs pip-audit through `uvx`.
+    #
+    # This job's result can change with no commit -- an advisory is
+    # published against a version already locked -- which is also why
+    # nightly.yml runs the same recipes every night.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - name: Build both images
         run: just build-images
+      - name: Audit the reference service's lock
+        run: just audit
+      - name: Audit the documentation toolchain's lock
+        working-directory: .
+        run: just audit
+      - name: Scan both images
+        run: just scan
+      - name: Write the software bills of materials
+        run: just sbom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: examples/reference-service/sbom/*.cdx.json
+          if-no-files-found: error
