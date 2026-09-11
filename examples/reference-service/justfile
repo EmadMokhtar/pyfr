@@ -406,6 +406,55 @@ build-images:
     docker build -t reference-service:ci .
     docker build -f Dockerfile.migrations -t reference-service-migrations:ci .
 
+# A buildx builder that can build two platforms at once. The default
+# builder on Docker Desktop uses the `docker` driver, which cannot
+# (verified: "Multi-platform build is not supported for the docker
+# driver"); a `docker-container` builder can, with `--push` or with no
+# output, but it cannot `--load` a two-platform image into the daemon --
+# which is why `build-images` above stays the single-architecture path
+# that `scan` and `sbom` consume. Created once, reused after.
+_buildx-builder name="pyfr":
+    docker buildx inspect {{name}} >/dev/null 2>&1 \
+        || docker buildx create --name {{name}} --driver docker-container
+
+# Build both images for linux/amd64 and linux/arm64 with no output: proof
+# that the arm64 side still builds, which is what CI's `build` job is for.
+# Apple Silicon laptops and cloud servers share one image (spec 12); this
+# is the recipe that keeps that true. Under emulation the whole thing took
+# 15 s on a cold builder (M6 plan, Verified Fact 8).
+build-multiarch: _buildx-builder
+    docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 .
+    docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 \
+        -f Dockerfile.migrations .
+
+# Build both platforms of both images and push them, tagged with the
+# version given AND `latest`. The version is the REPOSITORY's -- the same
+# string as the git tag and the GitHub Release (ADR 0015) -- and the
+# caller passes it: `just publish-images v0.6.0`. Run by release.yml after
+# `scan` has passed on the same commit's images; not something to run by
+# hand against ghcr.io.
+#
+# `org.opencontainers.image.source` is a static LABEL in each Dockerfile;
+# version and revision are only known here. The registry namespace is a
+# literal until M7 makes it a template variable. `builder` exists so the
+# push path can be rehearsed against a local registry with a builder that
+# has host networking (Verified Fact 9): `docker run -d -p 5001:5000
+# registry:3`, a builder created with `--driver-opt network=host` and a
+# buildkitd.toml allowing plain HTTP to localhost:5001, then
+# `just publish-images 0.0.0-rehearsal localhost:5001 <that builder>`.
+publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-builder builder)
+    docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
+        --label "org.opencontainers.image.version={{version}}" \
+        --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+        -t "{{registry}}/pyfr-reference-service:{{version}}" \
+        -t "{{registry}}/pyfr-reference-service:latest" .
+    docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
+        --label "org.opencontainers.image.version={{version}}" \
+        --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+        -t "{{registry}}/pyfr-reference-service-migrations:{{version}}" \
+        -t "{{registry}}/pyfr-reference-service-migrations:latest" \
+        -f Dockerfile.migrations .
+
 up:
     docker compose up --build
 
