@@ -138,8 +138,9 @@ The redactor runs last in the shared processor chain (`_shared_processors` in
 including values middleware bound into context earlier in the request. That
 same chain is also the `foreign_pre_chain` that formats standard-library
 records, so a third-party library's log line is masked by the same rule.
-That beats redacting at each call site: the one call site where someone
-forgets is the one that matters.
+The OTLP export leg masks a record's `extra=` attributes with the same rule,
+through a filter on that handler. That beats redacting at each call site:
+the one call site where someone forgets is the one that matters.
 
 The default field names are `access_token`, `api_key`, `apikey`,
 `authorization`, `card_number`, `cookie`, `cvv`, `passwd`, `password`,

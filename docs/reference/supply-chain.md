@@ -24,7 +24,7 @@ where a sentence says otherwise.
 | --- | --- | --- |
 | `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. The same recipe exists at the repository root for the documentation toolchain's own lock. | Every pull request, in CI's `security` job (both locks); every night, in `nightly.yml`. |
 | `just scan` | [Trivy](https://trivy.dev/) over both images, for known vulnerabilities and embedded secrets. Fails on any HIGH or CRITICAL finding that has a fix. | Every pull request, on the freshly built images (`security`); on release, before the push (`release.yml`); every night, on the `latest` tag actually published. |
-| `just sbom` | A [CycloneDX](https://cyclonedx.org/) software bill of materials per image, into `sbom/`. | Every pull request, uploaded as the `sbom` workflow artifact; on release, attached to the GitHub Release. |
+| `just sbom` | A [CycloneDX](https://cyclonedx.org/) software bill of materials per image, into `sbom/`. | Every pull request, from the local build, uploaded as the `sbom` workflow artifact; on release, from the published image reference after the push, attached to the GitHub Release. |
 | `just build-multiarch` | Both images for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
 | `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given and `latest`. | Release only, in `release.yml`'s `publish-images` job. |
 | `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. CI adds the repository root's `just audit` as one more step. Needs Docker. | Locally, by hand. |
@@ -42,7 +42,8 @@ Trivy runs from the `trivy` service in `compose.yaml`, under the `tools`
 profile, rather than from a `docker run` line in the `justfile`. Its version is
 then pinned in the one file Dependabot updates, with every other image pin. The
 first run downloads the vulnerability database, which takes about a minute; a
-named volume keeps it, so later runs take seconds.
+named volume keeps it, so later runs take seconds — until `just down`, which
+removes the `trivy-cache` volume with the others.
 
 ## The images
 
@@ -175,19 +176,25 @@ CycloneDX format:
 | Where | What |
 | --- | --- |
 | `sbom/reference-service.cdx.json` and `sbom/reference-service-migrations.cdx.json` | Locally, after `just sbom` or `just security`. The directory is ignored by git. |
-| The `sbom` workflow artifact | On every pull request, from the `security` job. |
-| The release assets | On every release, attached to the GitHub Release by `release.yml`. |
+| The `sbom` workflow artifact | On every pull request, from the `security` job, generated from the local build. |
+| The release assets | On every release, attached to the GitHub Release by `release.yml`, generated from the published image reference after the push. |
 
-It is generated from the built image, not from `uv.lock`, so it lists the
-Debian packages as well as the Python ones — about 160 components for the
-service image, `libc6` and `openssl` beside `fastapi` and `pydantic`.
+It is generated from an image, not from `uv.lock`, so it lists the Debian
+packages as well as the Python ones — about 160 components for the service
+image, `libc6` and `openssl` beside `fastapi` and `pydantic`.
 
-It is generated from the single-architecture image that `just build-images`
-produces, which on the CI runners and in the release is `amd64`. The `arm64`
-image is built from the same commit, the same `uv.lock`, the same Dockerfile
-and the same Debian package versions; it differs only in architecture, so its
-list of components is the same list. One document per image is therefore
-enough.
+Which image depends on where it runs. On a pull request it is the
+single-architecture `:ci` image that `just build-images` produces. On a
+release it is generated **after** the push, from the published reference —
+`ghcr.io/emadmokhtar/pyfr-reference-service:vX.Y.Z` and its migrations
+counterpart — so the document's subject is the image people pull, not a
+local build that was never published (`just publish-images` rebuilds through
+the buildx builder, so the local `:ci` image is a different image ID from
+what reaches the registry). Trivy reads the manifest for the runner's own
+platform, `amd64`, out of the index. The `arm64` image is built from the same
+commit, the same `uv.lock`, the same Dockerfile and the same Debian package
+versions; it differs only in architecture, so its list of components is the
+same list. One document per image is therefore enough.
 
 To list what is in one:
 

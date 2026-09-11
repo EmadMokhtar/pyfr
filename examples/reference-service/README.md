@@ -395,11 +395,14 @@ never runs; a Dependabot bump of that base image is the moment to re-scan
 and drop them.
 
 On release, the repository's workflow builds and scans the
-single-architecture images first, writes the SBOMs, then builds both images
-for both architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service`
-and `ghcr.io/emadmokhtar/pyfr-reference-service-migrations` tagged with the
-repository's version and `latest`, and attaches the SBOMs to the GitHub
-Release. Nothing is pushed from a pull request. pip is removed from the
+single-architecture images first, then builds both images for both
+architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
+`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` tagged with the
+repository's version and `latest`. The SBOMs are generated after the push,
+from the published image references, so their subject is the image people
+pull; they are then attached to the GitHub Release. On a pull request the
+SBOMs come from the local build instead and are uploaded as the `sbom`
+workflow artifact. Nothing is pushed from a pull request. pip is removed from the
 runtime image — it was the only source of findings there — and the image is
 deliberately not distroless: the start command needs a shell to expand
 `APP_HTTP_PORT`.

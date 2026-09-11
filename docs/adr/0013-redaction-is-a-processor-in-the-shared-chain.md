@@ -29,8 +29,11 @@ list is also the standard library's `foreign_pre_chain`, wired in through
 emits through the standard `logging` module is masked by the identical
 rule. Matching is exact, case-insensitive, and treats `-` and `_` alike,
 at any depth of nested dicts and lists — `redaction.py`'s `_normalise` and
-`_redact_value` walk the record recursively to do this. The field names to
-mask live in `APP_LOG__REDACT_FIELDS`, which replaces `redaction.py`'s
+`_redact_value` walk the record recursively to do this. The OTLP export
+handler copies a standard-library record's `extra=` attributes across
+without the processor chain, so `RedactingFilter` on that handler runs the
+same rule over them first. The field names to mask live in
+`APP_LOG__REDACT_FIELDS`, which replaces `redaction.py`'s
 `DEFAULT_REDACT_FIELDS` rather than extending it.
 
 ## Alternatives considered

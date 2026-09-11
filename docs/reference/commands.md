@@ -34,7 +34,7 @@ Run these from `examples/reference-service/`.
 | `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. Once the API is healthy, a one-shot `seed` container creates five fixed orders through it — see [Getting started](../getting-started.md#start-with-data-in-it). |
 | `just down` | Stop the stack and remove its volumes, the seed's state included. |
-| `just seed` | Create the same five orders against a service on `localhost:${APP_HTTP_PORT}` (8000 by default) — for `just dev`, which the compose one-shot does not reach. Idempotent: the ids it issued are kept in `.seed-state.json` (ignored by git), and only an order that has gone missing is re-created. |
+| `just seed` | Create the same five orders against a service on `localhost:${APP_HTTP_PORT}` (8000 by default) — for `just dev`, which the compose one-shot does not reach. Idempotent: the ids it issued are kept in `.seed-state.json` (ignored by git), and only an order that has gone missing is re-created. The compose one-shot and `just seed` keep separate state — a named volume versus `.seed-state.json` — so running `just seed` against the `just up` stack creates a second set of five orders; it is for `just dev`. |
 | `just build-images` | Build both container images (the service and the migrations runner) for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning. |
 
 ## Observability
