@@ -336,6 +336,28 @@ check: lint typecheck imports test precommit
 # Everything `check` does, plus the container tier and all five gates.
 check-all: check test-integration gates o11y-gates contract-gates
 
+# Audit every pinned dependency in uv.lock against the PyPI advisory
+# database. `uv export` writes the lock as a fully hashed requirements
+# file and pip-audit reads it with `--disable-pip --require-hashes`, so
+# NOTHING is resolved or installed: pip appears in the tool's name and
+# nowhere else (ADR 0003, spec 10.4). `--all-groups` because a vulnerable
+# test dependency still runs on every laptop and every CI runner.
+# `--strict` fails the run if any requirement could not be audited rather
+# than skipping it silently.
+#
+# Findings change without a commit -- advisories are published against
+# versions already locked -- which is why this is its own CI job and a
+# nightly one, and not part of `just check`. To silence a specific
+# advisory add `--ignore-vuln <ID>` here WITH a comment saying why and
+# until when; there is no other allow-list.
+#
+# The pip-audit version is the one tool pin Dependabot cannot see (it
+# lives in this file, not in uv.lock -- ADR 0014). Its vulnerability data
+# is fetched live, so a stale pin still reports new advisories.
+audit:
+    uv export --frozen --all-groups --format requirements.txt --no-emit-project \
+        | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
+
 # Build both container images, exactly as CI does.
 build-images:
     # Two separate `docker build` calls rather than `docker compose build`:

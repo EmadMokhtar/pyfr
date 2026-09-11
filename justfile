@@ -32,6 +32,13 @@ links:
 test:
     uv run --group dev pytest tests/
 
+# Audit the documentation and release toolchain's lock the same way the
+# reference service audits its own -- see that justfile's `audit` for the
+# flags. Two locks, two audits, one CI job.
+audit:
+    uv export --frozen --all-groups --format requirements.txt --no-emit-project \
+        | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
+
 # Preview the changelog entry the next release will write. Read-only.
 changelog:
     uvx --from commitizen==4.18.0 cz changelog --dry-run --incremental
