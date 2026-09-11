@@ -51,10 +51,10 @@ which adds the repository root's `just audit` for the documentation
 toolchain's lock. It needs Docker, and it is deliberately **not** part of
 `just check-all`: its result
 changes without a commit, because an advisory can be published overnight
-against a version that is already locked. A red `security` on a branch nobody
-has pushed to since yesterday is normal, and the
-[runbook](runbook.md#security-is-red-on-a-pull-request) says what to do with
-it. [Supply chain](reference/supply-chain.md) describes each step.
+against a version that is already locked. `security` can turn red on a
+re-run of an unchanged branch — that is normal, and the
+[runbook](runbook.md#security-is-red-on-a-pull-request) says what to do
+with it. [Supply chain](reference/supply-chain.md) describes each step.
 
 `.python-version` pins the interpreter to 3.13, so `uv sync` uses the same one
 continuous integration does. There is no separate setup step and no drift
@@ -293,14 +293,16 @@ are easy to miss when standing up a fork.
   `pyfr-reference-service-migrations` as *private* packages: `docker pull`
   fails for anyone outside the repository, and the nightly `security` job
   can scan `latest` only because it authenticates with the workflow token.
-  On the repository's page: Packages → the package → Settings → Change
-  visibility, once for each of the two. Nothing in `release.yml` can do
+  Use the package's "Change visibility" setting, under the package's own
+  settings, once for each of the two. Nothing in `release.yml` can do
   this.
-- **Settings → Code security → enable Dependabot alerts and Dependabot
-  security updates.** `.github/dependabot.yml` is the *version* updates
-  schedule and works without either. Alerts are what tells you about a new
-  advisory between two weekly runs, and security updates are what opens a
-  pull request for it the same day rather than at the next weekly run.
+- **Enable Dependabot alerts and Dependabot security updates.** These are
+  the "Dependabot alerts" and "Dependabot security updates" toggles under
+  the repository's security settings. `.github/dependabot.yml` is the
+  *version* updates schedule and works without either. Alerts are what
+  tells you about a new advisory between two weekly runs, and security
+  updates are what opens a pull request for it the same day rather than at
+  the next weekly run.
 
 ### The first release run is not like the others
 

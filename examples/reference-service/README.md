@@ -394,10 +394,10 @@ there today are all in the `migrate/migrate` Go binary, in code `migrate up`
 never runs; a Dependabot bump of that base image is the moment to re-scan
 and drop them.
 
-On release, the repository's workflow builds both images for both
-architectures, scans them, writes the SBOMs, pushes
-`ghcr.io/emadmokhtar/pyfr-reference-service` and
-`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` tagged with the
+On release, the repository's workflow builds and scans the
+single-architecture images first, writes the SBOMs, then builds both images
+for both architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service`
+and `ghcr.io/emadmokhtar/pyfr-reference-service-migrations` tagged with the
 repository's version and `latest`, and attaches the SBOMs to the GitHub
 Release. Nothing is pushed from a pull request. pip is removed from the
 runtime image — it was the only source of findings there — and the image is

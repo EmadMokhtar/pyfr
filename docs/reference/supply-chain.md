@@ -139,10 +139,11 @@ the finding is in code the image never executes, and no release carries the
 patch yet — add an entry with all four fields:
 
 ```yaml
-- id: CVE-2026-56854
-  paths: ["usr/local/bin/migrate"]
-  statement: "golang.org/x/crypto/ssh authentication bypass. migrate opens no ssh connection here. Fixed in x/crypto 0.55.0; not in any migrate release yet."
-  expired_at: 2026-12-10
+vulnerabilities:
+  - id: CVE-2026-56854
+    paths: ["usr/local/bin/migrate"]
+    statement: "golang.org/x/crypto/ssh authentication bypass. migrate opens no ssh connection here. Fixed in x/crypto 0.55.0; not in any migrate release yet."
+    expired_at: 2026-12-10
 ```
 
 `paths` pins the entry to the one file it is about, so the same CVE appearing

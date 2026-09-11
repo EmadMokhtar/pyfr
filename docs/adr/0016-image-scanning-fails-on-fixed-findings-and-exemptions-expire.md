@@ -43,8 +43,9 @@ any recipe or workflow.
 
 Someone must renew or drop the five entries in `.trivyignore.yaml` by
 2026-12-10; a Dependabot bump of the `migrate/migrate` base image is the
-natural moment. `--ignore-unfixed` means unfixed findings are visible in
-the output table but never fail the build on their own — read the table,
-not just the exit code.
+natural moment. `--ignore-unfixed` drops findings with no available fix
+from the report entirely; `docker compose run --rm trivy image
+--ignorefile /.trivyignore.yaml --show-suppressed <image>` lists them
+(status `affected`).
 
 Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

@@ -301,6 +301,7 @@ Dependabot has a failing check.
    `FROM` line is exactly this case.
 
 !!! danger "Do not"
-    Do not close a red Dependabot pull request to make it go away. It
-    reopens next week with the same red, and the advisory it exists to
-    resolve is still open in between.
+    Do not close a red Dependabot pull request to make it go away. Closing
+    it without merging tells Dependabot to skip that version — it will not
+    open the same bump again, so the vulnerable pin stays until a newer
+    release appears, and the alert stays open in between.

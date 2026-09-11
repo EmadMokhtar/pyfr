@@ -33,7 +33,7 @@ no runtime dependency on us, and nothing to lock you in. From M8, a generated
 project will still be able to pull later template fixes into itself through an
 ordinary `git merge`.
 
-## 🚧 Honest status: M0 done, M1–M8 to go
+## 🚧 Honest status: M0–M6 done, M7–M8 to go
 
 **You cannot generate a project yet.** The template itself does not exist
 today. What *does* exist is the
@@ -51,9 +51,9 @@ PyFr is built in three phases:
 
 The rule behind that order: never debug Jinja and Python at the same time. 🙂
 
-**M0 — the walking skeleton — is complete. PyFr becomes a usable template at
-M7.** See the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what
-ships when.
+**M0 through M6 — the reference service — are complete. PyFr becomes a
+usable template at M7.** See the
+[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what ships when.
 
 ## 🚀 Try it in one command
 
