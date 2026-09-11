@@ -53,3 +53,5 @@ as `tufin/oasdiff:v1.31.0`, a pin that predates M6. The ruff hooks carry
 service standalone. Every Dependabot pull request carries the
 `no-docs-needed` label, because a version bump is exactly the
 internal-only change `ci.yml`'s docs-freshness job has that label for.
+
+Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

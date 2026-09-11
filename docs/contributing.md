@@ -19,6 +19,7 @@ pyfr/
   mkdocs.yml  pyproject.toml   documentation site and its toolchain
   justfile                     documentation commands
   .github/workflows/           continuous integration and publishing
+  .github/dependabot.yml       automated dependency updates
 ```
 
 The repository root and the reference service are **two separate Python
@@ -41,6 +42,19 @@ just check
 `just check` is the one command to run before pushing: lint, type-check, the
 import rule, tests, the git hooks, and a check that nothing was rewritten.
 Every recipe is listed in [Commands](reference/commands.md).
+
+`just security` is the other check worth running before a pull request that
+touches a dependency or a Dockerfile. It builds both images, audits the
+service's lockfile with pip-audit, scans both images with Trivy and writes the
+software bills of materials — the same four recipes CI's `security` job runs,
+which adds the repository root's `just audit` for the documentation
+toolchain's lock. It needs Docker, and it is deliberately **not** part of
+`just check-all`: its result
+changes without a commit, because an advisory can be published overnight
+against a version that is already locked. A red `security` on a branch nobody
+has pushed to since yesterday is normal, and the
+[runbook](runbook.md#security-is-red-on-a-pull-request) says what to do with
+it. [Supply chain](reference/supply-chain.md) describes each step.
 
 `.python-version` pins the interpreter to 3.13, so `uv sync` uses the same one
 continuous integration does. There is no separate setup step and no drift
@@ -233,9 +247,19 @@ The commit-message hook is installed by `uv run pre-commit install` in the
 reference service, which wires up both the `pre-commit` and `commit-msg`
 stages.
 
+The hook runs Commitizen, and Commitizen comes from the **root** `uv.lock`,
+not from a version pinned in the hook configuration: the hook's command is
+`uv run --locked --group dev cz`, run from the repository root, so the tool
+that checks a message is the same version that later decides the release. Run
+`uv sync --group dev` at the repository root once to install it (`just
+docs-install` does too, since `dev` is a default group); otherwise `uv run`
+installs it on first use, which makes the first commit slower than it needs
+to be. One pin, in one file Dependabot updates, is the whole point — see
+[ADR 0014](adr/0014-dependabot-and-one-pin-per-tool.md).
+
 ## One-time repository settings
 
-Five settings live in the GitHub interface, not in this repository, so they
+Seven settings live in the GitHub interface, not in this repository, so they
 are easy to miss when standing up a fork.
 
 - **Settings → Pages → Source = "GitHub Actions".** Without it the `Docs`
@@ -264,6 +288,19 @@ are easy to miss when standing up a fork.
   one used later for `gh release create`: `git push` uses the credentials
   `checkout` wired into the local git config, so replacing only the
   `gh release create` token changes nothing.
+- **After the first release, make the two GHCR packages public.** The first
+  `publish-images` run creates `pyfr-reference-service` and
+  `pyfr-reference-service-migrations` as *private* packages: `docker pull`
+  fails for anyone outside the repository, and the nightly `security` job
+  can scan `latest` only because it authenticates with the workflow token.
+  On the repository's page: Packages → the package → Settings → Change
+  visibility, once for each of the two. Nothing in `release.yml` can do
+  this.
+- **Settings → Code security → enable Dependabot alerts and Dependabot
+  security updates.** `.github/dependabot.yml` is the *version* updates
+  schedule and works without either. Alerts are what tells you about a new
+  advisory between two weekly runs, and security updates are what opens a
+  pull request for it the same day rather than at the next weekly run.
 
 ### The first release run is not like the others
 

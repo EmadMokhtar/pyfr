@@ -32,9 +32,10 @@ Run these from `examples/reference-service/`.
 | `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
 | `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
-| `just up` | Build the image and start the container stack. |
-| `just down` | Stop the stack and remove its volumes. |
-| `just build-images` | Build both container images (the service and the migrations runner) without starting them, exactly as CI's `build` job does. |
+| `just up` | Build the image and start the container stack. Once the API is healthy, a one-shot `seed` container creates five fixed orders through it — see [Getting started](../getting-started.md#start-with-data-in-it). |
+| `just down` | Stop the stack and remove its volumes, the seed's state included. |
+| `just seed` | Create the same five orders against a service on `localhost:${APP_HTTP_PORT}` (8000 by default) — for `just dev`, which the compose one-shot does not reach. Idempotent: the ids it issued are kept in `.seed-state.json` (ignored by git), and only an order that has gone missing is re-created. |
+| `just build-images` | Build both container images (the service and the migrations runner) for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning. |
 
 ## Observability
 
@@ -42,7 +43,7 @@ Run these from `examples/reference-service/`.
 | --- | --- |
 | `just o11y` | Everything `just up` starts, plus Grafana, Prometheus, Tempo and Loki in one container, with the dashboards and SLO rules from `ops/` mounted in. Grafana is on <http://localhost:3000> with anonymous admin access — no login. |
 | `just o11y-down` | Stop that stack and remove its volumes, telemetry included. |
-| `just o11y-gates` | Validate the SLO rules with `promtool`: syntax first, then unit tests that feed synthetic series through the real rules and assert the numbers that come out. `promtool` runs from inside the pinned `grafana/otel-lgtm` image, so it needs no separate Prometheus install and can never drift from the version that actually evaluates the rules. |
+| `just o11y-gates` | Validate the SLO rules with `promtool`: syntax first, then unit tests that feed synthetic series through the real rules and assert the numbers that come out. `promtool` runs from inside the pinned `grafana/otel-lgtm` image, so it needs no separate Prometheus install and can never drift from the version that actually evaluates the rules. The image name is read from `compose.yaml` through `docker compose config`, so the one pin there is the one the gate uses. |
 
 See [Observability](observability.md) for what the dashboards show and how
 the objectives are defined.
@@ -65,11 +66,28 @@ catches and the workflow that goes with them.
 | --- | --- |
 | `just config-docs` | Regenerate `.env.example` and the table in [Configuration](configuration.md) from `settings.py`'s `Field(description=...)`. Read the diff before committing it — it is your configuration change, stated completely. |
 | `just config-docs-check` | Fail if either generated file has drifted from the settings model. Part of `just gates`. |
+| `just config-check` | Print the configuration the service would start with, as one JSON object, with every `SecretStr` and every URL password masked — or exit 78 with the same message the service prints when it refuses to start. Reads `.env` as the service does. The same module runs inside the image: `docker compose run --rm app python -m reference_service.config_check`. Not a gate; a tool for [The service will not start](../runbook.md#the-service-will-not-start). |
 
 `settings.py` is the single source of truth for every environment variable
 this service reads. Hand-editing `.env.example` or the table in
 [Configuration](configuration.md) instead of the model is what
 `config-docs-check` exists to catch.
+
+## Supply chain
+
+| Command | What it does |
+| --- | --- |
+| `just audit` | pip-audit over every pinned version in `uv.lock`, against the PyPI advisory database. Reads a `uv export` with `--disable-pip --require-hashes`, so nothing is resolved or installed. Needs no Docker. |
+| `just scan` | Trivy over both built images, for known vulnerabilities and embedded secrets. Fails on a HIGH or CRITICAL finding that has a fix; exemptions only through `.trivyignore.yaml`, and every one expires. Needs Docker, and the images from `just build-images`. |
+| `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` (ignored by git). Needs Docker, and the same images. |
+| `just security` | `build-images`, then `audit`, `scan` and `sbom` — everything CI's `security` job runs, in the order it runs it. Needs Docker. Not part of `just check-all`, because its result changes with the advisory databases rather than with the code. |
+| `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` on a `docker-container` buildx builder, with no output — proof that both architectures still build, which is what CI's `build` job runs. Creates the builder (`pyfr`) on first use. |
+| `just publish-images VERSION` | Build both platforms of both images and push them to GHCR, tagged `VERSION` and `latest`. Run by `release.yml` after `scan` has passed on the same commit's images; not something to run by hand against `ghcr.io`. |
+
+The repository root has its own `just audit`, over the documentation
+toolchain's lock — see [The documentation site](#the-documentation-site)
+below. [Supply chain](supply-chain.md) says where each of these runs in CI and
+what to do when one is red.
 
 ## Outbound HTTP and mutation testing
 
@@ -197,6 +215,7 @@ Run these from the repository root.
 | `just docs` | Live preview on <http://127.0.0.1:8000>, rebuilding as you save. |
 | `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. |
 | `just test` | Run this repository's own script tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves. Needs no Docker. |
+| `just audit` | pip-audit over the root `uv.lock` — the documentation and release toolchain — with the same flags as the reference service's own `audit`. CI's `security` job runs both. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee). Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml`. |
 | `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails. **This is not CI's `docs-freshness` job** — see [Documentation ships with the change](../contributing.md#documentation-ships-with-the-change) for which script each one runs. |
 | `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |

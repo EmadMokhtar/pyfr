@@ -1,14 +1,17 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 covers:
   - examples/reference-service/ops/prometheus/rules/
   - examples/reference-service/justfile
+  - examples/reference-service/src/reference_service/config_check.py
+  - examples/reference-service/.trivyignore.yaml
 ---
 
 # Runbook
 
-Four procedures, for four things that go wrong. Each says what you will
-see, how to confirm it, and what to do.
+Seven procedures, for seven things that go wrong. Each says what you will
+see, how to confirm it, and what to do. The first five are about a running
+service; the last two are about a red check on a pull request.
 
 **Before anything else:** capture the correlation identifier from the
 failing request. Every log line carries it, and filtering on it hands you
@@ -18,6 +21,56 @@ and having both is what turns "the API is slow" into one traceable
 request instead of a guess.
 
 All `just` commands below run from `examples/reference-service/`.
+
+## The service will not start
+
+**Symptom.** The process exits within a second of starting, with exit code
+78 and `Invalid configuration:` on standard error. In compose, `app` exits
+before its health check ever passes.
+
+**Confirm.** Run the configuration check against the same environment. On a
+machine with the source checked out:
+
+```bash
+just config-check
+```
+
+Inside the image, where the environment is whatever the container was
+given:
+
+```bash
+docker compose run --rm app python -m reference_service.config_check
+```
+
+Both load settings exactly as the service does at startup, so they fail in
+the same way it did, or they print what it would have run with.
+
+- **Exit 78.** One line per problem, each naming the field, what is wrong
+  with it, and the rule that rejected it — and never the value, because for
+  `APP_DATABASE__DSN` that value holds a password:
+
+    ```
+    Invalid configuration:
+      http_port: Input should be less than or equal to 65535 (less_than_equal)
+    ```
+
+- **Exit 0.** One JSON object, keys sorted, holding the configuration the
+  service *would* run with. Every `SecretStr` prints as `**********`, and the
+  password inside any URL — `APP_DATABASE__DSN`, `APP_CACHE__DSN` — is
+  replaced the same way. Read it against what you expected: a field showing
+  its default was not set where you thought, and a `null` block
+  (`"database": null`) means that dependency is not configured at all and
+  the in-memory fallback is in use.
+
+**Act.** Fix the variable the message names, and run the check again before
+restarting the service. Every variable is listed in
+[Configuration](reference/configuration.md#variables).
+
+!!! danger "Do not"
+    Do not add a print of the raw settings to find out what the service
+    saw. The exit-78 message elides the value on purpose, and `model_dump`
+    prints URL passwords in clear — the check exists so that nobody needs
+    to.
 
 ## A migration is dirty
 
@@ -173,3 +226,81 @@ expected version.
     Do not roll an image back without checking for a migration first.
     This is the mistake that turns a bad release into an outage, which
     is why the check is the first step here, not a caveat at the end.
+
+## `security` is red on a pull request
+
+**Symptom.** CI's `security` job fails. It runs one recipe per step, so
+the step name says which one.
+
+**Confirm.** The step that failed is the whole diagnosis:
+
+| Step | What it means |
+| --- | --- |
+| Build both images | A plain build failure in one of the two Dockerfiles. Nothing to do with advisories. |
+| Audit … lock | pip-audit found an advisory against a version pinned in `uv.lock` — the reference service's, or the documentation toolchain's at the repository root; there is one step for each. |
+| Scan both images | Trivy found a HIGH or CRITICAL vulnerability with a fix available, or an embedded secret, in one of the two images. |
+| Write the software bills of materials | Trivy could not write the SBOM — almost always a problem with the image or the Docker socket, not with a dependency. |
+
+Reproduce locally with `just security`, which runs the same recipes in the
+same order (the root's `just audit` aside) and needs Docker.
+
+**Act.**
+
+- **`audit`:** in the project whose lock was named, bump the package and
+  re-run:
+
+    ```bash
+    uv lock --upgrade-package <name>
+    just audit
+    ```
+
+    Commit `uv.lock`. If no fixed version exists yet, the recipe's own
+    comment in the `justfile` says how to silence one advisory, with a
+    reason and a date.
+
+- **`scan`:** follow [Reading a scan failure](reference/supply-chain.md#reading-a-scan-failure)
+  — bump the package or the base image, or exempt the finding through
+  `.trivyignore.yaml` with a reason, a path and an expiry.
+
+- **A finding that appeared with no related change in the pull request** is
+  an advisory published overnight, and the nightly `security` job will be
+  red for the same reason. It is the pull request's to fix only if the fix
+  is trivial — a one-package bump that passes `just security`. Otherwise
+  open an issue for it, exempt it with a short expiry so this pull request
+  can merge, and let the issue own the real fix.
+
+!!! danger "Do not"
+    Do not add a skip flag, a `continue-on-error`, or an allow-list to make
+    the job green. `.trivyignore.yaml` is the only exemption path, every
+    entry there expires, and the nightly job re-checks the same thing — a
+    silenced job is a job nobody reads ([ADR 0016](adr/0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire.md)).
+
+## A Dependabot pull request is red
+
+**Symptom.** A weekly `build(deps)` or `ci(deps)` pull request opened by
+Dependabot has a failing check.
+
+**Confirm.** Which job failed decides which of two cases this is.
+
+**Act, per case.**
+
+1. **A test, lint or gate job failed.** The bump broke something. Treat it
+   as any other failing pull request: check out the branch, run the failing
+   recipe locally, fix the code or pin the package below the breaking
+   version in `pyproject.toml` with a comment saying why. Dependabot's
+   branch can be pushed to like any other.
+
+2. **The `security` job failed on an image bump.** A new base image
+   version fixed less than hoped, or introduced a new finding. Run
+   `just security` on the branch and read the scan table. Two things
+   change at once here: `.trivyignore.yaml` entries pinned to findings the
+   new version *did* fix are no longer needed and can be dropped, and a
+   finding the new version *introduced* may need a new entry, with its own
+   reason and expiry. The five entries the file carries today all belong to
+   the `migrate/migrate` binary, so a bump of `Dockerfile.migrations`'s
+   `FROM` line is exactly this case.
+
+!!! danger "Do not"
+    Do not close a red Dependabot pull request to make it go away. It
+    reopens next week with the same red, and the advisory it exists to
+    resolve is still open in between.

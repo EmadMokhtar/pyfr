@@ -91,8 +91,10 @@ a promise:
 - 🔒 **A hardened container image**: non-root, no build tools, no shell
   utilities in the final layer, and reproducible installs from a lock file.
 
-Still to come in M1–M6: persistence, OpenTelemetry, contract testing, cache
-and object storage, release automation, and supply-chain scanning.
+M1–M6 have since added persistence, OpenTelemetry, contract testing, cache and
+object storage, release automation, and supply-chain auditing, scanning and
+publishing — the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) lists
+what each one delivered.
 
 ## 📚 Documentation
 

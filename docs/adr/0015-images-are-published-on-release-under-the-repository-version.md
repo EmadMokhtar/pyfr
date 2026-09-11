@@ -44,3 +44,5 @@ every release, which is what the nightly scan wants — it checks whatever
 is deployed now — and what a real deployment should never pin to, since
 it gives no guarantee about which release it points at from one day to
 the next.
+
+Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

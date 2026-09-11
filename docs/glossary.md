@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 ---
 
 # Glossary
@@ -18,11 +18,15 @@ Terms used across this site, each in one line.
 | Copier | An alternative template tool with updates built in; considered and rejected. |
 | cruft | A tool adding update support to cookiecutter templates; considered and rejected. |
 | Correlation identifier | One value bound to every log line a single request produces. |
+| CVE | Common Vulnerabilities and Exposures — the public naming scheme for known vulnerabilities; `CVE-2026-56854` is one entry. |
+| CycloneDX | The SBOM format Trivy writes — one JSON document listing every component in an image, with versions. |
+| Dependabot | GitHub's own dependency-update service. Opens a pull request when a pinned version has a newer release. |
 | Diátaxis | A documentation framework separating tutorials, how-to guides, reference, and explanation. |
 | Drift gate | A build check that fails when a generated artifact no longer matches the code that produces it. |
 | Entity | An object with an identity that persists through change, such as an `Order`. |
 | Error budget | The amount of failure a service level objective permits — for example 0.1% of requests over 30 days. |
 | Frozen | Immutable after construction. Assigning to a field raises instead of changing the value. |
+| GHCR | GitHub Container Registry — `ghcr.io`, where the release workflow pushes the two images. |
 | gitleaks | A scanner that blocks commits containing secrets. |
 | Hypothesis | The property-based testing library used for domain invariants. |
 | import-linter | The tool that enforces the dependency rule by reading the import graph. |
@@ -31,17 +35,22 @@ Terms used across this site, each in one line.
 | Liveness | "Is this process alive?" — the question `/healthz` answers, without checking dependencies. |
 | Log agent | A platform process that reads containers' standard output and forwards it to a log store. |
 | Merge base | The most recent commit two branches share — the "before" state a three-way merge compares both sides against. |
+| Multi-architecture image | One image tag that holds a build per CPU architecture (`amd64`, `arm64`), so every machine pulls the same tag and gets its own. |
 | Mutation testing | Introducing small deliberate bugs to check whether the tests actually catch them. |
 | mypy | The static type checker. Strict on `domain/` and `services/`, lenient elsewhere. |
+| OCI image index | The manifest list behind a multi-architecture tag: one entry per platform, each pointing at that platform's image. OCI is the Open Container Initiative, which standardises image formats. |
 | OpenTelemetry | The vendor-neutral standard for traces, metrics, and logs. |
 | OTLP | OpenTelemetry Protocol — the wire format those signals are sent in. |
+| pip-audit | A tool that checks pinned Python packages against the PyPI advisory database. Runs here over a `uv export`, without pip. |
 | Port | An interface owned by the domain, describing what it needs without saying how. |
 | Problem Details | RFC 9457 — the internet standard shape for a JSON error body. |
 | Property-based testing | Generating many random inputs to check that a rule holds, rather than testing fixed examples. |
 | Protocol | Python's structural interface — satisfied by having the right methods, with no inheritance. |
 | Pydantic | The validation library. Used in the domain layer as a validation tool, not as a web framework. |
+| QEMU | A processor emulator. In CI it lets an `amd64` runner build the `arm64` side of a multi-architecture image. |
 | Readiness | "Can this instance serve traffic right now?" — the question `/readyz` answers. |
 | RED metrics | Rate, Errors, Duration — the three signals a request-serving service needs. |
+| Redaction | Replacing a value with `[REDACTED]` before a log record is rendered. Done by field name, in the shared processor chain. |
 | Repository | An interface for loading and saving entities, expressed in domain terms. |
 | ruff | The linter and formatter. |
 | SBOM | Software Bill of Materials — a machine-readable inventory of everything inside a built artifact. |

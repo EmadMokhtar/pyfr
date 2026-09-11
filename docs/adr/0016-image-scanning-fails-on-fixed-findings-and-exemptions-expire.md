@@ -46,3 +46,5 @@ Someone must renew or drop the five entries in `.trivyignore.yaml` by
 natural moment. `--ignore-unfixed` means unfixed findings are visible in
 the output table but never fail the build on their own — read the table,
 not just the exit code.
+
+Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

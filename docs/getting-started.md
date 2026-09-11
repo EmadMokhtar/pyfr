@@ -1,7 +1,8 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 covers:
   - examples/reference-service/justfile
+  - examples/reference-service/src/reference_service/seed.py
 ---
 
 # Getting started
@@ -19,7 +20,7 @@ PyFr template will generate once the template exists — see the
 | --- | --- |
 | [uv](https://docs.astral.sh/uv/) | The only Python tool required. It installs Python itself, resolves dependencies, and runs commands. |
 | [just](https://github.com/casey/just) | A command runner. Every task in this project is a `just` recipe. |
-| Docker | Only for `just up`. Not needed for the steps below. |
+| Docker | Only for `just up`, in [Start with data in it](#start-with-data-in-it). Nothing else below needs it. |
 
 You do **not** need to install Python separately. `uv` reads
 `.python-version` and fetches the right interpreter.
@@ -53,6 +54,66 @@ just dev
 That serves on <http://localhost:8000> with auto-reload: edit a file and the
 server restarts itself. Interactive API documentation is at
 <http://localhost:8000/docs>.
+
+## Start with data in it
+
+`just dev` starts empty. With Docker, the container stack starts with five
+orders already in it. Stop `just dev` first (Ctrl-C) — both serve on port
+8000 — then:
+
+```bash
+just up
+```
+
+That builds the image, starts PostgreSQL, Redis, MinIO and a payment stub,
+applies the migrations, and starts the API. Once the API reports healthy, a
+one-shot `seed` container creates five fixed orders through the HTTP API and
+exits. The line to look for in the output is:
+
+```
+seed-1 exited with code 0
+```
+
+The orders it created, with the ids the service assigned them:
+
+```bash
+docker compose logs seed
+```
+
+```
+seed-1  | espresso-beans  c8e7aa28-be07-4916-9b1e-eb2cae1f654a     37.00 EUR  created
+seed-1  | filter-papers   603394d1-950d-4c6f-a388-d4c8eee60f0e     12.75 EUR  created
+seed-1  | grinder         eba6a954-cee1-45c5-ba74-3804a4d55af6    249.00 EUR  created
+seed-1  | mixed-basket    6d580aeb-2dbd-4240-9bfd-20a890d324f1     52.00 EUR  created
+seed-1  | bulk-order      ac7eefb7-d04c-4fdc-8af5-34afffcb6f78    462.50 USD  created
+```
+
+Any of those ids answers a `GET` straight away, before you have placed
+anything yourself:
+
+```bash
+curl -s http://localhost:8000/api/v1/orders/c8e7aa28-be07-4916-9b1e-eb2cae1f654a | jq
+```
+
+The ids differ on every machine — the service assigns them — so copy one
+from your own `seed` output rather than from this page.
+
+The seed is idempotent (running it again changes nothing): the ids it issued
+are kept in a small state file, and a second `just up` finds every order still
+there and prints `exists` instead of `created`. `just down` removes the state
+with the database, so the next `just up` seeds again.
+
+The same five orders are available without Docker. With `just dev` running in
+one terminal, in another:
+
+```bash
+just seed
+```
+
+That runs the same module against `localhost:8000`, keeps its state in
+`.seed-state.json` (ignored by git), and prints the same five lines. `just dev`
+holds orders in memory, so after a restart `just seed` finds them gone and
+creates them again.
 
 ## Check that it is alive
 
@@ -162,11 +223,12 @@ says which business rule broke. One module in the api layer decides that
 "not found" means 404. That separation is [the dependency
 rule](explanation/layers.md) at work.
 
-!!! note "Orders do not survive a restart"
+!!! note "Orders do not survive a restart of `just dev`"
 
-    M0 stores orders in memory, on purpose. There is no database yet.
-    Restart the service and the order is gone. M1 adds PostgreSQL behind the
-    same interface, and nothing above the storage layer changes when it does.
+    With no database configured, the service stores orders in memory, on
+    purpose. Restart `just dev` and the order is gone — `just seed` puts the
+    five fixed ones back. `just up` runs PostgreSQL behind the same
+    interface, and nothing above the storage layer changes when it does.
 
 ## Run the checks
 

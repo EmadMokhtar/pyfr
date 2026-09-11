@@ -84,6 +84,7 @@ nav:
       - Errors: reference/errors.md
       - Logging: reference/logging.md
       - Observability: reference/observability.md
+      - Supply chain: reference/supply-chain.md
   - Decisions:
       - Overview: adr/README.md
       - 0001 Four-layer dependency rule: adr/0001-four-layer-dependency-rule.md

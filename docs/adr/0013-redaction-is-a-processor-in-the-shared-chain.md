@@ -58,3 +58,5 @@ covered: nothing reads message text, only keys. `SecretStr` and
 `load_settings`'s `include_input=False` close the two value-shaped holes
 that remain in our own code. The limitation is documented in
 `docs/reference/logging.md`.
+
+Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).
