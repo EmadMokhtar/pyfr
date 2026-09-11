@@ -213,8 +213,8 @@ migrate:
 # --no-deps because creating files needs no database, and --entrypoint skips
 # the -database flag `create` has no use for. --user "$(id -u):$(id -g)"
 # because the migrate/migrate image runs as root by default (confirmed:
-# `docker run --rm --entrypoint sh migrate/migrate:v4.19.0 -c id` reports
-# uid=0) and this command writes through a bind mount (compose.yaml mounts
+# `docker run --rm --entrypoint sh <the migrate/migrate image> -c id`
+# reports uid=0) and this command writes through a bind mount (compose.yaml mounts
 # ./migrations over the image's own copy) — on a native Linux Docker host,
 # a bind mount keeps the writing process's real uid, so the two new files
 # come out root-owned and need sudo to edit or delete. No-op on macOS:
@@ -318,8 +318,9 @@ precommit:
 
 # Everything CI checks, failing loudly if a hook modified the tree.
 check: lint typecheck imports test precommit
-    # Several pre-commit hooks mutate files (ruff-format, uv-lock,
-    # end-of-file-fixer, trailing-whitespace), so `precommit` above can
+    # Two pre-commit hooks mutate files (end-of-file-fixer and
+    # trailing-whitespace; the ruff and uv-lock hooks run with `--check`
+    # and only report), so `precommit` above can
     # modify the tree and still exit 0 — a `check` that only runs it would
     # pass on a second run without anyone noticing the tree changed.
     # `git diff --exit-code` after it turns any such mutation into a loud
@@ -358,7 +359,15 @@ check-all: check test-integration gates o11y-gates contract-gates
 # The pip-audit version is the one tool pin Dependabot cannot see (it
 # lives in this file, not in uv.lock -- ADR 0014). Its vulnerability data
 # is fetched live, so a stale pin still reports new advisories.
+#
+# A `#!`-shebang recipe with `pipefail`, not a plain line: the gate must
+# be red when the producer fails, and without `pipefail` a failing
+# `uv export` leaves pip-audit reading an empty stdin, which passes
+# (verified: an empty stdin prints "No known vulnerabilities found" and
+# exits 0).
 audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
     uv export --frozen --all-groups --format requirements.txt --no-emit-project \
         | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
 
@@ -407,8 +416,12 @@ build-images:
     # gain by chaining them, and a failing build stays easy to tell apart
     # from the other. No `-f Dockerfile` on the first: that is docker's own
     # default, and the second build needs `-f` only because it is not.
-    docker build -t reference-service:ci .
-    docker build -f Dockerfile.migrations -t reference-service-migrations:ci .
+    # `--load` is a no-op on the default `docker` driver and is what keeps
+    # this image in the daemon if a developer has made a
+    # `docker-container` builder current (`docker buildx create --use`) --
+    # `scan` and `sbom` read the daemon over the socket.
+    docker build --load -t reference-service:ci .
+    docker build --load -f Dockerfile.migrations -t reference-service-migrations:ci .
 
 # A buildx builder that can build two platforms at once. The default
 # builder on Docker Desktop uses the `docker` driver, which cannot
