@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 ---
 
 # 0010. Commit the OpenAPI document and gate it on drift
@@ -22,8 +22,10 @@ gate in CI that regenerates the document and fails the build on any
 difference from the committed copy. A second committed file,
 `openapi.baseline.json`, holds the last released contract, and `oasdiff`
 compares the current specification against it to classify every change
-as breaking or not, feeding the version-bump cross-check described in
-spec section 10.2.
+as breaking or not, feeding the Conventional Commits cross-check described
+in spec section 10.2: a breaking change ships only when a commit in the
+range under test marks itself breaking (`feat!:`, `feat(api)!:`, or a
+`BREAKING CHANGE:` footer), and fails the build otherwise.
 
 ## Alternatives considered
 
