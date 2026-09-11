@@ -10,8 +10,10 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import pytest
+from pydantic import BaseModel, Field
 
 # scripts/ is not an installed package; the generator is a build tool that
 # lives beside the code it reads.
@@ -23,6 +25,7 @@ from generate_config_docs import (
     MARKER_END,
     ConfigGroup,
     ConfigVariable,
+    _render_type,
     check_outputs,
     render_env_example,
     render_markdown_table,
@@ -117,6 +120,36 @@ def test_constraints_reach_the_type_label(by_name: dict[str, ConfigVariable]) ->
 
 def test_bounded_integers_render_as_a_range(by_name: dict[str, ConfigVariable]) -> None:
     assert by_name["APP_HTTP_PORT"].type_label == "integer, 1–65535"
+
+
+# No field on the real Settings model uses Le alone or Gt combined with Le
+# today -- these are throwaway models built only to exercise those two
+# shapes, rather than waiting for a real field to happen to need one.
+
+
+class _UpperBoundOnly(BaseModel):
+    x: Annotated[float, Field(le=100.0)]
+
+
+class _ExclusiveLowerAndUpperBound(BaseModel):
+    x: Annotated[float, Field(gt=0.0, le=100.0)]
+
+
+def test_an_upper_bound_alone_is_not_dropped() -> None:
+    """`Le` with no `Ge`/`Gt` used to fall through to the bare base label,
+    rendering a field capped at 100 as plain "float" -- no bound at all.
+    """
+    info = _UpperBoundOnly.model_fields["x"]
+    assert _render_type(info) == "float, ≤ 100.0"
+
+
+def test_an_exclusive_lower_bound_with_an_upper_bound_keeps_both() -> None:
+    """`Gt` combined with `Le` used to render only the lower bound
+    ("float, > 0"), silently dropping the upper one -- the specific
+    confidently-wrong-output shape this generator exists to eliminate.
+    """
+    info = _ExclusiveLowerAndUpperBound.model_fields["x"]
+    assert _render_type(info) == "float, > 0.0, ≤ 100.0"
 
 
 def test_literals_render_as_alternatives(by_name: dict[str, ConfigVariable]) -> None:

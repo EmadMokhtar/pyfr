@@ -144,10 +144,22 @@ def _constraint_label(base: str, metadata: list[Any]) -> str:
         elif isinstance(item, annotated_types.Gt):
             exclusive_minimum = item.gt
 
+    # Every combination has to render BOTH bounds when both are present.
+    # The bug this replaced handled only Ge+Le together (the one shape a
+    # real field happens to use today) and fell through to a lower-bound-only
+    # label — or, for Gt+Le, to an upper-bound-DROPPING label — for every
+    # other combination. Losing the upper bound silently is worse than an
+    # ugly label: "float, > 0" for a field capped at 100 is confidently
+    # wrong, not merely unpolished, which is the exact failure this
+    # generator exists to eliminate.
     if minimum is not None and maximum is not None:
         return f"{base}, {minimum}–{maximum}"
+    if exclusive_minimum is not None and maximum is not None:
+        return f"{base}, > {exclusive_minimum}, ≤ {maximum}"
     if minimum is not None:
         return f"{base}, ≥ {minimum}"
+    if maximum is not None:
+        return f"{base}, ≤ {maximum}"
     if exclusive_minimum is not None:
         return f"{base}, > {exclusive_minimum}"
     return base
