@@ -158,3 +158,85 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         # No dependencies: the script is stdlib-only, so this needs no uv sync.
         run: python3 scripts/check_docs_updated.py "$BASE_SHA" HEAD
+
+  docs-warnings:
+    # Advisory only -- review dates and path coupling. Never fails; see
+    # docs/contributing.md for what has to be true before it does.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `just docs-freshness` diffs base...head, which needs real history.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install the documentation toolchain
+        # For PyYAML, which arrives transitively with MkDocs.
+        run: uv sync --group docs
+
+      - name: Report documentation freshness
+        env:
+          # Passed via env rather than interpolated into the script body, so
+          # nothing from the event payload can be read as shell.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # Calls the same `just docs-freshness` recipe a developer runs
+        # locally, rather than invoking scripts/check_docs_freshness.py
+        # directly -- see the Global Constraint on `just` as the one
+        # definition of a gate.
+        run: just docs-freshness "$BASE_SHA" HEAD
+
+  links:
+    # External links only; internal ones are `mkdocs build --strict`'s job
+    # in the `docs` job above. Separate from that job because this one
+    # depends on the internet being well, and a network blip should not
+    # read as a broken site.
+    #
+    # Deliberately NOT `just links`, unlike every other gate in this file.
+    # This is a recorded exemption, not an oversight: the
+    # `lycheeverse/lychee-action@v2` action supplies the `lychee` binary
+    # itself, which this runner does not otherwise have -- installing it
+    # some other way just to shell out to `just links` would add a step
+    # for no benefit. `lychee.toml` still stays the single definition of
+    # the check's behaviour either way, since the action is pointed at the
+    # same config file and the same paths that recipe uses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check external links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md
+          fail: true
+
+  docs-examples:
+    # The documented `curl` examples, against a real running stack.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just docs-examples
+
+  build:
+    # Proves the Dockerfile still builds. Deliberately no push and no
+    # multi-architecture matrix -- both are M6, with the registry and the
+    # vulnerability scanning that should accompany them.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - name: Build both container images
+        run: just build-images

@@ -306,6 +306,18 @@ check: lint typecheck imports test precommit
 # Everything `check` does, plus the container tier and all five gates.
 check-all: check test-integration gates o11y-gates contract-gates
 
+# Build both container images, exactly as CI does.
+build-images:
+    # Two separate `docker build` calls rather than `docker compose build`:
+    # the migrations image (Dockerfile.migrations) is `FROM
+    # migrate/migrate`, sharing no base and no build stage with the
+    # application image's own Dockerfile, so there is no cache or layer to
+    # gain by chaining them, and a failing build stays easy to tell apart
+    # from the other. No `-f Dockerfile` on the first: that is docker's own
+    # default, and the second build needs `-f` only because it is not.
+    docker build -t reference-service:ci .
+    docker build -f Dockerfile.migrations -t reference-service-migrations:ci .
+
 up:
     docker compose up --build
 
