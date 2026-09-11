@@ -56,7 +56,7 @@ from reference_service.settings import CacheSettings, DatabaseSettings, StorageS
 # Pinned, and pinned to the same versions compose uses. A gate that passes
 # against a different PostgreSQL than production runs is not a gate.
 POSTGRES_IMAGE = "postgres:16-alpine"
-MIGRATE_IMAGE = "migrate/migrate:v4.19.0"
+MIGRATE_IMAGE = "migrate/migrate:v4.20.1"
 
 # Pinned, and pinned to the same tag compose.yaml uses. A gate that passes
 # against a different Redis than the local stack runs is not a gate.

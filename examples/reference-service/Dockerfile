@@ -26,6 +26,23 @@ FROM python:3.13-slim-trixie AS runtime
 
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
+# pip is not used at runtime -- the virtual environment copied in below
+# was built by uv -- and the copy the base image ships is the ONLY source
+# of vulnerability findings in this image: its vendored msgpack
+# (GHSA-6v7p-g79w-8964) and pkg_resources (CVE-2025-47273) are both HIGH,
+# both fixed upstream, and both unreachable from anything this service
+# runs (M6 plan, Verified Fact 5). Removing pip removes the findings, and
+# a tool nobody should run inside a production container. The interpreter
+# is named by its full path on purpose: /app/.venv/bin goes first on PATH
+# below, and the venv's own python has no pip to uninstall.
+RUN /usr/local/bin/python -m pip uninstall -y pip
+
+# What links a pushed image to this repository on GHCR, so the package
+# inherits the repository's visibility and README. Version and revision
+# are stamped at publish time (`just publish-images`); they are not known
+# here. Becomes a template variable in M7.
+LABEL org.opencontainers.image.source="https://github.com/EmadMokhtar/pyfr"
+
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
 COPY --from=builder --chown=app:app /app/src /app/src

@@ -5,7 +5,10 @@
 # no Python interpreter and no service code, so applying the schema never
 # depends on the application being importable — which is the reason spec D12
 # chose golang-migrate over Alembic.
-FROM migrate/migrate:v4.19.0
+FROM migrate/migrate:v4.20.1
+
+# See the application Dockerfile for why this label exists.
+LABEL org.opencontainers.image.source="https://github.com/EmadMokhtar/pyfr"
 
 COPY migrations/ /migrations/
 
