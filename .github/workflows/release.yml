@@ -133,10 +133,14 @@ jobs:
             status=$?
             set -e
 
-            # Exit 21 is NO_COMMITS_FOUND: nothing releasable since the
-            # last tag, an ordinary outcome for a docs-only merge, not a
-            # failure.
-            if [ "$status" -eq 21 ]; then
+            # Exit 3 is NO_COMMITS_FOUND (no commits at all since the last
+            # tag -- reachable via workflow_dispatch, whose whole purpose
+            # is cutting a release with no new commit) and exit 21 is
+            # NO_INCREMENT (commits exist but none of them imply a version
+            # bump, e.g. a docs-only merge). Both mean "nothing to
+            # release", not a failure, so both take the same graceful
+            # no-op.
+            if [ "$status" -eq 3 ] || [ "$status" -eq 21 ]; then
               echo "mode=bump" >> "$GITHUB_OUTPUT"
               echo "released=false" >> "$GITHUB_OUTPUT"
               echo "No releasable commits since the last tag."
@@ -158,11 +162,24 @@ jobs:
         # history -- only a new tag exists locally -- so only the tag
         # needs to reach origin. The steady-state `cz bump` branch made a
         # bump commit too, so both the commit and its tag need pushing.
+        #
+        # Both branches push the tag by name explicitly rather than via
+        # `--follow-tags`, because `--follow-tags` only pushes *annotated*
+        # tags reachable from the pushed ref, and the tags both `cz bump`
+        # and the bootstrap branch create are plain (lightweight) tags --
+        # matching this project's Commitizen config, which sets no
+        # `annotated_tag` option. `--follow-tags origin main` would report
+        # success while silently leaving the tag unpushed; verified end to
+        # end in an isolated clone against a real bare remote: after `cz
+        # bump` created a lightweight tag, `git push --follow-tags origin
+        # main` exited 0 but `git ls-remote --tags origin` showed the tag
+        # had never arrived.
         run: |
           if [ "${{ steps.bump.outputs.mode }}" = "bootstrap" ]; then
             git push origin "v${{ steps.bump.outputs.version }}"
           else
-            git push --follow-tags origin main
+            git push origin main
+            git push origin "v${{ steps.bump.outputs.version }}"
           fi
 
       - name: Publish the GitHub Release
