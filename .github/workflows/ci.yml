@@ -122,7 +122,7 @@ jobs:
     # `just check` at the repository root: the documentation site build
     # (`docs-build`, --strict) plus the root project's own test suite
     # (`test`), which covers scripts/check_docs_freshness.py and
-    # scripts/check_docs_updated.py -- neither ran in CI before this. Job id
+    # scripts/check_doc_examples.py -- neither ran in CI before this. Job id
     # kept as `docs` rather than renamed: the documentation build is still
     # most of what this job does, and renaming a job id changes what GitHub
     # calls a required status check, which this repository cannot see or
@@ -188,7 +188,11 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Install the documentation toolchain
-        # For PyYAML, which arrives transitively with MkDocs.
+        # `scripts/check_docs_freshness.py` does `import yaml` directly.
+        # PyYAML is declared as a direct `dev` dependency (pyproject.toml)
+        # precisely so that does not depend on MkDocs happening to pull it
+        # in transitively; `uv sync` installs the default `dev` group
+        # alongside whichever `--group` is named explicitly.
         run: uv sync --group docs
 
       - name: Report documentation freshness

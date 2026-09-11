@@ -16,9 +16,12 @@ these warnings become failures -- the switch is deliberate and not taken
 here, because a large refactor trips path coupling across many pages at
 once, which lands exactly when a team is busiest.
 
-Needs PyYAML, which arrives transitively with MkDocs, so this runs in the
-documentation job after `uv sync --group docs` rather than as a bare
-python3 script the way check_docs_updated.py does.
+Needs PyYAML -- declared as a direct `dev` dependency in the root
+`pyproject.toml` precisely so this import does not depend on MkDocs
+happening to pull PyYAML in transitively -- so this runs in the
+documentation job after `uv sync --group docs` (which installs the
+default `dev` group alongside it) rather than as a bare python3 script the
+way check_docs_updated.py does.
 """
 
 from __future__ import annotations

@@ -177,9 +177,13 @@ schema-snapshot:
 
 # Version collisions and the migration manifest come from the unit tier; the
 # snapshot, reversibility and model-drift gates need a database. The
-# configuration drift check needs neither, but lives here rather than in
-# `check` because it is a generated-artifact gate in the same shape as the
-# other five, not a fast per-commit lint.
+# configuration drift check needs neither, and it is not gates-only: its
+# test, `tests/unit/test_config_docs.py::test_committed_outputs_are_current`,
+# carries no marker, so it already runs in the default `just test` / `just
+# check` tier too. It is called again here, explicitly, so `just gates` run
+# on its own -- without the rest of the unit tier alongside it -- still
+# catches it, in the same generated-artifact shape as the other five schema
+# gates.
 #
 # Run all five schema gates, plus the configuration reference drift check.
 gates:

@@ -196,7 +196,7 @@ Run these from the repository root.
 | `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
 | `just docs` | Live preview on <http://127.0.0.1:8000>, rebuilding as you save. |
 | `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. |
-| `just test` | Run this repository's own script tests (`tests/`) — the tests for `scripts/check_docs_updated.py` and `scripts/check_docs_freshness.py` themselves. Needs no Docker. |
+| `just test` | Run this repository's own script tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves. Needs no Docker. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee). Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml`. |
 | `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails. **This is not CI's `docs-freshness` job** — see [Documentation ships with the change](../contributing.md#documentation-ships-with-the-change) for which script each one runs. |
 | `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |
