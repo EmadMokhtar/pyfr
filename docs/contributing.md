@@ -3,6 +3,7 @@ last_reviewed: 2026-09-11
 covers:
   - scripts/check_docs_updated.py
   - scripts/check_docs_freshness.py
+  - scripts/check_doc_examples.py
 ---
 
 # Contributing
@@ -88,7 +89,7 @@ deliberately does not count it.
 
 ## Documentation ships with the change
 
-Three independent mechanisms enforce this, and each catches something
+Four independent mechanisms enforce this, and each catches something
 different.
 
 **`scripts/check_docs_updated.py`** is a hard gate. It fails a pull request
@@ -115,6 +116,60 @@ a renamed heading anchor, or an unresolvable include. `lychee` does the
 equivalent check for links leaving the site, against the real internet, in
 its own CI job — kept separate from the site build so a network blip reads as
 a network blip, not as a broken site.
+
+**`scripts/check_doc_examples.py`** is a hard gate on behaviour rather than
+prose: it runs every `curl` example marked `<!-- exec -->` against a real,
+running service (`just docs-examples` starts the full compose stack, runs
+the script, then tears the stack down whether it passed or failed) and
+fails on the first example whose commands do not succeed. Where the other
+three mechanisms ask "did the right files change together", this one asks
+"does the documented example still work" — a stale sentence is a nuisance,
+but a `curl` example that 404s is a reader concluding the service itself is
+broken. It is not part of `just check-all`; it runs as its own
+`docs-examples` job in CI, against a stack that job starts itself.
+
+### The `<!-- exec -->` marker
+
+A fenced block opts into `check_doc_examples.py` by putting the literal
+line `<!-- exec -->` on its own line, immediately before the block's
+opening fence:
+
+    <!-- exec -->
+    ```bash
+    curl -si http://localhost:8000/healthz
+    ```
+
+Most fenced blocks in this documentation are not runnable — a file's
+contents, a fragment of output, a command that would modify the reader's
+own machine — so the marker is opt-in rather than "every bash fence": that
+keeps the runnable set small enough to trust, instead of a wall of
+exclusions for everything that is not meant to run.
+
+A marked block must satisfy two rules. The check's own execution model
+takes care of the first one; the second is not enforced by anything and
+has to be got right by hand:
+
+- **Self-contained.** Each marked block genuinely runs as its own `bash
+  -euo pipefail` invocation, with nothing carried over from an earlier
+  block — no shared shell variable, no earlier `cd`. A block that depends
+  on state a previous example left behind fails on its own, since that
+  state was never there to begin with.
+- **Assert something; do not merely run something.** `curl` on its own
+  exits `0` on an HTTP error response — a 404 or a 500 is still a
+  "successful" `curl` invocation as far as the shell is concerned, and
+  the check only looks at the shell's exit code. A marked block has to
+  check the response itself and fail the shell if it does not match, the
+  way the examples in [Getting started](getting-started.md) capture the
+  response and then `grep -q ... <<< "$response"` against the status line
+  and body. `curl -f` is the single-command version of the same rule when
+  only the status code matters.
+
+If every `<!-- exec -->` block is ever removed from `docs/`, the check
+fails on purpose: "no examples found" is treated as a bug — the marker
+was renamed, or the examples were deleted — never as a silent pass. A new
+runnable example anywhere under `docs/` (outside `docs/superpowers/`,
+which this check does not scan) needs the marker and has to satisfy both
+rules above.
 
 ### `just docs-freshness` is not CI's `docs-freshness` job
 
