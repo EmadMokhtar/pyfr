@@ -163,7 +163,7 @@ see — nothing reads message text. `SecretStr` and the startup path's
 `include_input=False` close the other two ways a secret could reach one of
 our own records as a value. Put secrets in fields, never in the event string.
 
-ADR 0013 records this decision.
+See [ADR 0013](../adr/0013-redaction-is-a-processor-in-the-shared-chain.md).
 
 ## Exceptions are one record
 
