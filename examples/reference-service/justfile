@@ -341,6 +341,14 @@ build-images:
 up:
     docker compose up --build
 
+# Create the fixed set of orders in reference_service/seed.py against the
+# running stack, through the API. Idempotent: the ids it issued are kept in
+# .seed-state.json (ignored by git), and only an order that has gone
+# missing is re-created. `just up` already runs the same module from a
+# compose one-shot; this is for `just dev`, or for re-seeding by hand.
+seed:
+    uv run python -m reference_service.seed --base-url http://localhost:${APP_HTTP_PORT:-8000}
+
 # Everything `up` starts, plus Grafana, Prometheus, Tempo and Loki with the
 # dashboards and SLO rules from ops/ mounted in. Grafana is on
 # http://localhost:3000 with anonymous admin access — no login.
