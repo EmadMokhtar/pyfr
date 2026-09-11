@@ -15,6 +15,7 @@ it, so it lives in scripts/ and is imported by path.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import types
@@ -102,10 +103,24 @@ def _is_model(annotation: Any) -> bool:
     return isinstance(annotation, type) and issubclass(annotation, BaseModel)
 
 
+_JSON_TYPE_LABELS = frozenset({"JSON object", "JSON array"})
+
+
+def _json_default(value: Any) -> str:
+    """JSON, compact, deterministic -- what a reader writes into .env.
+
+    Sets are sorted first: a frozenset's iteration order is not stable
+    across processes, and a generated file must not change between runs.
+    """
+    if isinstance(value, (set, frozenset)):
+        value = sorted(value)
+    return json.dumps(value, separators=(",", ":"))
+
+
 def _render_default(info: FieldInfo) -> str:
     """The default, as a reader should see it written in a file.
 
-    Verified Fact 2 is the whole reason this is not `str(info.default)`:
+    Verified Fact 2 (M5) is the whole reason this is not `str(info.default)`:
     a field declared with `default_factory` reports `PydanticUndefined` as
     its default while reporting itself as not required, so the naive
     version writes the sentinel's repr into the published documentation.
@@ -116,14 +131,15 @@ def _render_default(info: FieldInfo) -> str:
             # A sub-model default is not a value anyone sets; the group's
             # own variables carry the real defaults.
             return ""
-        if isinstance(produced, dict):
-            # Rendered as the JSON a reader would actually write.
-            return "{}" if not produced else repr(produced)
+        if isinstance(produced, (dict, list, set, frozenset)):
+            return _json_default(produced)
         return str(produced)
     if info.default is PydanticUndefined or info.default is None:
         return "unset"
     if isinstance(info.default, bool):
         return "true" if info.default else "false"
+    if isinstance(info.default, (dict, list, set, frozenset)):
+        return _json_default(info.default)
     return str(info.default)
 
 
@@ -191,6 +207,8 @@ def _render_type(info: FieldInfo) -> str:
         return " | ".join(f"`{value}`" for value in typing.get_args(annotation))
     if origin is dict:
         return "JSON object"
+    if origin in (list, set, frozenset):
+        return "JSON array"
 
     base = _SCALAR_TYPE_LABELS.get(annotation, name or "string")
     return _constraint_label(base, list(info.metadata))
@@ -364,6 +382,13 @@ def render_env_example() -> str:
                 # malformed URL, and the service exits 78 on it. Absent is
                 # the supported configuration; empty is a broken one.
                 section.append(f"# {variable.name}=")
+            elif variable.type_label in _JSON_TYPE_LABELS:
+                # Single-quoted. `just`'s dotenv loader strips the DOUBLE
+                # quotes out of an unquoted value -- APP_X=["a","b"] reaches
+                # a recipe as [a,b], which pydantic-settings can no longer
+                # parse -- while single quotes survive both it and
+                # python-dotenv (M6 plan, Verified Fact 13).
+                section.append(f"{variable.name}='{value}'")
             else:
                 section.append(f"{variable.name}={value}")
         blocks.append("\n".join(section))

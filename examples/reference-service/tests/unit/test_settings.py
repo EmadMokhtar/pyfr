@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
 from reference_service.settings import EXIT_CONFIG_ERROR, Settings, load_settings
 
 
@@ -527,3 +528,19 @@ def test_storage_credentials_are_secrets(monkeypatch: pytest.MonkeyPatch) -> Non
     assert settings.storage is not None
     assert "sup3rs3cr3t" not in repr(settings.storage)
     assert settings.storage.secret_access_key.get_secret_value() == "sup3rs3cr3t"
+
+
+def test_redact_fields_parse_from_a_json_array_and_replace_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_LOG__REDACT_FIELDS", '["pin","otp"]')
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.log.redact_fields == frozenset({"pin", "otp"})
+
+
+def test_redact_fields_default_to_the_processor_module_list() -> None:
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+
+    assert settings.log.redact_fields == DEFAULT_REDACT_FIELDS

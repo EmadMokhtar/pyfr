@@ -54,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         environment=resolved.environment,
         level=resolved.log.level,
         levels=resolved.log.levels,
+        redact_fields=resolved.log.redact_fields,
         service_name=resolved.service_name,
         service_version=__version__,
         logger_provider=(

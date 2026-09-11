@@ -41,6 +41,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
+
 # Exit code 78 is EX_CONFIG from sysexits.h: "configuration error".
 EXIT_CONFIG_ERROR = 78
 
@@ -71,6 +73,17 @@ class LogSettings(BaseModel):
         description=(
             "Per-logger overrides, as JSON. Silencing a chatty library is "
             "configuration, not a code change."
+        ),
+    )
+    # A frozenset default needs no factory: it is immutable, so sharing one
+    # instance between Settings objects is safe.
+    redact_fields: frozenset[str] = Field(
+        default=DEFAULT_REDACT_FIELDS,
+        description=(
+            "Field names whose values are replaced by `[REDACTED]` before a "
+            "record is rendered, as a JSON array. Matched by exact name at "
+            "any depth, ignoring case and treating `-` and `_` alike. Setting "
+            "this REPLACES the default list rather than adding to it."
         ),
     )
 
