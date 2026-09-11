@@ -1,0 +1,182 @@
+name: Release
+
+# Releases the REPOSITORY, not the reference service. One version, one
+# CHANGELOG.md, one tag series -- see the M5 plan's Global Constraints.
+# The reference service is an example nobody deploys; it stays at 0.1.0
+# and publishes nothing. Image publishing arrives in M6.
+#
+# This workflow has two modes, chosen at runtime by whether any tag exists
+# yet (see the "Bump the version and write the changelog" step below):
+#   - bootstrap: cuts the very first release, when there is no tag for
+#     `cz bump` to work from at all.
+#   - bump: every release after that, using Commitizen exactly as normal.
+# The bootstrap mode exists only because this repository starts with zero
+# tags. Once the first release has run, every later run takes the `bump`
+# path, and the bootstrap branch is dead code that stays dead -- see that
+# step's comment for the empirical reasons it cannot be deleted anyway.
+
+on:
+  push:
+    branches: [main]
+  # Allows cutting a release without a code change.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Never two releases at once: they would race for the same tag, and the
+# loser pushes a commit whose version was already taken. Not cancelling
+# in-flight runs, because a cancelled release can leave a tag with no
+# GitHub Release attached.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Commitizen's own bump commit is a push to main, so without this the
+    # workflow triggers itself forever. `cz bump`'s message begins with
+    # `bump:` by default.
+    #
+    # On workflow_dispatch there is no `head_commit` at all: the missing
+    # property reads as an empty string, `startsWith('', 'bump:')` is
+    # false, and the job runs -- which is the wanted behaviour for a
+    # manually triggered release.
+    if: "!startsWith(github.event.head_commit.message, 'bump:')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # cz reads every commit since the last tag, and needs the tags
+          # themselves to know where that is.
+          fetch-depth: 0
+          # A push made with the default GITHUB_TOKEN does not trigger
+          # other workflows. That is correct here -- ci.yml and docs.yml
+          # already ran on the merge commit this release is built from --
+          # but it looks like a broken trigger to whoever investigates
+          # later, so: it is deliberate, and it is GitHub's loop
+          # protection, not a misconfiguration.
+          #
+          # This is also the token `git push` uses later in this job,
+          # because it is the token the checkout step wired into the
+          # local git config. If `main` is branch-protected and the
+          # default token is not exempt, replacing it here -- not in the
+          # `gh release create` step -- is what fixes the push. See
+          # docs/contributing.md, "One-time repository settings".
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Identify the committer
+        # The bump commit needs an author. Using the Actions bot rather
+        # than impersonating whoever merged: the commit is made by
+        # automation and should say so.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump the version and write the changelog
+        id: bump
+        # Pinned to the version .pre-commit-config.yaml pins, so the tool
+        # deciding the version here is the tool that validated the commit
+        # messages it reads.
+        #
+        # `cz bump` commits with `git commit -a`, which stages every
+        # tracked modification in the tree -- so nothing may write into
+        # the working tree before this step. There is deliberately no
+        # `uv sync` above for that reason.
+        #
+        # This repository starts with no git tags at all, and `cz bump`
+        # cannot cut the first release under that condition -- verified,
+        # not guessed:
+        #   - `cz bump --dry-run` with zero tags crashes with EOFError: it
+        #     tries to ask interactively "Is this the first tag created?"
+        #     and there is no terminal in CI to answer it.
+        #   - `cz bump --yes` suppresses that prompt but still fails, exit
+        #     code 16, "No tag found to do an incremental changelog" --
+        #     because this repository's `update_changelog_on_bump = true`
+        #     needs a base tag to diff against for its incremental step,
+        #     and there isn't one yet.
+        #   - Both failures are atomic: no tag, no commit, no file change.
+        #     Safe to fail into, but the first release simply never
+        #     happens if nothing else handles this case.
+        #
+        # So: branch on whether any tag exists. With none, skip `cz bump`
+        # entirely and hand-tag the current commit with the version
+        # already on disk -- CHANGELOG.md already describes that version
+        # (Task 10 generated it from the pre-existing commit history), so
+        # there is nothing to bump and nothing to rewrite. With a tag
+        # already in place, run `cz bump` exactly as normal; it is fully
+        # reliable once it has a base to work from.
+        run: |
+          if [ -z "$(git tag -l)" ]; then
+            echo "No tags found: bootstrapping the first release."
+
+            version=$(uvx --from commitizen==4.18.0 cz version --project)
+            tag="v${version}"
+
+            # A plain (lightweight) tag: cz's own tags carry no message
+            # either, via this same config (tag_format = "v$version",
+            # no annotated_tag setting), so this matches what every later
+            # release will create.
+            git tag "$tag"
+
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          else
+            set +e
+            uvx --from commitizen==4.18.0 cz bump --yes --changelog
+            status=$?
+            set -e
+
+            # Exit 21 is NO_COMMITS_FOUND: nothing releasable since the
+            # last tag, an ordinary outcome for a docs-only merge, not a
+            # failure.
+            if [ "$status" -eq 21 ]; then
+              echo "mode=bump" >> "$GITHUB_OUTPUT"
+              echo "released=false" >> "$GITHUB_OUTPUT"
+              echo "No releasable commits since the last tag."
+              exit 0
+            fi
+            if [ "$status" -ne 0 ]; then
+              exit "$status"
+            fi
+
+            echo "mode=bump" >> "$GITHUB_OUTPUT"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(uvx --from commitizen==4.18.0 cz version --project)" \
+              >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the release
+        if: steps.bump.outputs.released == 'true'
+        # The bootstrap branch above never touches the working tree or
+        # history -- only a new tag exists locally -- so only the tag
+        # needs to reach origin. The steady-state `cz bump` branch made a
+        # bump commit too, so both the commit and its tag need pushing.
+        run: |
+          if [ "${{ steps.bump.outputs.mode }}" = "bootstrap" ]; then
+            git push origin "v${{ steps.bump.outputs.version }}"
+          else
+            git push --follow-tags origin main
+          fi
+
+      - name: Publish the GitHub Release
+        if: steps.bump.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        # --notes-from-tag would use the tag message; the changelog entry
+        # this release just generated (or, in bootstrap mode, that Task 10
+        # already generated) is better prose, and `cz changelog` can print
+        # exactly that one version's section.
+        run: |
+          uvx --from commitizen==4.18.0 cz changelog "v${VERSION}" \
+            --dry-run > release-notes.md
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file release-notes.md

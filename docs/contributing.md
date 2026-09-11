@@ -135,7 +135,7 @@ stages.
 
 ## One-time repository settings
 
-Three settings live in the GitHub interface, not in this repository, so they
+Five settings live in the GitHub interface, not in this repository, so they
 are easy to miss when standing up a fork.
 
 - **Settings → Pages → Source = "GitHub Actions".** Without it the `Docs`
@@ -145,3 +145,22 @@ are easy to miss when standing up a fork.
   escape hatch.
 - **Squash-merge as the merge strategy**, since the commit convention above
   assumes the pull request title becomes the commit on `main`.
+- **Settings → Actions → General → Workflow permissions → "Read and write
+  permissions".** The `Release` workflow (`.github/workflows/release.yml`)
+  pushes a tag (and, after the first release, a bump commit) back to `main`.
+  With the default read-only permission, that push fails with a 403 error —
+  and it fails *after* `cz bump` has already created the commit and tag in
+  the runner's local checkout, so the run looks like it did most of the work
+  before dying on something that reads like a permissions typo rather than a
+  missing setting.
+- **Branch protection on `main`, if enabled, must let the release push
+  through.** A protected `main` rejects a push from the default
+  `GITHUB_TOKEN` the same way it would reject one from any other
+  contributor, so every release fails at the push step with no tag ever
+  reaching origin. Either exempt the `github-actions[bot]` actor in the
+  protection rule, or supply a personal access token or a GitHub App
+  installation token that is exempt. Whichever route is chosen, the token
+  that matters is the one passed to the `actions/checkout@v4` step, not the
+  one used later for `gh release create`: `git push` uses the credentials
+  `checkout` wired into the local git config, so replacing only the
+  `gh release create` token changes nothing.
