@@ -266,9 +266,19 @@ docs-examples:
     # one: the stack must come down whether the examples pass, fail, or the
     # run is interrupted. The trap is armed BEFORE `up`, so a healthcheck
     # timeout in `--wait` cannot leave the stack running.
+    #
+    # Its own Compose project, `-p`, and never the default one: `down -v`
+    # removes the project's volumes, and in the default project those are
+    # `postgres-data` and `minio-data` -- the database and receipts of a
+    # `just up` stack a developer may have running. With its own project
+    # the volumes are its own, and `down -v` deletes nothing anyone keeps.
+    # The host ports are still the same, so this cannot run WHILE `just
+    # up` is running -- `up --wait` fails on the port clash, the trap
+    # tears down only this project, and nothing of the other is touched.
     set -euo pipefail
-    trap 'docker compose down -v' EXIT
-    docker compose up -d --wait
+    project=reference-service-docs-examples
+    trap 'docker compose -p "$project" down -v' EXIT
+    docker compose -p "$project" up -d --wait
     python3 ../../scripts/check_doc_examples.py ../../docs
 
 # An interactive psql session against the running compose database.
