@@ -247,7 +247,13 @@ def _walk_model(
     )
 
     for field_name, sub_model, was_optional in nested:
-        _walk_model(sub_model, (*path, field_name), was_optional, groups)
+        # A group nested under an optional one is absent whenever its
+        # parent is: PaymentSettings.http is not itself `X | None`, but it
+        # only exists at all when APP_PAYMENT__* is set. Without this,
+        # .env.example would set APP_PAYMENT__HTTP__* defaults on their own
+        # -- and pydantic-settings, seeing any APP_PAYMENT__* variable,
+        # builds PaymentSettings and rejects the missing base_url.
+        _walk_model(sub_model, (*path, field_name), optional or was_optional, groups)
 
 
 def walk_settings() -> list[ConfigGroup]:
@@ -356,13 +362,27 @@ def render_env_example() -> str:
         section: list[str] = []
         if group.doc:
             section.extend(_wrap_comment(_plain_text(group.doc)))
+        if group.optional:
+            # The whole block stays commented out, defaults included. Any
+            # single APP_DATABASE__* variable being set -- even one with a
+            # harmless default like POOL_SIZE=10 -- makes pydantic-settings
+            # build DatabaseSettings, which then rejects the missing DSN
+            # and stops the service with exit 78. Absent means the whole
+            # group is absent; that is the supported configuration this
+            # file must start in.
+            section.append(
+                "# Optional. Uncomment the whole block to enable it; leave it "
+                "all commented out to run without."
+            )
         for variable in group.variables:
             section.extend(_wrap_comment(_plain_text(variable.description)))
             value = variable.default_label
-            if variable.default_label in {"", "unset"}:
-                # Commented out, not left empty: `APP_DATABASE__DSN=` is a
-                # malformed URL, and the service exits 78 on it. Absent is
-                # the supported configuration; empty is a broken one.
+            if group.optional:
+                shown = value if value not in {"", "unset"} else ""
+                section.append(f"# {variable.name}={shown}")
+            elif value in {"", "unset"}:
+                # Commented out, not left empty: an empty assignment is a
+                # malformed value, not an absent one.
                 section.append(f"# {variable.name}=")
             else:
                 section.append(f"{variable.name}={value}")
