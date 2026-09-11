@@ -42,7 +42,13 @@ jobs:
     # property reads as an empty string, `startsWith('', 'bump:')` is
     # false, and the job runs -- which is the wanted behaviour for a
     # manually triggered release.
-    if: "!startsWith(github.event.head_commit.message, 'bump:')"
+    #
+    # `github.ref == 'refs/heads/main'` is the second guard, for the
+    # workflow_dispatch trigger: the Actions UI lets a manual run be
+    # launched from ANY branch, and without this a run started from a
+    # feature branch would `cz bump` that branch, tag an unmerged commit,
+    # and publish it as the repository's release.
+    if: "github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -208,9 +214,19 @@ jobs:
           fi
 
       - name: Publish the GitHub Release
-        if: steps.bump.outputs.released == 'true'
+        # Deliberately NOT gated on `released == 'true'`, and idempotent
+        # for an existing tag. If `gh release create` fails after the tag
+        # (and, steady-state, the bump commit) have already been pushed, a
+        # rerun of this workflow finds no releasable commits after that
+        # tag: `cz bump` exits 3, `released` is false, and a step gated on
+        # it would be skipped forever -- leaving a pushed tag with no
+        # release, repairable only by hand. So this step always runs,
+        # works out the tag it should be publishing (the one just cut, or
+        # otherwise the most recent tag on `main`), and creates the
+        # release only if that tag has none yet.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASED: ${{ steps.bump.outputs.released }}
           VERSION: ${{ steps.bump.outputs.version }}
         # --notes-from-tag would use the tag message; `cz changelog`'s own
         # rendering of this version's commits is better prose.
@@ -223,8 +239,21 @@ jobs:
         # describe the same release; they are not guaranteed to describe
         # it in the same words.
         run: |
-          uvx --from commitizen==4.18.0 cz changelog "v${VERSION}" \
+          if [ "$RELEASED" = "true" ]; then
+            tag="v${VERSION}"
+          else
+            tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          fi
+          if [ -z "$tag" ]; then
+            echo "No tag exists yet, so there is no release to publish."
+            exit 0
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            exit 0
+          fi
+          uvx --from commitizen==4.18.0 cz changelog "$tag" \
             --dry-run > release-notes.md
-          gh release create "v${VERSION}" \
-            --title "v${VERSION}" \
+          gh release create "$tag" \
+            --title "$tag" \
             --notes-file release-notes.md
