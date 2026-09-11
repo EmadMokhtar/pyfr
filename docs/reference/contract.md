@@ -103,19 +103,25 @@ None of these needed an adversarial input. Schemathesis found each one by
 generating ordinary, schema-shaped requests and comparing the answer against
 what the contract already promised.
 
-## Gate 3 — no breaking change ships without a version bump
+## Gate 3 — no breaking change ships unannounced
 
 `scripts/check_contract_compatibility.py` runs
 [oasdiff](https://github.com/oasdiff/oasdiff) — from its pinned image, so
 checking a Python service's contract never requires a Go toolchain — against
-the committed `openapi.baseline.json`, and reports only the findings oasdiff
-itself calls breaking.
+the committed `openapi.baseline.json`, and keeps only the findings oasdiff
+itself calls breaking: severity level 3, which oasdiff calls `error`. Levels
+1 and 2 (`info`, `warning`) do not block.
 
-A breaking change is not refused outright. It is cross-checked against the
-version in `pyproject.toml`: below `1.0.0` a breaking change needs at least a
-minor bump (`0.1.0` → `0.2.0`); at or above `1.0.0` it needs a major one. A
-breaking change with a sufficient bump passes; the identical change with the
-version left alone fails the build.
+A breaking change is not refused outright. The gate also reads the commit
+messages in the range under test — `git log base..head`, where `--base`
+defaults to `origin/main` and `--head` to `HEAD` — and asks whether any of
+them declares the break on purpose: a Conventional Commits subject with `!`
+immediately before the colon (`feat!:`, `feat(api)!:`), or a `BREAKING
+CHANGE:` (or `BREAKING-CHANGE:`) footer starting a line in the commit body.
+A breaking change with a commit that says so passes; the identical change
+with no commit marked breaking fails the build. The failure message lists
+the specific oasdiff findings and tells you to either undo the change or
+mark the commit breaking.
 
 ```bash
 just contract-gates
@@ -147,22 +153,9 @@ simply has nothing left to compare against.
 3. **Read the diff.** It is your API change, stated completely — including
    the parts you did not think of as "the change".
 4. `just contract-gates`.
-5. If it reports a breaking change, either undo it or bump the version in
-   `pyproject.toml` and run `just openapi` again.
-
-## What M5 replaces here
-
-Gate 3's second half no longer cross-checks a version number. It reads the
-commit range instead: `scripts/check_contract_compatibility.py` runs
-`git log base..head` and asks whether any commit in it is marked
-breaking — a `feat!:` (or `<type>(scope)!:`) subject, or a `BREAKING
-CHANGE:` (or `BREAKING-CHANGE:`) footer starting a line in the body. If
-oasdiff found a breaking change and no commit says so, the build fails; if
-one does, it passes. The oasdiff half — the part that decides whether a
-change is breaking at all — stays exactly as it is.
-
-`just contract-release` still moves `openapi.baseline.json` forward, and
-still only as part of cutting a release. Running it to make a red gate go
-quiet is the same silent breaking change this gate exists to catch — it
-would not report anything different afterwards, only have nothing left to
-compare against.
+5. If it reports a breaking change, either undo it or mark the commit
+   breaking — `feat!:` (or `feat(api)!:`) in the subject, or a `BREAKING
+   CHANGE:` footer in the body — then run `just contract-gates` again to
+   confirm. Marking a commit breaking is a statement that clients will
+   have to act on the change, so mean it: don't reach for it just to make
+   the gate go green.
