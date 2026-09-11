@@ -282,9 +282,13 @@ docs-examples:
     # documented examples need -- none of them relies on seeded data, and
     # the plan forbids one from doing so, because seeded ids differ per
     # machine.
+    # `redis` is named too: `app` deliberately does not depend on it (the
+    # cache is optional, fail-open), so naming `app` alone would start the
+    # stack without a cache and the examples would exercise the fail-open
+    # path rather than the cached one `just up` runs.
     set -euo pipefail
     trap 'docker compose down -v' EXIT
-    docker compose up -d --wait app
+    docker compose up -d --wait app redis
     python3 ../../scripts/check_doc_examples.py ../../docs
 
 # An interactive psql session against the running compose database.
@@ -495,10 +499,21 @@ o11y-down:
 # The whole ops/prometheus directory is mounted, not just rules/, because
 # slo_test.yml sits above it and refers to rules/slo.yml relatively.
 #
+# The image comes from compose.yaml -- the one place it is pinned (ADR
+# 0014) -- through `docker compose config`, which resolves the file the
+# same way `just o11y` does. `--profile o11y` because a service under a
+# profile is otherwise omitted from the resolved output. Standard-library
+# python3 for the one JSON lookup, so this recipe still needs no `uv sync`
+# (ci.yml's o11y-gates job installs none).
+#
 # Check and unit-test the SLO rules with promtool.
 o11y-gates:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    image=$(docker compose --profile o11y config --format json \
+        | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["lgtm"]["image"])')
     docker run --rm -v "$PWD/ops/prometheus:/p" \
-        --entrypoint sh grafana/otel-lgtm:0.32.1 \
+        --entrypoint sh "$image" \
         -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
 
 down:

@@ -30,10 +30,11 @@ from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from reference_service.main import create_app
 from reference_service.observability.otel import build_providers, instrument_fastapi
 from reference_service.settings import Settings
+from tests.compose_images import compose_image
 
 pytestmark = pytest.mark.integration
 
-LGTM_IMAGE = "grafana/otel-lgtm:0.32.1"
+LGTM_IMAGE = compose_image("lgtm")
 OPS = Path(__file__).resolve().parents[2] / "ops"
 EXPECTED_DASHBOARD_UIDS = {"pyfr-service-health", "pyfr-slo", "pyfr-runtime"}
 READY_LINE = "The OpenTelemetry collector and the Grafana LGTM stack are up"
