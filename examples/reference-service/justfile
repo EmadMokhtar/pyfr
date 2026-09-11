@@ -358,6 +358,42 @@ audit:
     uv export --frozen --all-groups --format requirements.txt --no-emit-project \
         | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
 
+# Scan both images for known vulnerabilities and embedded secrets, failing
+# on any HIGH or CRITICAL finding that has a fix. Trivy runs from the
+# `trivy` compose service -- see compose.yaml for why.
+#
+# --ignore-unfixed: a finding with no fix is nothing a pull request can
+# act on; it is still visible without the flag. .trivyignore.yaml is the
+# only exemption path, and every entry there expires (ADR 0016). BOTH
+# images, always: v4.19.0 of the migrate base carried a CRITICAL in pgx
+# that a clean application image would have hidden.
+#
+# Takes image references so release.yml can scan what it just built and
+# nightly.yml can scan what was last published.
+scan app="reference-service:ci" migrations="reference-service-migrations:ci":
+    docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
+        --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+        --scanners vuln,secret --no-progress {{app}}
+    docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
+        --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+        --scanners vuln,secret --no-progress {{migrations}}
+
+# Write a CycloneDX software bill of materials per image into sbom/
+# (ignored by git). CI uploads them as a workflow artifact; the release
+# attaches them to the GitHub Release. Generated from the built image, so
+# they list the Debian packages as well as the Python ones.
+sbom app="reference-service:ci" migrations="reference-service-migrations:ci":
+    mkdir -p sbom
+    docker compose run --rm trivy image --format cyclonedx --no-progress \
+        --output /sbom/reference-service.cdx.json {{app}}
+    docker compose run --rm trivy image --format cyclonedx --no-progress \
+        --output /sbom/reference-service-migrations.cdx.json {{migrations}}
+
+# Everything the CI `security` job runs, in the order it runs it. Needs
+# Docker. Separate from `check-all` because its result changes with the
+# advisory databases, not with the code.
+security: build-images audit scan sbom
+
 # Build both container images, exactly as CI does.
 build-images:
     # Two separate `docker build` calls rather than `docker compose build`:

@@ -302,7 +302,26 @@ services:
       timeout: 3s
       retries: 30
 
+  # Trivy, for `just scan` and `just sbom`. A compose service rather than a
+  # `docker run` in the justfile so that its image pin lives HERE, with
+  # every other one, where Dependabot moves it (ADR 0014). The `tools`
+  # profile keeps it out of `just up`; `docker compose run` enables a
+  # service's profile on its own.
+  #
+  # The Docker socket is how Trivy reads an image that was `docker build`
+  # -- not pushed anywhere -- and the cache volume is what makes the second
+  # run take seconds rather than re-downloading the vulnerability database.
+  trivy:
+    profiles: ["tools"]
+    image: aquasec/trivy:0.74.0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trivy-cache:/root/.cache/trivy
+      - ./.trivyignore.yaml:/.trivyignore.yaml:ro
+      - ./sbom:/sbom
+
 volumes:
   postgres-data:
   minio-data:
   seed-state:
+  trivy-cache:
