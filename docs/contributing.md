@@ -264,3 +264,21 @@ are easy to miss when standing up a fork.
   one used later for `gh release create`: `git push` uses the credentials
   `checkout` wired into the local git config, so replacing only the
   `gh release create` token changes nothing.
+
+### The first release run is not like the others
+
+This repository starts with no git tags at all, so its very first run of
+`.github/workflows/release.yml` cannot use Commitizen's normal path: `cz
+bump` needs a prior tag to diff against to compute the next version, and
+there isn't one yet. That first run instead tags the current version —
+`v0.5.0`, already on disk in `pyproject.toml` — directly, with **no bump
+commit and no change to `CHANGELOG.md`**, because there is nothing to
+bump: `CHANGELOG.md` already describes `v0.5.0`, generated from the
+commit history that produced it.
+
+So a tag appearing on `main` with no accompanying version-bump commit is
+the **correct** result of that first release, not a stuck or partial run —
+see the "Bump the version and write the changelog" step's own comment in
+`release.yml` for the two ways `cz bump` was confirmed to fail outright
+with zero tags. Every release after the first finds a tag to diff against
+and takes the normal `cz bump` path, exactly as Commitizen documents it.
