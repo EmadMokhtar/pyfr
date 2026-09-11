@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 covers:
   - examples/reference-service/openapi.json
   - examples/reference-service/scripts/check_contract_compatibility.py
@@ -113,15 +113,32 @@ itself calls breaking: severity level 3, which oasdiff calls `error`. Levels
 1 and 2 (`info`, `warning`) do not block.
 
 A breaking change is not refused outright. The gate also reads the commit
-messages in the range under test — `git log base..head`, where `--base`
-defaults to `origin/main` and `--head` to `HEAD` — and asks whether any of
-them declares the break on purpose: a Conventional Commits subject with `!`
-immediately before the colon (`feat!:`, `feat(api)!:`), or a `BREAKING
-CHANGE:` (or `BREAKING-CHANGE:`) footer starting a line in the commit body.
-A breaking change with a commit that says so passes; the identical change
-with no commit marked breaking fails the build. The failure message lists
-the specific oasdiff findings and tells you to either undo the change or
-mark the commit breaking.
+messages in the range under test — `git log base..head` — and asks whether
+any of them declares the break on purpose: a Conventional Commits subject
+with `!` immediately before the colon (`feat!:`, `feat(api)!:`), or a
+`BREAKING CHANGE:` (or `BREAKING-CHANGE:`) footer starting a line in the
+commit body. A breaking change with a commit that says so passes; the
+identical change with no commit marked breaking fails the build. The
+failure message lists the specific oasdiff findings and tells you to
+either undo the change or mark the commit breaking.
+
+`--head` defaults to `HEAD`. `--base` defaults to the **most recent tag**
+(`git describe --tags --abbrev=0`), falling back to the repository's
+**first commit** when there are no tags yet — true of this repository
+today. Both are overridable on the command line.
+
+The default is the most recent tag, and deliberately not `origin/main`:
+`openapi.baseline.json` only moves at a release (`just contract-release`
+below), so the window this half of the gate reads has to cover the same
+span as the window the baseline diff already covers — since the last
+release. `origin/main` cannot do that: it resets on every pull request
+branch, so a breaking change marked `feat(api)!:` in one pull request
+would clear the baseline diff for good, while the very next pull request's
+range no longer contains that marking commit — and would fail the same
+gate for a break someone already announced and shipped. A release always
+leaves a tag behind (`.github/workflows/release.yml` tags every release it
+cuts), so the most recent tag names exactly the same point the baseline
+was last promoted from.
 
 ```bash
 just contract-gates
@@ -145,6 +162,12 @@ copies the current `openapi.json` over it. Running that to make
 `contract-gates` stop complaining *is* the silent breaking change this gate
 exists to catch — it does not report anything different afterwards, it
 simply has nothing left to compare against.
+
+This is also, deliberately, the same moment `--base`'s default moves to: a
+release both promotes the baseline and leaves the tag that the *next*
+release's window will start counting from, which is exactly why the two
+halves of this gate stay in step without either one needing to know about
+the other.
 
 ## The workflow
 
