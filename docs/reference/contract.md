@@ -1,3 +1,10 @@
+---
+last_reviewed: 2026-09-11
+covers:
+  - examples/reference-service/openapi.json
+  - examples/reference-service/scripts/check_contract_compatibility.py
+---
+
 # The API contract
 
 `openapi.json` is committed at the root of the reference service, generated
@@ -96,19 +103,42 @@ None of these needed an adversarial input. Schemathesis found each one by
 generating ordinary, schema-shaped requests and comparing the answer against
 what the contract already promised.
 
-## Gate 3 — no breaking change ships without a version bump
+## Gate 3 — no breaking change ships unannounced
 
 `scripts/check_contract_compatibility.py` runs
 [oasdiff](https://github.com/oasdiff/oasdiff) — from its pinned image, so
 checking a Python service's contract never requires a Go toolchain — against
-the committed `openapi.baseline.json`, and reports only the findings oasdiff
-itself calls breaking.
+the committed `openapi.baseline.json`, and keeps only the findings oasdiff
+itself calls breaking: severity level 3, which oasdiff calls `error`. Levels
+1 and 2 (`info`, `warning`) do not block.
 
-A breaking change is not refused outright. It is cross-checked against the
-version in `pyproject.toml`: below `1.0.0` a breaking change needs at least a
-minor bump (`0.1.0` → `0.2.0`); at or above `1.0.0` it needs a major one. A
-breaking change with a sufficient bump passes; the identical change with the
-version left alone fails the build.
+A breaking change is not refused outright. The gate also reads the commit
+messages in the range under test — `git log base..head` — and asks whether
+any of them declares the break on purpose: a Conventional Commits subject
+with `!` immediately before the colon (`feat!:`, `feat(api)!:`), or a
+`BREAKING CHANGE:` (or `BREAKING-CHANGE:`) footer starting a line in the
+commit body. A breaking change with a commit that says so passes; the
+identical change with no commit marked breaking fails the build. The
+failure message lists the specific oasdiff findings and tells you to
+either undo the change or mark the commit breaking.
+
+`--head` defaults to `HEAD`. `--base` defaults to the **most recent tag**
+(`git describe --tags --abbrev=0`), falling back to the repository's
+**first commit** when there are no tags yet — true of this repository
+today. Both are overridable on the command line.
+
+The default is the most recent tag, and deliberately not `origin/main`:
+`openapi.baseline.json` only moves at a release (`just contract-release`
+below), so the window this half of the gate reads has to cover the same
+span as the window the baseline diff already covers — since the last
+release. `origin/main` cannot do that: it resets on every pull request
+branch, so a breaking change marked `feat(api)!:` in one pull request
+would clear the baseline diff for good, while the very next pull request's
+range no longer contains that marking commit — and would fail the same
+gate for a break someone already announced and shipped. A release always
+leaves a tag behind and promotes the baseline in the same bump commit —
+`.github/workflows/release.yml` does both — so the most recent tag names
+exactly the same point the baseline was last promoted from.
 
 ```bash
 just contract-gates
@@ -128,10 +158,18 @@ gate:
 just contract-release
 ```
 
-copies the current `openapi.json` over it. Running that to make
-`contract-gates` stop complaining *is* the silent breaking change this gate
-exists to catch — it does not report anything different afterwards, it
-simply has nothing left to compare against.
+copies the current `openapi.json` over it. `release.yml` runs that inside
+the bump commit of every release it cuts, so nobody runs it by hand.
+Running it by hand to make `contract-gates` stop complaining *is* the
+silent breaking change this gate exists to catch — it does not report
+anything different afterwards, it simply has nothing left to compare
+against.
+
+This is also, deliberately, the same moment `--base`'s default moves to: a
+release both promotes the baseline and leaves the tag that the *next*
+release's window will start counting from — in one commit, made by one
+workflow — which is exactly why the two halves of this gate stay in step
+without either one needing to know about the other.
 
 ## The workflow
 
@@ -140,14 +178,9 @@ simply has nothing left to compare against.
 3. **Read the diff.** It is your API change, stated completely — including
    the parts you did not think of as "the change".
 4. `just contract-gates`.
-5. If it reports a breaking change, either undo it or bump the version in
-   `pyproject.toml` and run `just openapi` again.
-
-## What M5 replaces here
-
-The version cross-check in gate 3 is a placeholder for the Conventional
-Commits range check the [roadmap](../roadmap.md) schedules for M5, once tags
-and Commitizen exist to derive a version from commit history rather than
-from a number someone has to remember to bump by hand. The oasdiff half —
-the part that decides whether a change is breaking at all — stays exactly as
-it is.
+5. If it reports a breaking change, either undo it or mark the commit
+   breaking — `feat!:` (or `feat(api)!:`) in the subject, or a `BREAKING
+   CHANGE:` footer in the body — then run `just contract-gates` again to
+   confirm. Marking a commit breaking is a statement that clients will
+   have to act on the change, so mean it: don't reach for it just to make
+   the gate go green.

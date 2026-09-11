@@ -9,6 +9,21 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    # Read directly by scripts/generate_config_docs.py, to pull the `Ge`/
+    # `Gt`/`Le` constraint objects a `Field(ge=..., le=...)` puts in
+    # `FieldInfo.metadata` (Verified Fact 5). A hard dependency of pydantic
+    # itself at every version pydantic>=2.9 above resolves to, so this
+    # floor constrains nothing new -- it only makes that script's own
+    # import honest about what it uses rather than borrowing it
+    # transitively through pydantic.
+    "annotated-types>=0.4",
+    # Read directly by scripts/generate_config_docs.py, to recognise the
+    # `PydanticUndefined` sentinel a `default_factory` field reports as its
+    # `.default` (Verified Fact 2). Same story as annotated-types above:
+    # pydantic-core is pinned exactly per pydantic release, so 2.23.2 is
+    # what pydantic>=2.9 itself already requires at minimum -- not a new
+    # constraint, just an honest import.
+    "pydantic-core>=2.23.2",
     "structlog>=24.4",
     "orjson>=3.10",
     "sqlalchemy[asyncio]>=2.0.52",

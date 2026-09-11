@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-09-10
+---
+
 # Why a template, not a framework
 
 PyFr v1 is a pure cookiecutter template. All code is generated into your

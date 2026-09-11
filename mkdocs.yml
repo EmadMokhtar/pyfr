@@ -22,6 +22,7 @@ validation:
 # a milestone lands.
 exclude_docs: |
   superpowers/
+  adr/template.md
 
 theme:
   name: material
@@ -69,6 +70,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting started: getting-started.md
+  - Runbook: runbook.md
   - Guides:
       - Add an endpoint: guides/add-an-endpoint.md
       - Add a backend: guides/add-a-backend.md
@@ -82,6 +84,20 @@ nav:
       - Errors: reference/errors.md
       - Logging: reference/logging.md
       - Observability: reference/observability.md
+  - Decisions:
+      - Overview: adr/README.md
+      - 0001 Four-layer dependency rule: adr/0001-four-layer-dependency-rule.md
+      - 0002 cookiecutter over Copier and cruft: adr/0002-cookiecutter-over-copier-and-cruft.md
+      - 0003 uv over pip and Poetry: adr/0003-uv-over-pip-and-poetry.md
+      - 0004 golang-migrate owns the schema: adr/0004-golang-migrate-owns-the-schema.md
+      - 0005 In-memory adapters are a supported configuration: adr/0005-in-memory-adapters-are-a-supported-configuration.md
+      - 0006 The cache is fail-open, always: adr/0006-the-cache-is-fail-open-always.md
+      - 0007 Emit OpenTelemetry and stop there: adr/0007-emit-opentelemetry-and-stop.md
+      - 0008 Standard output is the source of truth for logs: adr/0008-standard-output-is-the-source-of-truth-for-logs.md
+      - 0009 RFC 9457 Problem Details for every error: adr/0009-rfc-9457-problem-details-for-every-error.md
+      - 0010 The OpenAPI document is committed and drift-gated: adr/0010-the-openapi-document-is-committed-and-drift-gated.md
+      - 0011 readyz reports optional dependencies without gating: adr/0011-readyz-reports-optional-dependencies-without-gating.md
+      - 0012 mypy is strict on the inner layers only: adr/0012-mypy-is-strict-on-the-inner-layers-only.md
   - Explanation:
       - Architecture: explanation/architecture.md
       - Why a template, not a framework: explanation/why-a-template.md

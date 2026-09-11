@@ -1,0 +1,259 @@
+name: Release
+
+# Releases the REPOSITORY, not the reference service. One version, one
+# CHANGELOG.md, one tag series -- see the M5 plan's Global Constraints.
+# The reference service is an example nobody deploys; it stays at 0.1.0
+# and publishes nothing. Image publishing arrives in M6.
+#
+# This workflow has two modes, chosen at runtime by whether any tag exists
+# yet (see the "Bump the version and write the changelog" step below):
+#   - bootstrap: cuts the very first release, when there is no tag for
+#     `cz bump` to work from at all.
+#   - bump: every release after that, using Commitizen exactly as normal.
+# The bootstrap mode exists only because this repository starts with zero
+# tags. Once the first release has run, every later run takes the `bump`
+# path, and the bootstrap branch is dead code that stays dead -- see that
+# step's comment for the empirical reasons it cannot be deleted anyway.
+
+on:
+  push:
+    branches: [main]
+  # Allows cutting a release without a code change.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Never two releases at once: they would race for the same tag, and the
+# loser pushes a commit whose version was already taken. Not cancelling
+# in-flight runs, because a cancelled release can leave a tag with no
+# GitHub Release attached.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Commitizen's own bump commit is a push to main, so without this the
+    # workflow triggers itself forever. `cz bump`'s message begins with
+    # `bump:` by default.
+    #
+    # On workflow_dispatch there is no `head_commit` at all: the missing
+    # property reads as an empty string, `startsWith('', 'bump:')` is
+    # false, and the job runs -- which is the wanted behaviour for a
+    # manually triggered release.
+    #
+    # `github.ref == 'refs/heads/main'` is the second guard, for the
+    # workflow_dispatch trigger: the Actions UI lets a manual run be
+    # launched from ANY branch, and without this a run started from a
+    # feature branch would `cz bump` that branch, tag an unmerged commit,
+    # and publish it as the repository's release.
+    if: "github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # cz reads every commit since the last tag, and needs the tags
+          # themselves to know where that is.
+          fetch-depth: 0
+          # A push made with the default GITHUB_TOKEN does not trigger
+          # other workflows. That is correct here -- ci.yml and docs.yml
+          # already ran on the merge commit this release is built from --
+          # but it looks like a broken trigger to whoever investigates
+          # later, so: it is deliberate, and it is GitHub's loop
+          # protection, not a misconfiguration.
+          #
+          # This is also the token `git push` uses later in this job,
+          # because it is the token the checkout step wired into the
+          # local git config. If `main` is branch-protected and the
+          # default token is not exempt, replacing it here -- not in the
+          # `gh release create` step -- is what fixes the push. See
+          # docs/contributing.md, "One-time repository settings".
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install just
+        # For `just contract-release` in the bump step. This puts a binary
+        # on the runner's PATH and writes nothing into the checkout, so it
+        # does not fall foul of the "nothing writes before the bump" rule
+        # that step's comment explains.
+        uses: extractions/setup-just@v2
+
+      - name: Identify the committer
+        # The bump commit needs an author. Using the Actions bot rather
+        # than impersonating whoever merged: the commit is made by
+        # automation and should say so.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump the version and write the changelog
+        id: bump
+        # Pinned to the version .pre-commit-config.yaml pins, so the tool
+        # deciding the version here is the tool that validated the commit
+        # messages it reads.
+        #
+        # `cz bump` commits with `git commit -a`, which stages every
+        # tracked modification in the tree -- so nothing may write into
+        # the working tree before this step BY ACCIDENT. There is
+        # deliberately no `uv sync` above for that reason. The one
+        # deliberate write is the contract-baseline promotion inside the
+        # else branch below, which relies on exactly this behaviour to
+        # ride along in the bump commit.
+        #
+        # This repository starts with no git tags at all, and `cz bump`
+        # cannot cut the first release under that condition -- verified,
+        # not guessed:
+        #   - `cz bump --dry-run` with zero tags crashes with EOFError: it
+        #     tries to ask interactively "Is this the first tag created?"
+        #     and there is no terminal in CI to answer it.
+        #   - `cz bump --yes` suppresses that prompt but still fails, exit
+        #     code 16, "No tag found to do an incremental changelog" --
+        #     because this repository's `update_changelog_on_bump = true`
+        #     needs a base tag to diff against for its incremental step,
+        #     and there isn't one yet.
+        #   - Both failures are atomic: no tag, no commit, no file change.
+        #     Safe to fail into, but the first release simply never
+        #     happens if nothing else handles this case.
+        #
+        # So: branch on whether any tag exists. With none, skip `cz bump`
+        # entirely and hand-tag the current commit with the version
+        # already on disk -- CHANGELOG.md already describes that version
+        # (Task 10 generated it from the pre-existing commit history), so
+        # there is nothing to bump and nothing to rewrite. With a tag
+        # already in place, run `cz bump` exactly as normal; it is fully
+        # reliable once it has a base to work from.
+        run: |
+          if [ -z "$(git tag -l)" ]; then
+            echo "No tags found: bootstrapping the first release."
+
+            version=$(uvx --from commitizen==4.18.0 cz version --project)
+            tag="v${version}"
+
+            # A plain (lightweight) tag: cz's own tags carry no message
+            # either, via this same config (tag_format = "v$version",
+            # no annotated_tag setting), so this matches what every later
+            # release will create.
+            git tag "$tag"
+
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          else
+            # Promote the API contract baseline so it rides in the bump
+            # commit. The contract gate compares openapi.json against
+            # openapi.baseline.json, and reads commit markers over the
+            # window since the last tag -- so the baseline and the tag
+            # must move together, or the gate goes red on the first pull
+            # request after a release and stays red until someone
+            # promotes by hand. Steady-state only: the bootstrap branch
+            # above makes no commit, so its baseline was promoted on the
+            # branch that introduced this workflow instead.
+            #
+            # If cz then decides there is nothing to release (exit 3 or
+            # 21 below), this write is discarded with the runner: nothing
+            # is committed and nothing is pushed.
+            (cd examples/reference-service && just contract-release)
+
+            set +e
+            uvx --from commitizen==4.18.0 cz bump --yes --changelog
+            status=$?
+            set -e
+
+            # Exit 3 is NO_COMMITS_FOUND (no commits at all since the last
+            # tag -- reachable via workflow_dispatch, whose whole purpose
+            # is cutting a release with no new commit) and exit 21 is
+            # NO_INCREMENT (commits exist but none of them imply a version
+            # bump, e.g. a docs-only merge). Both mean "nothing to
+            # release", not a failure, so both take the same graceful
+            # no-op.
+            if [ "$status" -eq 3 ] || [ "$status" -eq 21 ]; then
+              echo "mode=bump" >> "$GITHUB_OUTPUT"
+              echo "released=false" >> "$GITHUB_OUTPUT"
+              echo "No releasable commits since the last tag."
+              exit 0
+            fi
+            if [ "$status" -ne 0 ]; then
+              exit "$status"
+            fi
+
+            echo "mode=bump" >> "$GITHUB_OUTPUT"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(uvx --from commitizen==4.18.0 cz version --project)" \
+              >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the release
+        if: steps.bump.outputs.released == 'true'
+        # The bootstrap branch above never touches the working tree or
+        # history -- only a new tag exists locally -- so only the tag
+        # needs to reach origin. The steady-state `cz bump` branch made a
+        # bump commit too, so both the commit and its tag need pushing.
+        #
+        # Both branches push the tag by name explicitly rather than via
+        # `--follow-tags`, because `--follow-tags` only pushes *annotated*
+        # tags reachable from the pushed ref, and the tags both `cz bump`
+        # and the bootstrap branch create are plain (lightweight) tags --
+        # matching this project's Commitizen config, which sets no
+        # `annotated_tag` option. `--follow-tags origin main` would report
+        # success while silently leaving the tag unpushed; verified end to
+        # end in an isolated clone against a real bare remote: after `cz
+        # bump` created a lightweight tag, `git push --follow-tags origin
+        # main` exited 0 but `git ls-remote --tags origin` showed the tag
+        # had never arrived.
+        run: |
+          if [ "${{ steps.bump.outputs.mode }}" = "bootstrap" ]; then
+            git push origin "v${{ steps.bump.outputs.version }}"
+          else
+            git push origin main
+            git push origin "v${{ steps.bump.outputs.version }}"
+          fi
+
+      - name: Publish the GitHub Release
+        # Deliberately NOT gated on `released == 'true'`, and idempotent
+        # for an existing tag. If `gh release create` fails after the tag
+        # (and, steady-state, the bump commit) have already been pushed, a
+        # rerun of this workflow finds no releasable commits after that
+        # tag: `cz bump` exits 3, `released` is false, and a step gated on
+        # it would be skipped forever -- leaving a pushed tag with no
+        # release, repairable only by hand. So this step always runs,
+        # works out the tag it should be publishing (the one just cut, or
+        # otherwise the most recent tag on `main`), and creates the
+        # release only if that tag has none yet.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASED: ${{ steps.bump.outputs.released }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        # --notes-from-tag would use the tag message; `cz changelog`'s own
+        # rendering of this version's commits is better prose.
+        #
+        # This need not read identically to CHANGELOG.md's committed
+        # section for the same version. Pull requests are squash-merged,
+        # so `main` carries one commit per pull request, while the
+        # committed changelog can list the individual Conventional Commits
+        # a contributor made on their branch before the squash. Both
+        # describe the same release; they are not guaranteed to describe
+        # it in the same words.
+        run: |
+          if [ "$RELEASED" = "true" ]; then
+            tag="v${VERSION}"
+          else
+            tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          fi
+          if [ -z "$tag" ]; then
+            echo "No tag exists yet, so there is no release to publish."
+            exit 0
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            exit 0
+          fi
+          uvx --from commitizen==4.18.0 cz changelog "$tag" \
+            --dry-run > release-notes.md
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes-file release-notes.md

@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/infrastructure/http/
+---
+
 # Outbound HTTP calls
 
 The reference service calls one outbound dependency: a payment provider,
@@ -187,10 +193,15 @@ who was told plainly that they do not — so: they do not.
 
 Re-recording is manual today, `just test-record`, against the same local
 stub — it re-proves the same thing, on demand, rather than on a schedule.
-A weekly job that re-records against whatever the real provider currently
-does, and fails the build when a cassette changes underneath it, is M5
-work. Until then, this gap is a property of the test suite that a reader
-should know about, not a defect to silently work around.
+
+A weekly job that re-recorded against whatever the real provider currently
+does was considered, and decided against, not deferred:
+`just test-record` records against `ops/payment-stub/`, a local WireMock
+stub that is committed and deterministic, not a real payment provider. A
+scheduled job pointed at that stub would produce an empty diff every week,
+forever — there is no real upstream here for it to detect drift against.
+Until this project has one, this gap is a property of the test suite that
+a reader should know about, not a defect to silently work around.
 
 ## The gap this milestone does not close: authorise, then save
 
@@ -224,5 +235,8 @@ outbox is implemented — are
 This is recorded here, in the documentation, because writing the gap down
 precisely is not the same thing as closing it, and a reader is better
 served by a plain description of when it happens than by a page that says
-nothing. There is no on-call runbook yet to link this from — that is M5's
-[roadmap](../roadmap.md) row — so it lives on this page until one exists.
+nothing. It has no procedure of its own in
+[the runbook](../runbook.md#a-dependency-is-down): that page's
+dependency-down entry covers the payment gateway's circuit breaker, not a
+process dying between a successful authorisation and a successful save,
+so this gap continues to live on this page instead.

@@ -10,8 +10,123 @@ on:
     # red.
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+# One run per branch. Cancelling in-flight runs is safe here in a way it
+# is not for release.yml or docs.yml: nothing is published, so a cancelled
+# run leaves nothing half-done.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  check:
+    # `just check` is lint, typecheck, imports, unit tests and pre-commit,
+    # then `git diff --exit-code` to catch a hook that mutated the tree.
+    # One job rather than five: they share an install, they all finish in
+    # a couple of minutes, and splitting them would mean five copies of
+    # the setup for a failure message that already names which gate broke.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install the project
+        run: uv sync
+
+      - name: Run every fast gate
+        run: just check
+
+  integration:
+    # testcontainers starts PostgreSQL, Redis and MinIO itself. Deliberately
+    # NOT a `services:` block: the containers are pinned in the test code,
+    # so the versions CI runs against are the versions a developer runs
+    # against, and there is one place to change them.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just test-integration
+
+  gates:
+    # Migration files, the schema snapshot, model/schema drift, and the
+    # generated configuration reference. Needs Docker for the schema
+    # gates, which run against a real PostgreSQL.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just gates
+
+  contract:
+    # `just contract-gates`: schemathesis conformance against the committed
+    # contract, plus the oasdiff breaking-change check cross-referenced
+    # against the commit's own `!` marker. OpenAPI drift -- whether the
+    # committed openapi.json still matches the code -- is NOT one of them:
+    # that gate (tests/unit/test_contract_drift.py) carries no contract
+    # marker, so it runs in the default `just test` tier instead, covered
+    # by the `check` job above. `fetch-depth: 0` because the commit-marker
+    # half reads the commit range -- with a shallow clone `git log
+    # base..head` is empty, which reads as "nobody marked it breaking" and
+    # fails every legitimate breaking change.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just contract-gates
+
+  o11y-gates:
+    # promtool over the SLO rules, out of the pinned otel-lgtm image. No
+    # uv sync: it runs no Python at all.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just o11y-gates
+
   docs:
+    # `just check` at the repository root: the documentation site build
+    # (`docs-build`, --strict) plus the root project's own test suite
+    # (`test`), which covers scripts/check_docs_freshness.py and
+    # scripts/check_doc_examples.py -- neither ran in CI before this. Job id
+    # kept as `docs` rather than renamed: the documentation build is still
+    # most of what this job does, and renaming a job id changes what GitHub
+    # calls a required status check, which this repository cannot see or
+    # verify from here.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,13 +136,14 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install the documentation toolchain
         run: uv sync --group docs
 
-      - name: Build the docs site
-        # --strict turns a dead reference or an unresolvable include into a
-        # failure rather than a warning nobody reads.
-        run: uv run mkdocs build --strict
+      - name: Run every root-level gate
+        run: just check
 
   docs-freshness:
     # Blunt backstop for stale prose. The `no-docs-needed` label is the escape
@@ -51,3 +167,89 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         # No dependencies: the script is stdlib-only, so this needs no uv sync.
         run: python3 scripts/check_docs_updated.py "$BASE_SHA" HEAD
+
+  docs-warnings:
+    # Advisory only -- review dates and path coupling. Never fails; see
+    # docs/contributing.md for what has to be true before it does.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `just docs-freshness` diffs base...head, which needs real history.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install the documentation toolchain
+        # `scripts/check_docs_freshness.py` does `import yaml` directly.
+        # PyYAML is declared as a direct `dev` dependency (pyproject.toml)
+        # precisely so that does not depend on MkDocs happening to pull it
+        # in transitively; `uv sync` installs the default `dev` group
+        # alongside whichever `--group` is named explicitly.
+        run: uv sync --group docs
+
+      - name: Report documentation freshness
+        env:
+          # Passed via env rather than interpolated into the script body, so
+          # nothing from the event payload can be read as shell.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # Calls the same `just docs-freshness` recipe a developer runs
+        # locally, rather than invoking scripts/check_docs_freshness.py
+        # directly -- see the Global Constraint on `just` as the one
+        # definition of a gate.
+        run: just docs-freshness "$BASE_SHA" HEAD
+
+  links:
+    # External links only; internal ones are `mkdocs build --strict`'s job
+    # in the `docs` job above. Separate from that job because this one
+    # depends on the internet being well, and a network blip should not
+    # read as a broken site.
+    #
+    # Deliberately NOT `just links`, unlike every other gate in this file.
+    # This is a recorded exemption, not an oversight: the
+    # `lycheeverse/lychee-action@v2` action supplies the `lychee` binary
+    # itself, which this runner does not otherwise have -- installing it
+    # some other way just to shell out to `just links` would add a step
+    # for no benefit. `lychee.toml` still stays the single definition of
+    # the check's behaviour either way, since the action is pointed at the
+    # same config file and the same paths that recipe uses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check external links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md
+          fail: true
+
+  docs-examples:
+    # The documented `curl` examples, against a real running stack.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just docs-examples
+
+  build:
+    # Proves the Dockerfile still builds. Deliberately no push and no
+    # multi-architecture matrix -- both are M6, with the registry and the
+    # vulnerability scanning that should accompany them.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - name: Build both container images
+        run: just build-images

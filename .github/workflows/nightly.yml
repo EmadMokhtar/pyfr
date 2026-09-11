@@ -1,0 +1,56 @@
+name: Nightly
+
+# Slow work that must not sit in the pull request path. Mutation testing
+# takes far longer than a reviewer will wait, and external link checking
+# fails for reasons nobody in the pull request caused.
+
+on:
+  schedule:
+    # 03:17 UTC. Deliberately not on the hour: every scheduled job on
+    # GitHub is queued at :00, and a job that starts when the queue is
+    # empty starts sooner.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    # Measures whether a test would NOTICE a change in behaviour, which is
+    # the question coverage cannot answer. Read the survivors, not the
+    # percentage -- the recipe enforces a floor so a regression is caught,
+    # but the value is in which mutants lived.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just mutants-gate
+
+  links:
+    # The full sweep. ci.yml checks links on every pull request too; this
+    # one exists because an external link rots without anyone here
+    # touching a file, so nothing would ever re-check it otherwise.
+    #
+    # Deliberately NOT `just links`, for the same reason as ci.yml's links
+    # job: the lycheeverse/lychee-action@v2 action supplies the `lychee`
+    # binary itself, which this runner does not otherwise have --
+    # installing it some other way just to shell out to `just links`
+    # would add a step for no benefit. `lychee.toml` still stays the
+    # single definition of the check's behaviour either way, since the
+    # action is pointed at the same config file the recipe uses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md '**/*.md'
+          fail: true

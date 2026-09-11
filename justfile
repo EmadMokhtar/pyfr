@@ -22,5 +22,31 @@ docs-build:
     # each fail the build rather than printing a warning nobody reads.
     uv run mkdocs build --strict
 
+# Dead external links. Internal ones are already `mkdocs build --strict`'s job.
+links:
+    # Needs the lychee binary: `brew install lychee`, or run it in CI,
+    # where the action provides it.
+    lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md
+
+# The repository's own script tests.
+test:
+    uv run --group dev pytest tests/
+
+# Preview the changelog entry the next release will write. Read-only.
+changelog:
+    uvx --from commitizen==4.18.0 cz changelog --dry-run --incremental
+
+# Preview the version the next release will choose, without doing it.
+next-version:
+    # The release itself runs in CI (.github/workflows/release.yml); this is
+    # for answering "what will merging this produce?" before merging.
+    uvx --from commitizen==4.18.0 cz bump --dry-run
+
+# Documentation hygiene warnings for a pull request range. Never fails --
+# see docs/contributing.md for why, and for what has to be true before
+# these become hard failures.
+docs-freshness base="origin/main" head="HEAD":
+    uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
+
 # Everything CI checks at the repository level.
-check: docs-build
+check: docs-build test

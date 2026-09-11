@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/tests/
+---
+
 # Testing strategy
 
 M0 ships 102 tests that run in about three seconds, with no containers and no

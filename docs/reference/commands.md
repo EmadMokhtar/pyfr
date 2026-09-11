@@ -1,3 +1,10 @@
+---
+last_reviewed: 2026-09-11
+covers:
+  - examples/reference-service/justfile
+  - justfile
+---
+
 # Commands
 
 Every task is a [`just`](https://github.com/casey/just) recipe. `just` is a
@@ -24,9 +31,10 @@ Run these from `examples/reference-service/`.
 | `just imports` | import-linter: verify the [dependency rule](../explanation/layers.md). |
 | `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
-| `just check-all` | Everything `just check` does, plus the container tier, all five schema gates, the SLO rule gates and the contract gates. Needs Docker. |
+| `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. |
 | `just down` | Stop the stack and remove its volumes. |
+| `just build-images` | Build both container images (the service and the migrations runner) without starting them, exactly as CI's `build` job does. |
 
 ## Observability
 
@@ -45,11 +53,23 @@ the objectives are defined.
 | --- | --- |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app. Read the diff before committing it — it is your API change, stated completely. |
 | `just test-contract` | The contract tier: generated conformance testing over ASGI (Schemathesis). Needs no Docker. The drift check runs in `just test` / `just check` instead. |
-| `just contract-gates` | `just test-contract`, then the breaking-change check (`oasdiff` against `openapi.baseline.json`, cross-checked against the version in `pyproject.toml`). Needs Docker, for the `oasdiff` image. |
+| `just contract-gates` | `just test-contract`, then the breaking-change check (`oasdiff` against `openapi.baseline.json`, cross-checked for a breaking Conventional Commit in the range since the last release tag). Needs Docker, for the `oasdiff` image. |
 | `just contract-release` | Promote the current `openapi.json` to the baseline. Run this when cutting a release — never to make a red `contract-gates` pass. |
 
 See [The API contract](contract.md) for what each of the three gates
 catches and the workflow that goes with them.
+
+## Configuration
+
+| Command | What it does |
+| --- | --- |
+| `just config-docs` | Regenerate `.env.example` and the table in [Configuration](configuration.md) from `settings.py`'s `Field(description=...)`. Read the diff before committing it — it is your configuration change, stated completely. |
+| `just config-docs-check` | Fail if either generated file has drifted from the settings model. Part of `just gates`. |
+
+`settings.py` is the single source of truth for every environment variable
+this service reads. Hand-editing `.env.example` or the table in
+[Configuration](configuration.md) instead of the model is what
+`config-docs-check` exists to catch.
 
 ## Outbound HTTP and mutation testing
 
@@ -118,14 +138,17 @@ arrangement it already has with the migration container.
 | `just test` | Unit and API tests. Milliseconds, and needs no Docker. |
 | `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the real migrate image. |
 | `just test-all` | Both tiers. |
-| `just gates` | All five schema governance gates. |
+| `just gates` | All five schema governance gates, plus `config-docs-check`. |
 
-The five gates are the snapshot (`schema.sql` still matches the migrations),
-reversibility (every `down.sql` truly reverses its `up.sql`), version
-collisions, model drift (the SQLAlchemy models still match the real schema),
-and the manifest (nobody edited a migration that has already been applied
-somewhere). They run from `just check-all`; wiring them into CI is a later
-milestone.
+The five schema gates are the snapshot (`schema.sql` still matches the
+migrations), reversibility (every `down.sql` truly reverses its `up.sql`),
+version collisions, model drift (the SQLAlchemy models still match the real
+schema), and the manifest (nobody edited a migration that has already been
+applied somewhere). `config-docs-check` — the configuration reference's own
+drift check, see [Configuration](#configuration) above — runs alongside them
+in the same recipe, which is why editing `.env.example` by hand fails
+`just gates` even though it touches no migration. They run from
+`just check-all`, and CI's own `gates` job calls `just gates` directly.
 
 ### Why `just check` ends with a diff check
 
@@ -151,6 +174,19 @@ documents. `git ls-files` scopes the run to the service's own files.
 In a standalone generated project the two are equivalent, so the recipe is
 correct in both layouts.
 
+## The documented examples
+
+Run this from `examples/reference-service/`.
+
+| Command | What it does |
+| --- | --- |
+| `just docs-examples` | Start the full compose stack, run every `curl` example marked in `docs/` against it, then tear the stack down — pass or fail. Needs Docker. |
+
+This is an executable check on the documentation's own prose, not on the
+code: breaking one of the documented examples, or the endpoint it calls,
+fails the recipe. It is not part of `just check-all` — it runs as its own
+`docs-examples` job in CI, against a stack that job starts itself.
+
 ## The documentation site
 
 Run these from the repository root.
@@ -160,6 +196,12 @@ Run these from the repository root.
 | `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
 | `just docs` | Live preview on <http://127.0.0.1:8000>, rebuilding as you save. |
 | `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. |
+| `just test` | Run this repository's own script tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves. Needs no Docker. |
+| `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee). Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml`. |
+| `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails. **This is not CI's `docs-freshness` job** — see [Documentation ships with the change](../contributing.md#documentation-ships-with-the-change) for which script each one runs. |
+| `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |
+| `just next-version` | Preview the version number the next release would choose. Read-only — the release itself runs in CI (`.github/workflows/release.yml`). |
+| `just check` | `docs-build` and `test`. Run before pushing a documentation or repository-tooling change. Same name as the reference service's own `just check` above, run from a different directory and checking different things — they are not interchangeable. |
 
 `--strict` turns a warning into a failure. A link to a page that no longer
 exists, a heading anchor that was renamed, an include that cannot be

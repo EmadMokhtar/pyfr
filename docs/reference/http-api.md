@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/api/
+---
+
 # HTTP API
 
 Interactive documentation is served by the running service at `/docs`, and
@@ -37,6 +43,11 @@ recovered.
 
 ```json
 {"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "ok", "storage": "ok"}}
+```
+
+<!-- exec -->
+```bash
+curl -sf http://localhost:8000/readyz | grep -q '"status":"ok"'
 ```
 
 Two tiers, and which tier a dependency belongs in is a judgement about
@@ -158,6 +169,15 @@ talks to the payment provider.
 
 Responds 200 with the order, or [404](errors.md) when no order has that id.
 
+<!-- exec -->
+```bash
+order_id=$(curl -sf -X POST http://localhost:8000/api/v1/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"customer_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","lines":[{"sku":"WIDGET-1","quantity":2,"unit_amount":"9.99","currency":"EUR"}]}' \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+curl -sf "http://localhost:8000/api/v1/orders/$order_id" | grep -q '"amount":"19.98"'
+```
+
 ### `GET /api/v1/orders/{order_id}/receipt`
 
 Responds 200 with the receipt document, `Content-Type: application/json`:
@@ -174,6 +194,15 @@ Responds 200 with the receipt document, `Content-Type: application/json`:
     {"sku": "WIDGET-1", "quantity": 2, "unit_price": "9.99", "subtotal": "19.98"}
   ]
 }
+```
+
+<!-- exec -->
+```bash
+order_id=$(curl -sf -X POST http://localhost:8000/api/v1/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"customer_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","lines":[{"sku":"WIDGET-1","quantity":2,"unit_amount":"9.99","currency":"EUR"}]}' \
+  | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+curl -sf "http://localhost:8000/api/v1/orders/$order_id/receipt" | grep -q '"schema_version":1'
 ```
 
 Also [404](errors.md) when no order has that id — checked first, so an

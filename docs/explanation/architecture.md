@@ -1,3 +1,9 @@
+---
+last_reviewed: 2026-09-10
+covers:
+  - examples/reference-service/src/reference_service/
+---
+
 # Architecture
 
 This page describes how a PyFr service is put together and why. For the rules

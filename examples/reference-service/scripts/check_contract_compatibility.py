@@ -1,18 +1,30 @@
-"""Fail the build when a breaking API change ships without a version bump.
+"""Fail the build when a breaking API change ships unannounced.
 
-`oasdiff` says whether the API broke. `pyproject.toml`'s version says what
-the release claims. These can disagree — someone removes a response field
-and leaves the version alone — and when they do, a client pinned to a
+`oasdiff` says whether the API broke. The commit messages say whether
+anyone meant to break it. These can disagree -- someone removes a response
+field and writes `fix:` -- and when they do, a client pinned to a
 compatible range breaks in production. This is the gate that stops it
 (spec 10.2).
 
-M5 replaces the version comparison here with the Conventional Commits
-range check, once tags and Commitizen exist. The oasdiff half stays.
+This gate used to also compare `info.version` between the committed
+contract and the baseline. That comparison is gone: the repository is
+now versioned by Commitizen from commit messages, and the reference
+service's own version is a fixed 0.1.0 that nobody bumps, so the
+comparison was reading a number with no meaning. The question is now asked
+of the commits directly, which is what spec 10.2 describes.
+
+The commit range defaults to `since the last tag` rather than
+`origin/main`, and `default_base()` below is why: the baseline half of
+this gate only moves at a release, so the commit-range half has to cover
+the same span, or a change marked breaking in one pull request stops
+being visible to every pull request that follows it.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -27,34 +39,88 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BASELINE = PROJECT_ROOT / "openapi.baseline.json"
 CURRENT = PROJECT_ROOT / "openapi.json"
 
+# A Conventional Commits subject marks a breaking change with `!` before
+# the colon: `feat!:` or `feat(api)!:`. The `!` must be immediately before
+# the colon -- an exclamation mark inside the description is prose.
+_BREAKING_SUBJECT = re.compile(r"^[a-z]+(\([^)]*\))?!:")
 
-class Version(tuple[int, int, int]):
-    """A semantic version, compared as a tuple."""
-
-    @classmethod
-    def parse(cls, raw: str) -> Version:
-        parts = raw.split(".")
-        if len(parts) != 3 or not all(part.isdigit() for part in parts):
-            raise ValueError(f"not a semantic version: {raw!r}")
-        return cls(int(part) for part in parts)
+# A footer marks it with a token at the START of a line. Matching anywhere
+# would let a body explaining that something is NOT a breaking change mark
+# itself as one, which quietly disarms the gate for the next real break.
+_BREAKING_FOOTER = re.compile(r"^BREAKING[ -]CHANGE:", re.MULTILINE)
 
 
-def bump_is_sufficient(baseline: Version, current: Version) -> bool:
-    """Does the version change admit a breaking API change?
+def message_is_breaking(message: str) -> bool:
+    """Does this commit message declare a breaking change?"""
+    subject = message.splitlines()[0] if message else ""
+    return bool(_BREAKING_SUBJECT.match(subject) or _BREAKING_FOOTER.search(message))
 
-    Below 1.0.0 semver puts no compatibility promise on the major number,
-    and the convention every tool follows is that the MINOR number carries
-    breaking changes: 0.1.0 -> 0.2.0. At and above 1.0.0 it is the major.
-    Getting this wrong in the lenient direction would let every pre-1.0
-    break through unnoticed, which is most of this project's life so far.
+
+def default_base(cwd: Path | None = None) -> str:
+    """Where the commit-range half of this gate should start counting from.
+
+    `breaking_changes()` compares the committed `openapi.baseline.json`
+    against `openapi.json` -- a window that only moves at a release, via
+    `just contract-release`. For the commit-message half to ask the SAME
+    question -- "was a breaking change marked, since the thing we are
+    diffing against was last updated" -- its range has to start at the
+    same point: the last release, not `origin/main`. `origin/main` resets
+    on every pull request branch, so a breaking change marked `feat(api)!:`
+    in one pull request clears the baseline diff for good, but a LATER
+    pull request's range no longer contains that marking commit -- and
+    every pull request after it fails the same gate for a break someone
+    already announced. That mismatch, not a typo, is the bug this
+    resolves: the two halves of the gate must look at the same span of
+    history, and comparing against `origin/main` could not guarantee that.
+
+    A release always leaves a tag (`.github/workflows/release.yml` tags
+    every release it cuts), so the most recent tag IS "the last release".
+    With no tags yet -- true of this repository today -- there has been no
+    release at all, so the whole history counts as "since the last
+    release": fall back to the repository's first commit.
     """
-    if baseline[0] == 0:
-        return current[:2] > baseline[:2]
-    return current[0] > baseline[0]
+    described = subprocess.run(
+        ["git", "describe", "--tags", "--abbrev=0"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    if described.returncode == 0:
+        return described.stdout.strip()
+
+    root = subprocess.run(
+        ["git", "rev-list", "--max-parents=0", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=cwd,
+    )
+    # A history with more than one root commit (a graft, or two histories
+    # merged together) would print more than one line here; this
+    # repository has exactly one, so the first line is always correct.
+    return root.stdout.strip().splitlines()[0]
 
 
-def read_version(document: Path) -> Version:
-    return Version.parse(json.loads(document.read_text())["info"]["version"])
+def range_is_marked_breaking(base: str, head: str) -> bool:
+    """Is any commit in `base..head` marked as breaking?
+
+    NUL-separated, not newline-separated: a commit body contains newlines,
+    so splitting on them would treat every paragraph as its own commit --
+    which happens to make the gate MORE permissive, and is therefore the
+    kind of bug that never announces itself.
+    """
+    completed = subprocess.run(
+        ["git", "log", "--format=%B%x00", f"{base}..{head}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return any(
+        message_is_breaking(message.strip())
+        for message in completed.stdout.split("\0")
+        if message.strip()
+    )
 
 
 def breaking_changes(baseline: Path, current: Path) -> list[dict[str, object]]:
@@ -95,30 +161,35 @@ def breaking_changes(baseline: Path, current: Path) -> list[dict[str, object]]:
     return [f for f in findings if f.get("level") == BREAKING_LEVEL]
 
 
-def _render(version: Version) -> str:
-    return ".".join(str(part) for part in version)
-
-
 def main() -> int:
-    baseline_version = read_version(BASELINE)
-    current_version = read_version(CURRENT)
-    findings = breaking_changes(BASELINE, CURRENT)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base",
+        default=None,
+        help=(
+            "Defaults to the most recent tag (the last release), or the "
+            "repository's first commit if there are no tags yet."
+        ),
+    )
+    parser.add_argument("--head", default="HEAD")
+    arguments = parser.parse_args()
+    base = arguments.base if arguments.base is not None else default_base()
 
+    findings = breaking_changes(BASELINE, CURRENT)
     if not findings:
-        print(f"No breaking API changes against {_render(baseline_version)}.")
+        print("No breaking API changes against the committed baseline.")
         return 0
 
-    if bump_is_sufficient(baseline_version, current_version):
+    if range_is_marked_breaking(base, arguments.head):
         print(
-            f"{len(findings)} breaking change(s), and the version was bumped "
-            f"{_render(baseline_version)} -> {_render(current_version)}. Allowed."
+            f"{len(findings)} breaking change(s), and a commit in "
+            f"{base}..{arguments.head} is marked breaking. Allowed."
         )
         return 0
 
     print(
-        f"BREAKING API CHANGE with no matching version bump.\n"
-        f"  baseline: {_render(baseline_version)}\n"
-        f"  current:  {_render(current_version)}\n",
+        f"BREAKING API CHANGE with no commit marked breaking in "
+        f"{base}..{arguments.head}.\n",
         file=sys.stderr,
     )
     for finding in findings:
@@ -128,8 +199,9 @@ def main() -> int:
             file=sys.stderr,
         )
     print(
-        "\nEither undo the change, or bump the version in pyproject.toml and "
-        "regenerate the contract with `just openapi`.",
+        "\nEither undo the change, or mark the commit breaking -- `feat!:` "
+        "in the subject, or a `BREAKING CHANGE:` footer. Marking it is a "
+        "statement that clients will need to act, so mean it.",
         file=sys.stderr,
     )
     return 1

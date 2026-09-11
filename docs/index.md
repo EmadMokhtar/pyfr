@@ -1,3 +1,7 @@
+---
+last_reviewed: 2026-09-10
+---
+
 # PyFr
 
 A cookiecutter template for production-ready Python microservices.

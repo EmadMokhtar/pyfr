@@ -141,10 +141,11 @@ contract-gates:
     uv run pytest -m contract
     uv run python scripts/check_contract_compatibility.py
 
-# Promote the current contract to the baseline. Run this as part of
-# CUTTING a release, never to make `contract-gates` stop complaining:
-# silencing it that way is precisely the silent breaking change the gate
-# exists to catch (spec 10.2).
+# Promote the current contract to the baseline. `.github/workflows/release.yml`
+# runs this inside every release's bump commit, so nobody runs it by hand
+# -- and never to make `contract-gates` stop complaining: silencing it that
+# way is precisely the silent breaking change the gate exists to catch
+# (spec 10.2).
 contract-release:
     cp openapi.json openapi.baseline.json
 
@@ -152,6 +153,16 @@ contract-release:
 # Read the diff before you do: it is your API change, in full.
 openapi:
     uv run python -c "from tests.unit.test_contract_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
+
+# Regenerate .env.example and the published configuration table from the
+# settings model, then commit the result. Read the diff first: it is your
+# configuration change, in full.
+config-docs:
+    uv run python scripts/generate_config_docs.py
+
+# Fail if either generated file has drifted from the model.
+config-docs-check:
+    uv run python scripts/generate_config_docs.py --check
 
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
@@ -166,12 +177,20 @@ schema-snapshot:
         -k test_gate_1_the_committed_schema_matches_the_migrations
 
 # Version collisions and the migration manifest come from the unit tier; the
-# snapshot, reversibility and model-drift gates need a database.
+# snapshot, reversibility and model-drift gates need a database. The
+# configuration drift check needs neither, and it is not gates-only: its
+# test, `tests/unit/test_config_docs.py::test_committed_outputs_are_current`,
+# carries no marker, so it already runs in the default `just test` / `just
+# check` tier too. It is called again here, explicitly, so `just gates` run
+# on its own -- without the rest of the unit tier alongside it -- still
+# catches it, in the same generated-artifact shape as the other five schema
+# gates.
 #
-# Run all five schema gates.
+# Run all five schema gates, plus the configuration reference drift check.
 gates:
     uv run pytest tests/unit/test_migration_files.py
     uv run pytest -m integration -k "schema_gates or schema_drift"
+    just config-docs-check
 
 imports:
     uv run lint-imports
@@ -240,6 +259,28 @@ migrate-version:
 migrate-force version:
     docker compose run --rm migrate force {{version}}
 
+# Run the documentation's marked `curl` examples against a real service.
+docs-examples:
+    #!/usr/bin/env bash
+    # A `#!`-shebang recipe with a trap, for the same reason `test-record` is
+    # one: the stack must come down whether the examples pass, fail, or the
+    # run is interrupted. The trap is armed BEFORE `up`, so a healthcheck
+    # timeout in `--wait` cannot leave the stack running.
+    #
+    # Its own Compose project, `-p`, and never the default one: `down -v`
+    # removes the project's volumes, and in the default project those are
+    # `postgres-data` and `minio-data` -- the database and receipts of a
+    # `just up` stack a developer may have running. With its own project
+    # the volumes are its own, and `down -v` deletes nothing anyone keeps.
+    # The host ports are still the same, so this cannot run WHILE `just
+    # up` is running -- `up --wait` fails on the port clash, the trap
+    # tears down only this project, and nothing of the other is touched.
+    set -euo pipefail
+    project=reference-service-docs-examples
+    trap 'docker compose -p "$project" down -v' EXIT
+    docker compose -p "$project" up -d --wait
+    python3 ../../scripts/check_doc_examples.py ../../docs
+
 # An interactive psql session against the running compose database.
 psql:
     docker compose exec postgres psql -U app -d app
@@ -277,11 +318,29 @@ check: lint typecheck imports test precommit
     # just that the tree was already clean.
     git diff --exit-code
 
-# What CI will run at M5. Separate from `check` so the fast loop stays fast
-# and usable without Docker.
+# What running every gate locally, in one command, looks like. CI does not
+# call this recipe itself — `ci.yml` runs `check`, `test-integration`,
+# `gates`, `o11y-gates` and `contract-gates` as five separate jobs, in
+# parallel, so one failure names the gate that broke instead of an opaque
+# `check-all` exit code. This recipe is for a developer who wants the same
+# coverage before opening the pull request, without waiting on CI to say so.
+# Separate from `check` so the fast loop stays fast and usable without
+# Docker.
 #
 # Everything `check` does, plus the container tier and all five gates.
 check-all: check test-integration gates o11y-gates contract-gates
+
+# Build both container images, exactly as CI does.
+build-images:
+    # Two separate `docker build` calls rather than `docker compose build`:
+    # the migrations image (Dockerfile.migrations) is `FROM
+    # migrate/migrate`, sharing no base and no build stage with the
+    # application image's own Dockerfile, so there is no cache or layer to
+    # gain by chaining them, and a failing build stays easy to tell apart
+    # from the other. No `-f Dockerfile` on the first: that is docker's own
+    # default, and the second build needs `-f` only because it is not.
+    docker build -t reference-service:ci .
+    docker build -f Dockerfile.migrations -t reference-service-migrations:ci .
 
 up:
     docker compose up --build

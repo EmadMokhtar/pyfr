@@ -41,7 +41,9 @@ schema that is not there yet, or a bucket that does not exist yet.
 | `just test` | Run the unit and api tiers — no containers, no Docker needed |
 | `just test-integration` | Run the container-backed integration tier (needs Docker) |
 | `just test-all` | Run every tier: unit, api and integration |
-| `just gates` | All five schema governance gates — see [Database](#database) |
+| `just gates` | All five schema governance gates, plus the configuration reference drift check — see [Database](#database) |
+| `just config-docs` | Regenerate `.env.example` and the configuration table from `settings.py` — see [Configuration](#configuration) |
+| `just config-docs-check` | Fail if either generated file has drifted from `settings.py`. Runs as part of `just gates` |
 | `just schema-snapshot` | Regenerate the committed `schema.sql` after a migration change |
 | `just migrate` | Apply every outstanding migration |
 | `just migrate-new NAME` | Write a new `.up.sql` / `.down.sql` pair |
@@ -54,14 +56,16 @@ schema that is not there yet, or a bucket that does not exist yet.
 | `just typecheck` | mypy — strict on domain and services |
 | `just imports` | Verify the layer dependency rule |
 | `just check` | lint, typecheck, imports, test, precommit, then `git diff --exit-code` — fails loudly if any pre-commit hook (ruff-format, uv-lock, and others mutate files) changed the tree instead of silently passing on a second run; needs no Docker; run this before pushing |
-| `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — what CI will run at M5, and what to run before a pull request that touches the schema, the adapter, the API contract, or observability |
+| `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same five gates CI runs as separate jobs, in one local command; run it before a pull request that touches the schema, the adapter, the API contract, or observability |
 | `just up` / `just down` | Start / stop the container stack |
+| `just build-images` | Build both container images without starting them, exactly as CI's `build` job does |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
 | `just test-contract` | The contract tier: Schemathesis conformance testing over ASGI. The drift check runs in `just test` / `just check` instead — see [Contract governance](#contract-governance) |
 | `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |
 | `just contract-release` | Promote `openapi.json` to the baseline. Only at a release — never to silence a red `contract-gates` |
 | `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub — see [Outbound payments](#outbound-payments) |
 | `just mutants` / `just mutants-gate` | Mutation testing over `domain/` and `services/`, and the gate against the recorded floor |
+| `just docs-examples` | Start the compose stack, run every marked `curl` example in `docs/` against it, then tear it down — pass or fail |
 | `just redis-cli` | An interactive `redis-cli` session against the running compose cache |
 | `just minio-console` | Print, and try to open, the MinIO web console — see [Object storage](#object-storage) |
 
