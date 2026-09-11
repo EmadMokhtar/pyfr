@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Collection, Mapping, MutableMapping
 from typing import Any
 
 import orjson
@@ -26,6 +26,11 @@ from opentelemetry import trace
 from opentelemetry.instrumentation.logging.handler import LoggingHandler
 from opentelemetry.sdk._logs import LoggerProvider
 from structlog.types import Processor
+
+from reference_service.observability.redaction import (
+    DEFAULT_REDACT_FIELDS,
+    make_redactor,
+)
 
 
 def _json_dumps(obj: Any, default: Any = None, **_: Any) -> str:
@@ -91,7 +96,11 @@ def _add_otel_context(
 
 
 def _shared_processors(
-    *, service_name: str, service_version: str, environment: str
+    *,
+    service_name: str,
+    service_version: str,
+    environment: str,
+    redact_fields: Collection[str],
 ) -> list[Processor]:
     return [
         # Correlation id and anything else middleware bound for this request.
@@ -109,6 +118,13 @@ def _shared_processors(
         # One exception becomes one structured field rather than thirty
         # unrelated log lines in the backend.
         structlog.processors.dict_tracebacks,
+        # LAST, deliberately: it must see the fully assembled record —
+        # everything the processors above added, bound context included —
+        # and because this same list is the `foreign_pre_chain` below, a
+        # third-party record is masked by the same rule. A secret bound
+        # into context by middleware reaches a library's log line already
+        # redacted (spec 7.6, spec 12 item 6).
+        make_redactor(redact_fields),
     ]
 
 
@@ -120,6 +136,8 @@ def configure_logging(
     # caller passing `dict[str, LogLevel]` (settings.py's validated type)
     # would fail mypy against a plain `dict[str, str]` parameter here.
     levels: Mapping[str, str],
+    # Replaced wholesale by APP_LOG__REDACT_FIELDS; see redaction.py.
+    redact_fields: Collection[str] = DEFAULT_REDACT_FIELDS,
     service_name: str = "reference-service",
     service_version: str = "0.0.0",
     logger_provider: LoggerProvider | None = None,
@@ -129,6 +147,7 @@ def configure_logging(
         service_name=service_name,
         service_version=service_version,
         environment=environment,
+        redact_fields=redact_fields,
     )
 
     renderer: Processor = (
