@@ -41,13 +41,13 @@ audit:
 
 # Preview the changelog entry the next release will write. Read-only.
 changelog:
-    uvx --from commitizen==4.18.0 cz changelog --dry-run --incremental
+    uv run --locked --group dev cz changelog --dry-run --incremental
 
 # Preview the version the next release will choose, without doing it.
 next-version:
     # The release itself runs in CI (.github/workflows/release.yml); this is
     # for answering "what will merging this produce?" before merging.
-    uvx --from commitizen==4.18.0 cz bump --dry-run
+    uv run --locked --group dev cz bump --dry-run
 
 # Documentation hygiene warnings for a pull request range. Never fails --
 # see docs/contributing.md for why, and for what has to be true before

@@ -80,14 +80,17 @@ jobs:
 
       - name: Bump the version and write the changelog
         id: bump
-        # Pinned to the version .pre-commit-config.yaml pins, so the tool
-        # deciding the version here is the tool that validated the commit
-        # messages it reads.
+        # Commitizen comes from the root uv.lock -- the one place its
+        # version lives (ADR 0014) -- so the tool deciding the version
+        # here is the tool the commit-msg hook ran on every message it
+        # reads.
         #
         # `cz bump` commits with `git commit -a`, which stages every
         # tracked modification in the tree -- so nothing may write into
-        # the working tree before this step. There is deliberately no
-        # `uv sync` above for that reason.
+        # the working tree before this step. `uv run --locked` is safe
+        # here: it refuses to rewrite uv.lock rather than updating it, and
+        # `.venv/` is untracked and ignored (M6 plan, Verified Fact 12).
+        # There is still deliberately no `uv sync` step above.
         #
         # This repository starts with no git tags at all, and `cz bump`
         # cannot cut the first release under that condition -- verified,
@@ -115,7 +118,7 @@ jobs:
           if [ -z "$(git tag -l)" ]; then
             echo "No tags found: bootstrapping the first release."
 
-            version=$(uvx --from commitizen==4.18.0 cz version --project)
+            version=$(uv run --locked --group dev cz version --project)
             tag="v${version}"
 
             # A plain (lightweight) tag: cz's own tags carry no message
@@ -129,7 +132,7 @@ jobs:
             echo "version=${version}" >> "$GITHUB_OUTPUT"
           else
             set +e
-            uvx --from commitizen==4.18.0 cz bump --yes --changelog
+            uv run --locked --group dev cz bump --yes --changelog
             status=$?
             set -e
 
@@ -152,7 +155,7 @@ jobs:
 
             echo "mode=bump" >> "$GITHUB_OUTPUT"
             echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "version=$(uvx --from commitizen==4.18.0 cz version --project)" \
+            echo "version=$(uv run --locked --group dev cz version --project)" \
               >> "$GITHUB_OUTPUT"
           fi
 
@@ -198,7 +201,7 @@ jobs:
         # describe the same release; they are not guaranteed to describe
         # it in the same words.
         run: |
-          uvx --from commitizen==4.18.0 cz changelog "v${VERSION}" \
+          uv run --locked --group dev cz changelog "v${VERSION}" \
             --dry-run > release-notes.md
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
