@@ -163,6 +163,13 @@ config-docs:
 config-docs-check:
     uv run python scripts/generate_config_docs.py --check
 
+# Print the resolved configuration with secrets masked, or exit 78 with
+# the same message the service prints when it refuses to start. Reads
+# .env like the service does. The same module runs inside the image:
+# `docker compose run --rm app python -m reference_service.config_check`.
+config-check:
+    uv run python -m reference_service.config_check
+
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
 #
