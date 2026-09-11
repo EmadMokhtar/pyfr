@@ -50,6 +50,12 @@ docs = [
 # separate and lives under examples/reference-service/.
 dev = [
     "pytest>=8.3",
+    # tests/test_check_docs_freshness.py imports scripts/check_docs_freshness.py,
+    # which does `import yaml` directly. Declared here rather than left to
+    # arrive transitively through the `docs` group's MkDocs: `dev` must be
+    # installable, and testable, on its own, without a `docs` sync alongside
+    # it. Floor matches what uv.lock already resolves.
+    "pyyaml>=6.0.3",
 ]
 
 [tool.pytest.ini_options]
