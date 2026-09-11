@@ -272,9 +272,19 @@ docs-examples:
     # one: the stack must come down whether the examples pass, fail, or the
     # run is interrupted. The trap is armed BEFORE `up`, so a healthcheck
     # timeout in `--wait` cannot leave the stack running.
+    # `up --wait app`, naming the service: `up --wait` with no name also
+    # starts the `seed` one-shot, and compose counts a container that has
+    # EXITED -- even with status 0 -- as a failed wait unless some started
+    # service depends on it with service_completed_successfully. `app`
+    # depends on `migrate` and `minio-bootstrap` that way, which is why
+    # they never tripped this; nothing depends on `seed`. Naming `app`
+    # starts exactly its dependency graph, which is the stack the
+    # documented examples need -- none of them relies on seeded data, and
+    # the plan forbids one from doing so, because seeded ids differ per
+    # machine.
     set -euo pipefail
     trap 'docker compose down -v' EXIT
-    docker compose up -d --wait
+    docker compose up -d --wait app
     python3 ../../scripts/check_doc_examples.py ../../docs
 
 # An interactive psql session against the running compose database.
