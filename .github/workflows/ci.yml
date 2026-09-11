@@ -50,6 +50,74 @@ jobs:
       - name: Run every fast gate
         run: just check
 
+  integration:
+    # testcontainers starts PostgreSQL, Redis and MinIO itself. Deliberately
+    # NOT a `services:` block: the containers are pinned in the test code,
+    # so the versions CI runs against are the versions a developer runs
+    # against, and there is one place to change them.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just test-integration
+
+  gates:
+    # Migration files, the schema snapshot, model/schema drift, and the
+    # generated configuration reference. Needs Docker for the schema
+    # gates, which run against a real PostgreSQL.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just gates
+
+  contract:
+    # OpenAPI drift, schemathesis conformance, and the oasdiff plus
+    # commit-marker cross-check. `fetch-depth: 0` because that last one
+    # reads the commit range -- with a shallow clone `git log base..head`
+    # is empty, which reads as "nobody marked it breaking" and fails every
+    # legitimate breaking change.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v2
+      - run: uv sync
+      - run: just contract-gates
+
+  o11y-gates:
+    # promtool over the SLO rules, out of the pinned otel-lgtm image. No
+    # uv sync: it runs no Python at all.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - run: just o11y-gates
+
   docs:
     runs-on: ubuntu-latest
     steps:
