@@ -141,10 +141,11 @@ contract-gates:
     uv run pytest -m contract
     uv run python scripts/check_contract_compatibility.py
 
-# Promote the current contract to the baseline. Run this as part of
-# CUTTING a release, never to make `contract-gates` stop complaining:
-# silencing it that way is precisely the silent breaking change the gate
-# exists to catch (spec 10.2).
+# Promote the current contract to the baseline. `.github/workflows/release.yml`
+# runs this inside every release's bump commit, so nobody runs it by hand
+# -- and never to make `contract-gates` stop complaining: silencing it that
+# way is precisely the silent breaking change the gate exists to catch
+# (spec 10.2).
 contract-release:
     cp openapi.json openapi.baseline.json
 

@@ -70,6 +70,13 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install just
+        # For `just contract-release` in the bump step. This puts a binary
+        # on the runner's PATH and writes nothing into the checkout, so it
+        # does not fall foul of the "nothing writes before the bump" rule
+        # that step's comment explains.
+        uses: extractions/setup-just@v2
+
       - name: Identify the committer
         # The bump commit needs an author. Using the Actions bot rather
         # than impersonating whoever merged: the commit is made by
@@ -86,8 +93,11 @@ jobs:
         #
         # `cz bump` commits with `git commit -a`, which stages every
         # tracked modification in the tree -- so nothing may write into
-        # the working tree before this step. There is deliberately no
-        # `uv sync` above for that reason.
+        # the working tree before this step BY ACCIDENT. There is
+        # deliberately no `uv sync` above for that reason. The one
+        # deliberate write is the contract-baseline promotion inside the
+        # else branch below, which relies on exactly this behaviour to
+        # ride along in the bump commit.
         #
         # This repository starts with no git tags at all, and `cz bump`
         # cannot cut the first release under that condition -- verified,
@@ -128,6 +138,21 @@ jobs:
             echo "released=true" >> "$GITHUB_OUTPUT"
             echo "version=${version}" >> "$GITHUB_OUTPUT"
           else
+            # Promote the API contract baseline so it rides in the bump
+            # commit. The contract gate compares openapi.json against
+            # openapi.baseline.json, and reads commit markers over the
+            # window since the last tag -- so the baseline and the tag
+            # must move together, or the gate goes red on the first pull
+            # request after a release and stays red until someone
+            # promotes by hand. Steady-state only: the bootstrap branch
+            # above makes no commit, so its baseline was promoted on the
+            # branch that introduced this workflow instead.
+            #
+            # If cz then decides there is nothing to release (exit 3 or
+            # 21 below), this write is discarded with the runner: nothing
+            # is committed and nothing is pushed.
+            (cd examples/reference-service && just contract-release)
+
             set +e
             uvx --from commitizen==4.18.0 cz bump --yes --changelog
             status=$?

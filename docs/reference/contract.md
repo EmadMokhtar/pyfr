@@ -136,9 +136,9 @@ branch, so a breaking change marked `feat(api)!:` in one pull request
 would clear the baseline diff for good, while the very next pull request's
 range no longer contains that marking commit — and would fail the same
 gate for a break someone already announced and shipped. A release always
-leaves a tag behind (`.github/workflows/release.yml` tags every release it
-cuts), so the most recent tag names exactly the same point the baseline
-was last promoted from.
+leaves a tag behind and promotes the baseline in the same bump commit —
+`.github/workflows/release.yml` does both — so the most recent tag names
+exactly the same point the baseline was last promoted from.
 
 ```bash
 just contract-gates
@@ -158,16 +158,18 @@ gate:
 just contract-release
 ```
 
-copies the current `openapi.json` over it. Running that to make
-`contract-gates` stop complaining *is* the silent breaking change this gate
-exists to catch — it does not report anything different afterwards, it
-simply has nothing left to compare against.
+copies the current `openapi.json` over it. `release.yml` runs that inside
+the bump commit of every release it cuts, so nobody runs it by hand.
+Running it by hand to make `contract-gates` stop complaining *is* the
+silent breaking change this gate exists to catch — it does not report
+anything different afterwards, it simply has nothing left to compare
+against.
 
 This is also, deliberately, the same moment `--base`'s default moves to: a
 release both promotes the baseline and leaves the tag that the *next*
-release's window will start counting from, which is exactly why the two
-halves of this gate stay in step without either one needing to know about
-the other.
+release's window will start counting from — in one commit, made by one
+workflow — which is exactly why the two halves of this gate stay in step
+without either one needing to know about the other.
 
 ## The workflow
 
