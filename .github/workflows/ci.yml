@@ -30,11 +30,6 @@ jobs:
         working-directory: examples/reference-service
     steps:
       - uses: actions/checkout@v4
-        with:
-          # `just precommit` runs pre-commit over `git ls-files`, and the
-          # commitizen hook checks commit messages in the range -- both
-          # need real history, not a shallow clone.
-          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -86,11 +81,16 @@ jobs:
       - run: just gates
 
   contract:
-    # OpenAPI drift, schemathesis conformance, and the oasdiff plus
-    # commit-marker cross-check. `fetch-depth: 0` because that last one
-    # reads the commit range -- with a shallow clone `git log base..head`
-    # is empty, which reads as "nobody marked it breaking" and fails every
-    # legitimate breaking change.
+    # `just contract-gates`: schemathesis conformance against the committed
+    # contract, plus the oasdiff breaking-change check cross-referenced
+    # against the commit's own `!` marker. OpenAPI drift -- whether the
+    # committed openapi.json still matches the code -- is NOT one of them:
+    # that gate (tests/unit/test_contract_drift.py) carries no contract
+    # marker, so it runs in the default `just test` tier instead, covered
+    # by the `check` job above. `fetch-depth: 0` because the commit-marker
+    # half reads the commit range -- with a shallow clone `git log
+    # base..head` is empty, which reads as "nobody marked it breaking" and
+    # fails every legitimate breaking change.
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -119,6 +119,14 @@ jobs:
       - run: just o11y-gates
 
   docs:
+    # `just check` at the repository root: the documentation site build
+    # (`docs-build`, --strict) plus the root project's own test suite
+    # (`test`), which covers scripts/check_docs_freshness.py and
+    # scripts/check_docs_updated.py -- neither ran in CI before this. Job id
+    # kept as `docs` rather than renamed: the documentation build is still
+    # most of what this job does, and renaming a job id changes what GitHub
+    # calls a required status check, which this repository cannot see or
+    # verify from here.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -128,13 +136,14 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install the documentation toolchain
         run: uv sync --group docs
 
-      - name: Build the docs site
-        # --strict turns a dead reference or an unresolvable include into a
-        # failure rather than a warning nobody reads.
-        run: uv run mkdocs build --strict
+      - name: Run every root-level gate
+        run: just check
 
   docs-freshness:
     # Blunt backstop for stale prose. The `no-docs-needed` label is the escape
