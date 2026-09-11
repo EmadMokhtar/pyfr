@@ -79,8 +79,10 @@ curl -s localhost:8000/readyz | jq
 ```
 
 `checks` is the gating result (database only). `dependencies` reports the
-cache and object store without gating on either — both fields are always
-present, whether the dependency they name is up or down.
+cache and object store without gating on either. Each appears there only
+when it is configured — a dependency's field is present whether that
+dependency is up or down, but a service running with neither `APP_CACHE__*`
+nor `APP_STORAGE__*` set returns `dependencies: {}`.
 
 **Act, per dependency.**
 
