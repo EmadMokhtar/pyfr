@@ -32,6 +32,18 @@ links:
 test:
     uv run --group dev pytest tests/
 
+# The repository's git hooks over every tracked file. The reference service's
+# own precommit recipe skips itself when it finds it is nested inside this
+# repository; this recipe is the one that covers that tree here.
+precommit:
+    uv run --group dev pre-commit run --all-files
+
+# ruff over the root's own Python -- hooks/, scripts/, tests/. ruff.toml's
+# extend-exclude keeps it out of the template body and the example.
+lint:
+    uv run --group dev ruff check .
+    uv run --group dev ruff format --check .
+
 # Audit the documentation and release toolchain's lock the same way the
 # reference service audits its own -- see that justfile's `audit` for the
 # flags. Two locks, two audits, one CI job.

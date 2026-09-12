@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from check_doc_examples import Example, find_examples, main, run  # noqa: E402
+from check_doc_examples import Example, find_examples, main, run
 
 
 def test_find_examples_returns_only_the_marked_block(tmp_path: Path) -> None:
@@ -170,9 +170,7 @@ def test_run_fails_when_only_the_first_of_two_commands_fails() -> None:
     command that would itself succeed) is exactly a broken `curl` followed
     by a working `echo`.
     """
-    ok, _output = run(
-        Example(path="page.md", line=1, body="false\necho recovered")
-    )
+    ok, _output = run(Example(path="page.md", line=1, body="false\necho recovered"))
     assert ok is False
 
 
@@ -188,7 +186,7 @@ def test_main_returns_nonzero_when_a_marked_example_fails(tmp_path: Path) -> Non
 
 
 def test_main_returns_nonzero_when_no_marked_blocks_exist(tmp_path: Path) -> None:
-    """"No examples found" is treated as a bug, not a clean pass.
+    """ "No examples found" is treated as a bug, not a clean pass.
 
     A renamed marker or a documentation rewrite that deletes every
     `<!-- exec -->` block would otherwise leave `just docs-examples`

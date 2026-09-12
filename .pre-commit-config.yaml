@@ -1,0 +1,78 @@
+# The repository's hooks. The reference service's own .pre-commit-config.yaml
+# is written for a generated project and runs only when that project is its
+# own git repository; inside this repository the file at
+# examples/reference-service/ is rendered output and inert (M7 PR 1 plan,
+# Verified Fact 1).
+#
+# pre-commit only installs the git hook types it is told to. Without this,
+# `pre-commit install` wires up the `pre-commit` stage only - the commitizen
+# hook below runs at the `commit-msg` stage and would never fire.
+default_install_hook_types: [pre-commit, commit-msg]
+
+# The template body is Jinja, not Python, YAML or TOML: its files render into
+# those languages and are checked there, in examples/reference-service/.
+# .idea/ is IDE metadata, not code -- the repository's .gitignore already
+# lists it (the directory is tracked from before that entry was added).
+exclude: ^(\{\{cookiecutter\.project_slug\}\}/|\.idea/)
+
+repos:
+  # ruff, uv and Commitizen run from the environments uv.lock pins -- the
+  # ONE place their versions live (ADR 0014). `language: system` runs the
+  # command as-is and the command resolves the tool through uv.
+  #
+  # pre-commit runs every hook from the repository ROOT with root-relative
+  # paths. ruff runs from the root's own environment and finds each file's
+  # nearest ruff.toml, so the example is linted with its own rules; the
+  # uv-lock hook selects the example's project WITHOUT changing directory.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --group dev ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run --group dev ruff format --check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: uv-lock
+        name: uv lock --check (reference service)
+        entry: uv lock --check --project examples/reference-service
+        language: system
+        pass_filenames: false
+        files: ^examples/reference-service/(pyproject\.toml|uv\.lock)$
+      - id: uv-lock-root
+        name: uv lock --check (repository)
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+      # The root project owns this repository's Commitizen (root pyproject).
+      - id: commitizen
+        name: commitizen check
+        entry: uv run --locked --group dev cz check --allow-abort --commit-msg-file
+        language: system
+        stages: [commit-msg]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.3.0
+    hooks:
+      - id: sqlfluff-lint
+        files: ^examples/reference-service/migrations/.*\.sql$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
