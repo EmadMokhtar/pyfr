@@ -50,3 +50,4 @@ reconstruction, and it shows.
 | 0014 | [Dependabot, and one pin per tool](0014-dependabot-and-one-pin-per-tool.md) | M6 |
 | 0015 | [Images are published on release, under the repository's version](0015-images-are-published-on-release-under-the-repository-version.md) | M6 |
 | 0016 | [Image scanning fails on fixed findings, and exemptions expire](0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire.md) | M6 |
+| 0017 | [The template is the source of truth, and a golden diff proves it](0017-the-template-is-the-source-of-truth.md) | M7 |
