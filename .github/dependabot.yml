@@ -78,3 +78,17 @@ updates:
     commit-message:
       prefix: "build(deps)"
     labels: ["dependencies", "no-docs-needed"]
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    # The repository's own hooks (root .pre-commit-config.yaml). The entry
+    # above keeps the reference service's -- which is the template's, through
+    # `just adopt` (M7-10).
+    schedule:
+      interval: "weekly"
+    groups:
+      hooks:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies", "no-docs-needed"]
