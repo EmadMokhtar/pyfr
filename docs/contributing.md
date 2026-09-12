@@ -47,6 +47,9 @@ just regen
 
 That renders the template with `tests/reference-answers.yaml` into
 `examples/reference-service/` and is the only way that directory changes.
+It also removes anything in `examples/reference-service/` that the template
+does not produce — a stray untracked file included — except `uv.lock` and
+git-ignored paths such as `.venv/`, so keep scratch files out of that tree.
 `just regen-check` (CI's `golden` job) fails the build when the two
 disagree, naming the files. Then run the example's own gates:
 
