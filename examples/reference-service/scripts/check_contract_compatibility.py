@@ -75,9 +75,10 @@ def default_base(cwd: Path | None = None) -> str:
 
     A release always leaves a tag (`.github/workflows/release.yml` tags
     every release it cuts), so the most recent tag IS "the last release".
-    With no tags yet -- true of this repository today -- there has been no
-    release at all, so the whole history counts as "since the last
-    release": fall back to the repository's first commit.
+    With no tags at all -- a copy of this repository before its first
+    release -- there has been no release at all, so the whole history
+    counts as "since the last release": fall back to the repository's
+    first commit.
     """
     described = subprocess.run(
         ["git", "describe", "--tags", "--abbrev=0"],
@@ -168,7 +169,7 @@ def main() -> int:
         default=None,
         help=(
             "Defaults to the most recent tag (the last release), or the "
-            "repository's first commit if there are no tags yet."
+            "repository's first commit if there are no tags at all."
         ),
     )
     parser.add_argument("--head", default="HEAD")
