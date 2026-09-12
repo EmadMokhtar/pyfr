@@ -15,8 +15,8 @@ the service starts and serves correctly with none of them configured.
   `just gates`) — real containers throughout: PostgreSQL, Redis and MinIO — and
   for `just security`, which scans the built images
 - [just](https://github.com/casey/just) — the command runner
-- PostgreSQL 16, Redis 8 and MinIO — none installed locally; pulled as
-  `postgres:16-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
+- PostgreSQL 18, Redis 8 and MinIO — none installed locally; pulled as
+  `postgres:18-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
   `just up` and by the integration tests
 
 ## Five-minute start
