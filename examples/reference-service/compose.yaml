@@ -19,6 +19,14 @@ services:
       timeout: 3s
       retries: 15
     volumes:
+      # postgres:18 moved PGDATA from /var/lib/postgresql/data to
+      # /var/lib/postgresql/18/docker and declares its VOLUME one level up,
+      # at /var/lib/postgresql. Mounting at the old /data path would leave
+      # the cluster OUTSIDE the named volume — every `docker compose down`
+      # would drop the schema and the orders. A volume written by
+      # postgres:16 under the old layout is not upgraded in place: `just
+      # down` (`docker compose down -v`) removes it, and the next `just up`
+      # initialises a fresh 18 cluster.
       - postgres-data:/var/lib/postgresql
 
   # The cache. Not behind a profile: it is small, starts in under a second,

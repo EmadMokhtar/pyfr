@@ -28,10 +28,11 @@ SCHEMA_FILE = Path(__file__).resolve().parents[2] / "schema.sql"
 _DUMP_NONCE = re.compile(r"^\\(?:un)?restrict .*$", re.MULTILINE)
 
 # pg_dump also stamps its header with the exact versions it ran as:
-#     -- Dumped from database version 16.13
-#     -- Dumped by pg_dump version 16.13
-# conftest.py pins POSTGRES_IMAGE to the floating tag "postgres:16-alpine",
-# so the next routine point release (16.13 -> 16.14) moves this line on
+#     -- Dumped from database version 18.6
+#     -- Dumped by pg_dump version 18.6
+# compose.yaml pins the floating tag "postgres:18-alpine" (conftest.py reads
+# POSTGRES_IMAGE from there, per ADR 0014), so the next routine point
+# release (18.6 -> 18.7) moves this line on
 # whichever machine or CI runner next repulls the image, with no migration
 # having changed. The same class of problem as the nonce above -- a false
 # drift signal that looks exactly like a real one -- gets the same
@@ -56,7 +57,7 @@ def normalise_dump(dump: str) -> str:
     # it — the count of blank lines becomes a property of which pg_dump
     # produced the dump, not of the schema, and the committed schema.sql
     # would need to be regenerated on whichever machine's cached
-    # postgres:16-alpine image happens to disagree with the one that last
+    # postgres:18-alpine image happens to disagree with the one that last
     # regenerated it. Collapsing any run of 3+ newlines down to one blank
     # line (2 newlines) — the spacing every other section boundary in this
     # file already uses — makes the result the same regardless of which of
