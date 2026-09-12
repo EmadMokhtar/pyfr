@@ -334,20 +334,22 @@ are easy to miss when standing up a fork.
   updates are what opens a pull request for it the same day rather than at
   the next weekly run.
 
-### The first release run is not like the others
+### The first release run was not like the others
 
-This repository starts with no git tags at all, so its very first run of
-`.github/workflows/release.yml` cannot use Commitizen's normal path: `cz
-bump` needs a prior tag to diff against to compute the next version, and
-there isn't one yet. That first run instead tags the current version —
-`v0.5.0`, already on disk in `pyproject.toml` — directly, with **no bump
-commit and no change to `CHANGELOG.md`**, because there is nothing to
-bump: `CHANGELOG.md` already describes `v0.5.0`, generated from the
-commit history that produced it.
+This repository had no git tags until its first release, so that first run
+of `.github/workflows/release.yml` could not use Commitizen's normal path:
+`cz bump` needs a prior tag to diff against to compute the next version.
+The workflow's bootstrap mode instead tagged the version already on disk in
+`pyproject.toml` — `v0.5.0`, on 2026-09-11 — directly, with **no bump
+commit and no change to `CHANGELOG.md`**, because there was nothing to
+bump: `CHANGELOG.md` already described `v0.5.0`, generated from the commit
+history that produced it.
 
-So a tag appearing on `main` with no accompanying version-bump commit is
-the **correct** result of that first release, not a stuck or partial run —
-see the "Bump the version and write the changelog" step's own comment in
-`release.yml` for the two ways `cz bump` was confirmed to fail outright
-with zero tags. Every release after the first finds a tag to diff against
-and takes the normal `cz bump` path, exactly as Commitizen documents it.
+So `v0.5.0` sits on `main` with no accompanying version-bump commit, and
+that is the **correct** result of the first release, not a stuck or partial
+run — see the "Bump the version and write the changelog" step's own comment
+in `release.yml` for the two ways `cz bump` was confirmed to fail outright
+with zero tags. Every release since — `v0.6.0` was the first — finds a tag
+to diff against and takes the normal `cz bump` path, exactly as Commitizen
+documents it. The bootstrap branch stays in the workflow: dead code here,
+live for a copy of this repository made without its tags.

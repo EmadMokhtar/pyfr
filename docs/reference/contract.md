@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 covers:
   - examples/reference-service/openapi.json
   - examples/reference-service/scripts/check_contract_compatibility.py
@@ -124,8 +124,8 @@ either undo the change or mark the commit breaking.
 
 `--head` defaults to `HEAD`. `--base` defaults to the **most recent tag**
 (`git describe --tags --abbrev=0`), falling back to the repository's
-**first commit** when there are no tags yet — true of this repository
-today. Both are overridable on the command line.
+**first commit** when there are no tags at all — a copy of this repository
+before its first release. Both are overridable on the command line.
 
 The default is the most recent tag, and deliberately not `origin/main`:
 `openapi.baseline.json` only moves at a release (`just contract-release`
