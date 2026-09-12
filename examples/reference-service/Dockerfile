@@ -24,6 +24,22 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Must match the builder's Debian release; see the note above.
 FROM python:3.13-slim-trixie AS runtime
 
+# Apply Debian's security updates at build time. The official python:slim
+# tag is rebuilt on Python's schedule, not Debian's, so it lags the
+# security archive by days or weeks: the first CI run of the scan gate
+# found twelve fixed HIGH and CRITICAL findings (perl-base, gzip, libpcre2,
+# libsqlite3) in a base whose fixes had already shipped in Debian 13.7,
+# while the same base scanned clean a day earlier against an older
+# vulnerability database. `apt-get upgrade` installs exactly the fixed
+# versions the scan names, so the image is as current as Debian's archive
+# on the day it is built rather than the day the base tag was cut. The
+# package lists are removed afterwards so they do not ship in the image.
+# The cost is that two builds days apart can differ in Debian package
+# versions; the SBOM records which versions a given image carries.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
 # pip is not used at runtime -- the virtual environment copied in below

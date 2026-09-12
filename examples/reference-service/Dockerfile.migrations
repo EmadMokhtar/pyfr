@@ -10,6 +10,11 @@ FROM migrate/migrate:v4.20.1
 # See the application Dockerfile for why this label exists.
 LABEL org.opencontainers.image.source="https://github.com/EmadMokhtar/pyfr"
 
+# Alpine's security updates, applied at build time for the same reason the
+# application Dockerfile runs `apt-get upgrade`: the base tag is rebuilt on
+# the upstream project's schedule, not the distribution's.
+RUN apk upgrade --no-cache
+
 COPY migrations/ /migrations/
 
 # The base image's entrypoint is `migrate` itself, so this supplies its

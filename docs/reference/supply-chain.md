@@ -264,6 +264,17 @@ small in what it can do:
   `msgpack` and `pkg_resources`, both fixed upstream, both unreachable from
   anything this service runs. Removing pip removed the findings, and a tool
   nobody should run inside a production container.
+- **Distribution security updates applied at build time.** The runtime stage
+  runs `apt-get upgrade` before anything else, and the migrations image runs
+  `apk upgrade`. The official `python:slim` and `migrate/migrate` tags are
+  rebuilt on their own projects' schedules, not the distribution's, so a base
+  tag can carry packages whose fixes have been in Debian or Alpine for weeks
+  — the scan gate's first run on a pull request found twelve fixed findings
+  in a base that had scanned clean the day before, once the vulnerability
+  database caught up with a Debian point release. Upgrading at build time
+  makes the image as current as the archive on the day it is built. The cost
+  is that two builds days apart can differ in package versions; the SBOM
+  records which versions a given image carries.
 
 What it is **not** is distroless (a base image with no shell and no package
 manager at all). That was considered and decided against: there is no
