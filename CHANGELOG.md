@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.6.0 (2026-09-12)
+
+### Feat
+
+- audit, scan, publish and update what ships (m6 supply chain) (#21)
+
 ## v0.5.0 (2026-09-11)
 
 ### Feat
