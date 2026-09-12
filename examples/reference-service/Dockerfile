@@ -3,7 +3,7 @@
 # bookworm-slim variant for the 0.11 line. The runtime stage below must
 # stay on the same Debian release — a virtual environment built against
 # one glibc is not safe to run on an older one.
-FROM ghcr.io/astral-sh/uv:0.11-python3.13-trixie-slim AS builder
+FROM ghcr.io/astral-sh/uv:0.12-python3.14-trixie-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Runtime: no uv, no build tools, no shell utilities beyond the base image.
 # Must match the builder's Debian release; see the note above.
-FROM python:3.13-slim-trixie AS runtime
+FROM python:3.14-slim-trixie AS runtime
 
 # Apply Debian's security updates at build time. The official python:slim
 # tag is rebuilt on Python's schedule, not Debian's, so it lags the
