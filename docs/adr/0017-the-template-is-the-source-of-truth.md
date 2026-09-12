@@ -54,6 +54,10 @@ hand.
   example as an ordinary file diff.
 - The example's `git blame` restarts at this decision; the history of its
   files continues in the template body, where `git mv` carried it.
+- `just adopt` serves two round trips, not one: Dependabot's pin changes,
+  and the generated files (`openapi.json`, `.env.example`, the
+  configuration reference) whose generators run in the example and whose
+  replaced lines are carried back into the template the same way.
 - `ruff`, `mypy` and `import-linter` cannot run on the template body. They
   run on the example on every push, and — from PR 5 — on three sampled
   renders on merge.

@@ -140,11 +140,11 @@ regenerated `pyproject.toml`.
 
 Everything else is template content and is compared — including the three
 generated files `openapi.json`, `.env.example` and
-`docs/reference/configuration.md`. `openapi.json` needs no template syntax
-(M7-3). `.env.example` and the configuration reference carry `{% if %}`
-blocks per backend, and each is drift-gated *inside* the generated project by
-the gate that already exists (`just config-docs-check`), so a wrong
-conditional fails the full-suite run rather than shipping.
+`docs/reference/configuration.md`. `openapi.json` carries only the title
+substitution (M7-3). `.env.example` and the configuration reference carry
+`{% if %}` blocks per backend, and each is drift-gated *inside* the generated
+project by the gate that already exists (`just config-docs-check`), so a
+wrong conditional fails the full-suite run rather than shipping.
 
 ### 4.4 Regeneration in the release
 
@@ -424,9 +424,11 @@ section 6 invariant's import check, which is a text check, not a linter.
 
 `ci.yml` keeps every existing job — they run against
 `examples/reference-service/` through `working-directory`, unchanged — and
-adds `golden` (`just regen --check`), `generation` (root `pytest`), and
-extends `docs` to build both sites. `full-suite.yml` is a separate
-workflow: `push` to `main`, a nightly schedule and `workflow_dispatch`.
+adds `golden` (`just regen-check`); the generation tests run in the `docs`
+job's root `just check` rather than in a job of their own, so only the
+golden diff has its own job; `docs` is extended to build both sites.
+`full-suite.yml` is a separate workflow: `push` to `main`, a nightly
+schedule and `workflow_dispatch`.
 `release.yml` gains the regen step of section 4.4. `docs.yml` is section
 9.2.
 
@@ -442,7 +444,7 @@ Each leaves `main` runnable and the golden diff green.
 
 | PR | Lands | Prompts live afterwards |
 |---|---|---|
-| 1 — skeleton | `git mv examples/reference-service '{{cookiecutter.project_slug}}'`; `cookiecutter.json` (without `_template_version`, which arrives with `.pyfr-answers.yml`); both hooks with an empty pruning half; the collision pass (section 7); `scripts/regen.py`, `just regen`, `tests/reference-answers.yaml`, `test_golden.py`; the identity, port, organisation and licence substitutions throughout the tree; a `.gitignore` for generated projects; `just adopt` and `adopt.yml` (M7-10); a root `.pre-commit-config.yaml`; `cookiecutter` and `pytest-cookies` in the root `dev` group; the `golden` and `generation` CI jobs; roadmap "In progress". | identity, `http_port`, `license` |
+| 1 — skeleton | `git mv examples/reference-service '{{cookiecutter.project_slug}}'`; `cookiecutter.json` (without `_template_version`, which arrives with `.pyfr-answers.yml`); both hooks with an empty pruning half; the collision pass (section 7); `scripts/regen.py`, `just regen`, `tests/reference-answers.yaml`, `test_golden.py`; the identity, port, organisation and licence substitutions throughout the tree; a `.gitignore` for generated projects; `just adopt` and `adopt.yml` (M7-10); a root `.pre-commit-config.yaml`; `cookiecutter` and `pytest-cookies` in the root `dev` group; the `golden` CI job, with the generation tests in the `docs` job's root `just check`; roadmap "In progress". | identity, `http_port`, `license` |
 | 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`. | all twelve |
 | 3 — generated `.github/` | Section 8 in full; Commitizen moves (M7-9); the reference service's `.github/` appears as output. | — |
 | 4 — docs split | Section 9 in full; `docs.yml` builds both sites; the hygiene scripts move; root pages rewritten. | — |

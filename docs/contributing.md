@@ -20,15 +20,16 @@ pyfr/
   examples/reference-service/  rendered from the template; never edited by hand
   scripts/                     repository tooling
   mkdocs.yml  pyproject.toml   documentation site and its toolchain
-  justfile                     documentation commands
+  justfile                     repository commands: docs, tests, regen, adopt
   .github/workflows/           continuous integration and publishing
   .github/dependabot.yml       automated dependency updates
 ```
 
 The repository root and the reference service are **two separate Python
 projects**, each with its own `pyproject.toml`, and they are never synced
-together. The root project holds only the documentation toolchain; it is not
-a package and nothing is published from it.
+together. The root project holds the documentation toolchain and the
+template toolchain — cookiecutter, the hooks' and generation tests, the
+regeneration script; it is not a package and nothing is published from it.
 
 ## Working on the template
 
@@ -76,6 +77,20 @@ between your machine and the pipeline.
 
 Development is test-driven: write the failing test first, then the
 implementation. See [Testing strategy](explanation/testing.md).
+
+### Generated files
+
+Three files in the template body are produced by tools, and the tools run
+in the example, not in the template: `openapi.json` by `just openapi`,
+`.env.example` and `docs/reference/configuration.md` by `just config-docs`.
+After a template change that affects one of them — a route, a schema, a
+setting — the round trip is: `just regen`, run the tool in
+`examples/reference-service/`, then bring the result back into the
+template. `just adopt` does that when the tool replaced lines; when it
+inserted lines (a new setting, a new endpoint), copy them into the template
+file by hand, re-inserting the substitutions the render resolved —
+`{{ cookiecutter.project_slug }}` for the contract's `title`, for
+instance. `just regen-check` then confirms the two agree.
 
 ### Dependabot and the template
 

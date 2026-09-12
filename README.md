@@ -33,13 +33,17 @@ no runtime dependency on us, and nothing to lock you in. From M8, a generated
 project will still be able to pull later template fixes into itself through an
 ordinary `git merge`.
 
-## 🚧 Honest status: M0–M6 done, M7–M8 to go
+## 🚧 Honest status: M0–M6 done, M7 in progress, M8 to go
 
-**You cannot generate a project yet.** The template itself does not exist
-today. What *does* exist is the
-[**reference service**](examples/reference-service/) — the complete, running
-service the template will be built from. You can run it, read it, and copy
-from it right now.
+**The template exists and renders** — `uvx cookiecutter gh:EmadMokhtar/pyfr`
+generates a project today — but M7 is in progress: every generated project
+still carries every backend, and a generated project's `just check` fails
+its two configuration-reference tests (`tests/unit/test_config_docs.py`)
+until the documentation site moves into the template in M7's fourth pull
+request — see the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
+The [**reference service**](examples/reference-service/) is rendered from
+that template; it is the complete, running service you can run, read, and
+copy from right now.
 
 PyFr is built in three phases:
 
@@ -51,8 +55,8 @@ PyFr is built in three phases:
 
 The rule behind that order: never debug Jinja and Python at the same time. 🙂
 
-**M0 through M6 — the reference service — are complete. PyFr becomes a
-usable template at M7.** See the
+**M0 through M6 — the reference service — are complete. M7, the conversion
+into a template, is under way.** See the
 [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what ships when.
 
 ## 🚀 Try it in one command
@@ -115,6 +119,14 @@ the decisions the site describes, and are deliberately not published.
 
 The repository root and the reference service are two separate Python
 projects, each with its own `pyproject.toml`. They are never synced together.
+The template body, `{{cookiecutter.project_slug}}/`, is the source of truth:
+edit it, run `just regen`, and the reference service is rendered from it —
+never edit `examples/reference-service/` by hand.
+
+```bash
+# The template and its tests
+uv sync --group dev && just check
+```
 
 ```bash
 # The reference service

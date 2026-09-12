@@ -1,4 +1,5 @@
-# Repository-level commands. These operate on the documentation site.
+# Repository-level commands: the documentation site, the root's own tests,
+# and the template's regeneration loop (regen, regen-check, adopt).
 #
 # The reference service has its own justfile with its own recipes; run those
 # from examples/reference-service/. The two projects are never synced
@@ -55,7 +56,8 @@ adopt:
     uv run --group dev python scripts/regen.py --adopt
 
 # ruff over the root's own Python -- hooks/, scripts/, tests/. ruff.toml's
-# extend-exclude keeps it out of the template body and the example.
+# extend-exclude keeps it out of the template body; the example is linted
+# with its own ruff.toml, by its own `just lint`.
 lint:
     uv run --group dev ruff check .
     uv run --group dev ruff format --check .
