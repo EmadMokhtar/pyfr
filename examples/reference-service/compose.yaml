@@ -19,7 +19,7 @@ services:
       timeout: 3s
       retries: 15
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
 
   # The cache. Not behind a profile: it is small, starts in under a second,
   # and `just up` should exercise the same arrangement production runs.
