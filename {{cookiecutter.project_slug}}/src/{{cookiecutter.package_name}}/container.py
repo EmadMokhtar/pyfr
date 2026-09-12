@@ -35,7 +35,9 @@ from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
 )
 from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
 from {{ cookiecutter.package_name }}.infrastructure.http.client import build_http_client
-from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import HttpPaymentGateway
+from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import (
+    HttpPaymentGateway,
+)
 from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
@@ -49,7 +51,9 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
 )
-from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import S3ReceiptStore
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
+    S3ReceiptStore,
+)
 from {{ cookiecutter.package_name }}.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]

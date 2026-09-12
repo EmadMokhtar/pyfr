@@ -19,7 +19,9 @@ from reference_service.infrastructure.memory.order_repository import (
 from reference_service.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
-from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
+from reference_service.infrastructure.storage.receipt_store import (
+    S3ReceiptStore,
+)
 from reference_service.settings import Settings
 
 DSN = "postgresql://app:secret@localhost:5432/app"

@@ -28,7 +28,10 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from {{ cookiecutter.package_name }}.main import create_app
-from {{ cookiecutter.package_name }}.observability.otel import build_providers, instrument_fastapi
+from {{ cookiecutter.package_name }}.observability.otel import (
+    build_providers,
+    instrument_fastapi,
+)
 from {{ cookiecutter.package_name }}.settings import Settings
 from tests.compose_images import compose_image
 

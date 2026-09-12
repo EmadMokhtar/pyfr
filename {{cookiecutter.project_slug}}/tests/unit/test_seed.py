@@ -13,7 +13,13 @@ from fastapi.testclient import TestClient
 
 from {{ cookiecutter.package_name }}.api.deps import get_payments
 from {{ cookiecutter.package_name }}.main import create_app
-from {{ cookiecutter.package_name }}.seed import ORDERS_PATH, SEED_ORDERS, SeedError, main, seed
+from {{ cookiecutter.package_name }}.seed import (
+    ORDERS_PATH,
+    SEED_ORDERS,
+    SeedError,
+    main,
+    seed,
+)
 from {{ cookiecutter.package_name }}.settings import Settings
 from tests.fakes import DecliningPaymentGateway
 

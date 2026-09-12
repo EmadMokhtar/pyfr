@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from reference_service.domain.errors import PaymentDeclinedError
-from reference_service.domain.order import AuthorisationId, Money, Order, OrderId
+from reference_service.domain.order import (
+    AuthorisationId,
+    Money,
+    Order,
+    OrderId,
+)
 from reference_service.domain.payments import Authorisation
 from reference_service.infrastructure.errors import PaymentUnavailableError
 

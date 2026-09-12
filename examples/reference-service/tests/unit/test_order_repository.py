@@ -22,7 +22,10 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.infrastructure.db.mappers import line_values, order_values
+from reference_service.infrastructure.db.mappers import (
+    line_values,
+    order_values,
+)
 from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
 from reference_service.infrastructure.db.order_repository import (
     PostgresOrderRepository,

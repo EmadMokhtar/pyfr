@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
 from {{ cookiecutter.package_name }}.api.errors import register_error_handlers, status_for
-from {{ cookiecutter.package_name }}.api.middleware import CORRELATION_HEADER, CorrelationIdMiddleware
+from {{ cookiecutter.package_name }}.api.middleware import (
+    CORRELATION_HEADER,
+    CorrelationIdMiddleware,
+)
 from {{ cookiecutter.package_name }}.domain.errors import DomainError, OrderNotFoundError
 from {{ cookiecutter.package_name }}.domain.order import OrderId
 from {{ cookiecutter.package_name }}.main import create_app
@@ -360,8 +363,14 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
         OrderLine,
         total_of,
     )
-    from {{ cookiecutter.package_name }}.infrastructure.db.mappers import line_values, order_values
-    from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
+    from {{ cookiecutter.package_name }}.infrastructure.db.mappers import (
+        line_values,
+        order_values,
+    )
+    from {{ cookiecutter.package_name }}.infrastructure.db.models import (
+        OrderLineRow,
+        OrderRow,
+    )
     from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
         PostgresOrderRepository,
     )

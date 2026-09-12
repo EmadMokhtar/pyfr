@@ -22,7 +22,10 @@ from {{ cookiecutter.package_name }}.domain.order import (
     OrderLine,
     total_of,
 )
-from {{ cookiecutter.package_name }}.infrastructure.db.mappers import line_values, order_values
+from {{ cookiecutter.package_name }}.infrastructure.db.mappers import (
+    line_values,
+    order_values,
+)
 from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
 from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,

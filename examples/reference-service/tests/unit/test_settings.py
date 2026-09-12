@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
-from reference_service.settings import EXIT_CONFIG_ERROR, Settings, load_settings
+from reference_service.settings import (
+    EXIT_CONFIG_ERROR,
+    Settings,
+    load_settings,
+)
 
 
 def test_defaults_are_usable_with_no_environment() -> None:

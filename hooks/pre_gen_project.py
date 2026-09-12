@@ -17,6 +17,12 @@ HTTP_PORT = "{{ cookiecutter.http_port }}"
 
 SLUG_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 
+# The package name is spelled out in import lines, module paths and test
+# identifiers throughout the render. Every render up to this length is
+# proven format-clean at 88 columns (tests/test_generation.py); one
+# character more and lines cross the limit.
+MAX_PACKAGE_NAME_LENGTH = 25
+
 
 def problems() -> list[str]:
     found: list[str] = []
@@ -36,6 +42,12 @@ def problems() -> list[str]:
         found.append(
             f"package_name {PACKAGE_NAME!r} shadows a standard library "
             "module; a service by that name breaks in confusing ways."
+        )
+    if len(PACKAGE_NAME) > MAX_PACKAGE_NAME_LENGTH:
+        found.append(
+            f"package_name {PACKAGE_NAME!r} is longer than "
+            f"{MAX_PACKAGE_NAME_LENGTH} characters; longer names push "
+            "generated lines past the 88-column limit."
         )
     try:
         port = int(HTTP_PORT)

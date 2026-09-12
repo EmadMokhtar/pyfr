@@ -37,6 +37,9 @@ def test_default_answers_render(cookies) -> None:
         ({"package_name": "email"}, "standard library"),
         ({"package_name": "class"}, "keyword"),
         ({"package_name": "my-service"}, "identifier"),
+        # 26 characters: one over the cap tests/test_generation.py proves
+        # format-clean.
+        ({"package_name": "abcde_fghij_klmno_pqrst_uv"}, "25 characters"),
         ({"http_port": "0"}, "http_port"),
         ({"http_port": "70000"}, "http_port"),
         ({"http_port": "eighty"}, "http_port"),

@@ -16,7 +16,9 @@ from reference_service.domain.errors import PaymentDeclinedError
 from reference_service.domain.order import Money, OrderId
 from reference_service.infrastructure.http.breaker import CircuitBreaker
 from reference_service.infrastructure.http.client import build_http_client
-from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
+from reference_service.infrastructure.http.payment_gateway import (
+    HttpPaymentGateway,
+)
 from reference_service.settings import HttpClientSettings
 from tests.recorded.conftest import PAYMENT_STUB_URL
 

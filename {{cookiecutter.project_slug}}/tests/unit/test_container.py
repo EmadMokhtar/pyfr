@@ -19,7 +19,9 @@ from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository impo
 from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
-from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import S3ReceiptStore
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
+    S3ReceiptStore,
+)
 from {{ cookiecutter.package_name }}.settings import Settings
 
 DSN = "postgresql://app:secret@localhost:5432/app"

@@ -15,7 +15,9 @@ from reference_service.domain.errors import PaymentDeclinedError
 from reference_service.domain.order import Money, OrderId
 from reference_service.infrastructure.errors import PaymentUnavailableError
 from reference_service.infrastructure.http.breaker import CircuitBreaker
-from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
+from reference_service.infrastructure.http.payment_gateway import (
+    HttpPaymentGateway,
+)
 
 TOTAL = Money(amount=Decimal("42.00"), currency="EUR")
 

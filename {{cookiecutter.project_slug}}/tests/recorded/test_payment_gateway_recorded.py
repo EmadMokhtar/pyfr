@@ -16,7 +16,9 @@ from {{ cookiecutter.package_name }}.domain.errors import PaymentDeclinedError
 from {{ cookiecutter.package_name }}.domain.order import Money, OrderId
 from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
 from {{ cookiecutter.package_name }}.infrastructure.http.client import build_http_client
-from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import HttpPaymentGateway
+from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import (
+    HttpPaymentGateway,
+)
 from {{ cookiecutter.package_name }}.settings import HttpClientSettings
 from tests.recorded.conftest import PAYMENT_STUB_URL
 

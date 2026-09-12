@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from {{ cookiecutter.package_name }}.domain.errors import PaymentDeclinedError
-from {{ cookiecutter.package_name }}.domain.order import AuthorisationId, Money, Order, OrderId
+from {{ cookiecutter.package_name }}.domain.order import (
+    AuthorisationId,
+    Money,
+    Order,
+    OrderId,
+)
 from {{ cookiecutter.package_name }}.domain.payments import Authorisation
 from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
 

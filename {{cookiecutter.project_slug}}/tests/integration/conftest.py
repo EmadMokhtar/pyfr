@@ -50,8 +50,14 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
 )
-from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import S3ReceiptStore
-from {{ cookiecutter.package_name }}.settings import CacheSettings, DatabaseSettings, StorageSettings
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
+    S3ReceiptStore,
+)
+from {{ cookiecutter.package_name }}.settings import (
+    CacheSettings,
+    DatabaseSettings,
+    StorageSettings,
+)
 from tests.compose_images import compose_image, dockerfile_base_image
 
 # Read from compose.yaml and Dockerfile.migrations rather than pinned here

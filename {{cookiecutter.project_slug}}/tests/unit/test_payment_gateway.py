@@ -15,7 +15,9 @@ from {{ cookiecutter.package_name }}.domain.errors import PaymentDeclinedError
 from {{ cookiecutter.package_name }}.domain.order import Money, OrderId
 from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
 from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
-from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import HttpPaymentGateway
+from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import (
+    HttpPaymentGateway,
+)
 
 TOTAL = Money(amount=Decimal("42.00"), currency="EUR")
 

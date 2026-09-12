@@ -5,7 +5,10 @@ import pytest
 from pydantic import ValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from {{ cookiecutter.package_name }}.domain.errors import OrderNotFoundError, PaymentDeclinedError
+from {{ cookiecutter.package_name }}.domain.errors import (
+    OrderNotFoundError,
+    PaymentDeclinedError,
+)
 from {{ cookiecutter.package_name }}.domain.order import OrderId
 from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
 from {{ cookiecutter.package_name }}.services.order import (
