@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 covers:
   - examples/reference-service/justfile
   - justfile
@@ -29,7 +29,7 @@ Run these from `examples/reference-service/`.
 | `just fmt` | `ruff check --fix` and `ruff format`. Fixes what it can. |
 | `just typecheck` | mypy. Strict on `domain/` and `services/`, lenient elsewhere. |
 | `just imports` | import-linter: verify the [dependency rule](../explanation/layers.md). |
-| `just precommit` | Run the pre-commit hooks over the project's tracked files. |
+| `just precommit` | Run the pre-commit hooks over the project's tracked files. Inside this repository it skips itself and says so; the root's `just precommit` covers the tree. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
 | `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. Once the API is healthy, a one-shot `seed` container creates five fixed orders through it — see [Getting started](../getting-started.md#start-with-data-in-it). |
@@ -182,17 +182,26 @@ second, which teaches people to just press the button again.
 failure. If `just check` fails there, run `just fmt`, commit the result, and
 push again.
 
-### Why `just precommit` uses `git ls-files`
+### Why `just precommit` checks for an enclosing repository first
 
-The recipe is `pre-commit run --files $(git ls-files)`, not
-`pre-commit run --all-files`. `--all-files` walks up to the *enclosing*
-repository when this project sits inside one — which is exactly the situation
-in this repository, where the service lives under `examples/`. It would
-reformat files outside the service, including Python snippets inside Markdown
-documents. `git ls-files` scopes the run to the service's own files.
+The recipe runs `git rev-parse --show-prefix` before anything else. A
+non-empty result means this project's root is not the top of its git
+repository — exactly the situation here, where the service lives under
+`examples/reference-service/` inside PyFr's own repository — and the
+recipe prints a message and exits clean instead of running at all.
+Running the hooks anyway, with `pre-commit run --all-files`, would walk up
+to the *enclosing* repository's root and reformat files outside the
+service, including Python snippets inside this site's own Markdown.
 
-In a standalone generated project the two are equivalent, so the recipe is
-correct in both layouts.
+In a standalone generated project — its own repository, with nothing
+enclosing it — `git rev-parse --show-prefix` is empty from the project
+root, the guard does not fire, and the recipe runs
+`pre-commit run --files $(git ls-files)`, scoped to the project's own
+tracked files rather than `--all-files`, which would be equivalent here
+but is not what the recipe calls.
+
+Inside this repository, the root's own `just precommit` is what actually
+runs the hooks over `examples/reference-service/`.
 
 ## The documented examples
 
@@ -217,12 +226,16 @@ Run these from the repository root.
 | `just docs` | Live preview on <http://127.0.0.1:8000>, rebuilding as you save. |
 | `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. |
 | `just test` | Run this repository's own script tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves. Needs no Docker. |
+| `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |
+| `just regen` | Regenerate `examples/reference-service/` from the template with the answers in `tests/reference-answers.yaml`; run this after every change to `{{cookiecutter.project_slug}}/` and commit the result. |
+| `just regen-check` | The golden diff: render and compare, writing nothing. CI's `golden` job. |
+| `just adopt` | Copy Dependabot's edits to the rendered example back into the template, then check; only for line-for-line replacements — anything else fails with the file name and is made in the template by hand. |
 | `just audit` | pip-audit over the root `uv.lock` — the documentation and release toolchain — with the same flags as the reference service's own `audit`. CI's `security` job runs both. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee). Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml`. |
 | `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails. **This is not CI's `docs-freshness` job** — see [Documentation ships with the change](../contributing.md#documentation-ships-with-the-change) for which script each one runs. |
 | `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |
 | `just next-version` | Preview the version number the next release would choose. Read-only — the release itself runs in CI (`.github/workflows/release.yml`). |
-| `just check` | `docs-build` and `test`. Run before pushing a documentation or repository-tooling change. Same name as the reference service's own `just check` above, run from a different directory and checking different things — they are not interchangeable. |
+| `just check` | `docs-build`, `test` and `regen-check`. Run before pushing a documentation or repository-tooling change. Same name as the reference service's own `just check` above, run from a different directory and checking different things — they are not interchangeable. |
 
 `--strict` turns a warning into a failure. A link to a page that no longer
 exists, a heading anchor that was renamed, an include that cannot be

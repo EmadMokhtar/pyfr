@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 covers:
   - examples/reference-service/Dockerfile
   - examples/reference-service/Dockerfile.migrations
@@ -53,8 +53,11 @@ removes the `trivy-cache` volume with the others.
 
 | Image | What it is |
 | --- | --- |
-| `ghcr.io/emadmokhtar/pyfr-reference-service` | The service — the two-stage build in `Dockerfile`. |
-| `ghcr.io/emadmokhtar/pyfr-reference-service-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
+| `ghcr.io/emadmokhtar/reference-service` | The service — the two-stage build in `Dockerfile`. |
+| `ghcr.io/emadmokhtar/reference-service-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
+
+The image name is the generated project's `project_slug`; the reference
+answers name it `reference-service`.
 
 Each carries two tags: `vX.Y.Z`, the **repository's** version — the same
 string as the git tag and the GitHub Release — and `latest`, which moves with
@@ -72,7 +75,7 @@ Silicon laptop and an `amd64` server pull the same tag and each gets its own
 architecture.
 
 ```bash
-docker pull ghcr.io/emadmokhtar/pyfr-reference-service:latest
+docker pull ghcr.io/emadmokhtar/reference-service:latest
 ```
 
 Each image carries three OCI labels. `org.opencontainers.image.source` is a
@@ -193,7 +196,7 @@ image, `libc6` and `openssl` beside `fastapi` and `pydantic`.
 Which image depends on where it runs. On a pull request it is the
 single-architecture `:ci` image that `just build-images` produces. On a
 release it is generated **after** the push, from the published reference —
-`ghcr.io/emadmokhtar/pyfr-reference-service:vX.Y.Z` and its migrations
+`ghcr.io/emadmokhtar/reference-service:vX.Y.Z` and its migrations
 counterpart — so the document's subject is the image people pull, not a
 local build that was never published (`just publish-images` rebuilds through
 the buildx builder, so the local `:ci` image is a different image ID from
@@ -228,7 +231,7 @@ five ecosystems this repository has:
 | `github-actions` | The `uses:` versions in every workflow. |
 | `docker` | The `FROM` lines in `Dockerfile` and `Dockerfile.migrations`. |
 | `docker-compose` | Every `image:` in `compose.yaml` — PostgreSQL, Redis, MinIO, `mc`, WireMock, `otel-lgtm` and Trivy. |
-| `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
+| `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. Watched at both the repository root and in `examples/reference-service/`, which is the template's own configuration. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
 Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions). Each

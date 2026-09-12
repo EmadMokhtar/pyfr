@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 ---
 
 # 0015. Publish images on release, under the repository's version
@@ -16,8 +16,8 @@ pushed on every merge, or pushed on release under the repository's tag.
 
 ## Decision
 
-`release.yml` pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
-`ghcr.io/emadmokhtar/pyfr-reference-service-migrations`, for
+`release.yml` pushes `ghcr.io/emadmokhtar/reference-service` and
+`ghcr.io/emadmokhtar/reference-service-migrations`, for
 `linux/amd64` and `linux/arm64`, tagged with the release's `vX.Y.Z` after
 `scan` has passed on the same commit's local images. `latest` is created
 afterwards from that pushed index, and only once `scan-published` has
@@ -42,8 +42,10 @@ Dockerfile — links each package to this repository.
 ## Consequences
 
 The first push creates private packages; a one-time repository setting
-makes them public. The registry namespace, `ghcr.io/emadmokhtar`, is a
-literal until M7 turns it into a template variable. `latest` moves with
+makes them public. The registry namespace, `ghcr.io/emadmokhtar`, was a
+literal until M7 made it a template variable rendered from the
+`github_org` answer; the reference answers render it back to the same
+value. `latest` moves with
 every release, which is what the nightly scan wants — it checks whatever
 is deployed now — and what a real deployment should never pin to, since
 it gives no guarantee about which release it points at from one day to

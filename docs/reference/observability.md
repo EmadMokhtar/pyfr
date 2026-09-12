@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-12
 covers:
   - examples/reference-service/src/reference_service/observability/
   - examples/reference-service/ops/
@@ -198,6 +198,17 @@ not an error.
 
 `just test` fails until the two agree. `just o11y-gates` additionally runs the
 rules through `promtool` unit tests.
+
+The objective is not a cookiecutter prompt. M7 considered one and dropped
+it: the numbers are threaded through `slo.py`, the rules, their `promtool`
+tests and the SLO dashboard, and templating that arithmetic would have
+been the most fragile Jinja in the tree. A generated project starts at
+99.9 % and 300 ms and edits them here.
+
+Two places the tests do not reach: `ops/prometheus/slo_test.yml`, whose
+synthetic series and alert summaries `just o11y-gates` asserts, and the
+two threshold values in `ops/grafana/dashboards/slo.json`, which nothing
+checks — change both by hand when the target moves.
 
 ## Sampling in production
 

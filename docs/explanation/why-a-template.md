@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-12
 ---
 
 # Why a template, not a framework
@@ -121,11 +121,13 @@ The template is being built in three phases, in a specific order.
 template placeholders anywhere. Every hard problem — the database adapter, the
 telemetry wiring, the dashboards — is solved as a normal engineering problem.
 
-**Phase B (M7)** converts it into the template in one focused pass.
+**Phase B (M7)** converts it into the template, in five pull requests. The
+golden diff that makes the template the source of truth starts with the
+first of them (ADR 0017): `examples/reference-service/` is regenerated from
+the template, and the build fails if the result differs from what is
+committed.
 
-**Phase C**, permanently after that, makes the template the source of truth.
-`examples/reference-service/` is regenerated from the template, and the build
-fails if the result differs from what is committed.
+**Phase C**, permanently after M7, keeps the two in step forever after.
 
 The rule behind the ordering: **never debug Jinja and Python at the same
 time.** A bug in generated code, in a language full of `{{ }}` placeholders,
