@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: secret
@@ -19,7 +19,15 @@ services:
       timeout: 3s
       retries: 15
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # postgres:18 moved PGDATA from /var/lib/postgresql/data to
+      # /var/lib/postgresql/18/docker and declares its VOLUME one level up,
+      # at /var/lib/postgresql. Mounting at the old /data path would leave
+      # the cluster OUTSIDE the named volume — every `docker compose down`
+      # would drop the schema and the orders. A volume written by
+      # postgres:16 under the old layout is not upgraded in place: `just
+      # down` (`docker compose down -v`) removes it, and the next `just up`
+      # initialises a fresh 18 cluster.
+      - postgres-data:/var/lib/postgresql
 
   # The cache. Not behind a profile: it is small, starts in under a second,
   # and `just up` should exercise the same arrangement production runs.
@@ -278,7 +286,7 @@ services:
   # telemetry rather than failing.
   lgtm:
     profiles: ["o11y"]
-    image: grafana/otel-lgtm:0.32.1
+    image: grafana/otel-lgtm:0.33.0
     ports:
       # The image does declare EXPOSE for these, but EXPOSE only documents
       # a port — it does not publish one. Every port that must be reachable
