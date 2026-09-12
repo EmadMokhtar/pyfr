@@ -192,7 +192,7 @@ def test_the_slo_latency_bucket_exists_in_prometheus(prometheus_url: str) -> Non
     """
     payload = _get_json(
         f"{prometheus_url}/api/v1/query"
-        f'?query=http_server_request_duration_seconds_bucket{{le="0.3"}}'
+        f'?query=http_server_request_duration_seconds_bucket{% raw %}{{le="0.3"}}{% endraw %}'
     )
 
     assert payload["data"]["result"], 'no bucket with le="0.3"'

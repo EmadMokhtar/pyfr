@@ -181,7 +181,7 @@ groups:
           severity: page
           slo: availability
         annotations:
-          summary: "{{ $labels.job }} is burning its availability budget 14.4x too fast"
+          summary: "{% raw %}{{ $labels.job }}{% endraw %} is burning its availability budget 14.4x too fast"
           description: >-
             At this rate the entire 30-day error budget is gone in about two
             days. Something is broken now, not drifting.
@@ -197,7 +197,7 @@ groups:
           severity: page
           slo: availability
         annotations:
-          summary: "{{ $labels.job }} is burning its availability budget 6x too fast"
+          summary: "{% raw %}{{ $labels.job }}{% endraw %} is burning its availability budget 6x too fast"
           description: >-
             Sustained elevated errors. Slower than a fast burn, still fast
             enough to exhaust the month's budget in five days.
@@ -213,7 +213,7 @@ groups:
           severity: ticket
           slo: availability
         annotations:
-          summary: "{{ $labels.job }} is steadily spending its availability budget"
+          summary: "{% raw %}{{ $labels.job }}{% endraw %} is steadily spending its availability budget"
           description: >-
             Nothing is on fire and the budget is still draining. Worth an
             engineer's morning, not their night.
@@ -228,7 +228,7 @@ groups:
           severity: page
           slo: latency
         annotations:
-          summary: "{{ $labels.job }} is burning its latency budget 14.4x too fast"
+          summary: "{% raw %}{{ $labels.job }}{% endraw %} is burning its latency budget 14.4x too fast"
           description: >-
             Requests are returning, just not within 300ms. Check saturation
             first: pool usage and event loop lag move before this does.
@@ -243,7 +243,7 @@ groups:
           severity: page
           slo: latency
         annotations:
-          summary: "{{ $labels.job }} is burning its latency budget 6x too fast"
+          summary: "{% raw %}{{ $labels.job }}{% endraw %} is burning its latency budget 6x too fast"
           description: >-
             Sustained slow responses. Present for both indicators on
             purpose: without it a steady 6x latency burn sits below the
@@ -260,7 +260,7 @@ groups:
           severity: ticket
           slo: latency
         annotations:
-          summary: "{{ $labels.job }} is steadily spending its latency budget"
+          summary: "{% raw %}{{ $labels.job }}{% endraw %} is steadily spending its latency budget"
           description: >-
             A slow drift towards the 300ms threshold. Often a dataset
             growing rather than anything that broke.

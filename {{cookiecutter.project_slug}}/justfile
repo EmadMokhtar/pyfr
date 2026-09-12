@@ -226,7 +226,7 @@ migrate:
 # Write a new .up.sql / .down.sql pair.
 migrate-new name:
     docker compose run --rm --no-deps --user "$(id -u):$(id -g)" --entrypoint migrate migrate \
-        create -ext sql -dir /migrations -seq {{name}}
+        create -ext sql -dir /migrations -seq {% raw %}{{name}}{% endraw %}
 
 # Run this after `migrate-new` adds a pair, and commit the result —
 # `just gates` (tests/unit/test_migration_files.py) checks every file the
@@ -245,7 +245,7 @@ migrate-manifest:
 #
 # Roll back N steps.
 migrate-down steps="1":
-    docker compose run --rm migrate down {{steps}}
+    docker compose run --rm migrate down {% raw %}{{steps}}{% endraw %}
 
 # Current version, and whether the database is dirty.
 migrate-version:
@@ -264,7 +264,7 @@ migrate-version:
 #
 # Clear a dirty flag by declaring the true version. Read the warning below before using this.
 migrate-force version:
-    docker compose run --rm migrate force {{version}}
+    docker compose run --rm migrate force {% raw %}{{version}}{% endraw %}
 
 # Run the documentation's marked `curl` examples against a real service.
 docs-examples:
@@ -397,10 +397,10 @@ audit:
 scan app="reference-service:ci" migrations="reference-service-migrations:ci":
     docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
         --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
-        --scanners vuln,secret --no-progress {{app}}
+        --scanners vuln,secret --no-progress {% raw %}{{app}}{% endraw %}
     docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
         --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
-        --scanners vuln,secret --no-progress {{migrations}}
+        --scanners vuln,secret --no-progress {% raw %}{{migrations}}{% endraw %}
 
 # Write a CycloneDX software bill of materials per image into sbom/
 # (ignored by git). CI uploads them as a workflow artifact; the release
@@ -409,9 +409,9 @@ scan app="reference-service:ci" migrations="reference-service-migrations:ci":
 sbom app="reference-service:ci" migrations="reference-service-migrations:ci":
     mkdir -p sbom
     docker compose run --rm trivy image --format cyclonedx --no-progress \
-        --output /sbom/reference-service.cdx.json {{app}}
+        --output /sbom/reference-service.cdx.json {% raw %}{{app}}{% endraw %}
     docker compose run --rm trivy image --format cyclonedx --no-progress \
-        --output /sbom/reference-service-migrations.cdx.json {{migrations}}
+        --output /sbom/reference-service-migrations.cdx.json {% raw %}{{migrations}}{% endraw %}
 
 # Everything the CI `security` job runs, in the order it runs it. Needs
 # Docker. Separate from `check-all` because its result changes with the
@@ -442,8 +442,8 @@ build-images:
 # which is why `build-images` above stays the single-architecture path
 # that `scan` and `sbom` consume. Created once, reused after.
 _buildx-builder name="pyfr":
-    docker buildx inspect {{name}} >/dev/null 2>&1 \
-        || docker buildx create --name {{name}} --driver docker-container
+    docker buildx inspect {% raw %}{{name}}{% endraw %} >/dev/null 2>&1 \
+        || docker buildx create --name {% raw %}{{name}}{% endraw %} --driver docker-container
 
 # Build both images for linux/amd64 and linux/arm64 with no output: proof
 # that the arm64 side still builds, which is what CI's `build` job is for.
@@ -473,14 +473,14 @@ build-multiarch: _buildx-builder
 # buildkitd.toml allowing plain HTTP to localhost:5001, then
 # `just publish-images 0.0.0-rehearsal localhost:5001 <that builder>`.
 publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-builder builder)
-    docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
-        --label "org.opencontainers.image.version={{version}}" \
+    docker buildx build --builder {% raw %}{{builder}}{% endraw %} --platform linux/amd64,linux/arm64 --push \
+        --label "org.opencontainers.image.version={% raw %}{{version}}{% endraw %}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-        -t "{{registry}}/pyfr-reference-service:{{version}}" .
-    docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
-        --label "org.opencontainers.image.version={{version}}" \
+        -t "{% raw %}{{registry}}{% endraw %}/pyfr-reference-service:{% raw %}{{version}}{% endraw %}" .
+    docker buildx build --builder {% raw %}{{builder}}{% endraw %} --platform linux/amd64,linux/arm64 --push \
+        --label "org.opencontainers.image.version={% raw %}{{version}}{% endraw %}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-        -t "{{registry}}/pyfr-reference-service-migrations:{{version}}" \
+        -t "{% raw %}{{registry}}{% endraw %}/pyfr-reference-service-migrations:{% raw %}{{version}}{% endraw %}" \
         -f Dockerfile.migrations .
 
 # Scan the two images just pushed under `version`, for BOTH platforms.
@@ -501,7 +501,7 @@ scan-published version registry="ghcr.io/emadmokhtar":
                 --ignorefile /.trivyignore.yaml \
                 --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
                 --scanners vuln,secret --no-progress \
-                "{{registry}}/$image:{{version}}"
+                "{% raw %}{{registry}}{% endraw %}/$image:{% raw %}{{version}}{% endraw %}"
         done
     done
 
@@ -510,11 +510,11 @@ scan-published version registry="ghcr.io/emadmokhtar":
 # `scan-published` verified. Run by release.yml only after that scan.
 promote-latest version registry="ghcr.io/emadmokhtar":
     docker buildx imagetools create \
-        -t "{{registry}}/pyfr-reference-service:latest" \
-        "{{registry}}/pyfr-reference-service:{{version}}"
+        -t "{% raw %}{{registry}}{% endraw %}/pyfr-reference-service:latest" \
+        "{% raw %}{{registry}}{% endraw %}/pyfr-reference-service:{% raw %}{{version}}{% endraw %}"
     docker buildx imagetools create \
-        -t "{{registry}}/pyfr-reference-service-migrations:latest" \
-        "{{registry}}/pyfr-reference-service-migrations:{{version}}"
+        -t "{% raw %}{{registry}}{% endraw %}/pyfr-reference-service-migrations:latest" \
+        "{% raw %}{{registry}}{% endraw %}/pyfr-reference-service-migrations:{% raw %}{{version}}{% endraw %}"
 
 up:
     docker compose up --build

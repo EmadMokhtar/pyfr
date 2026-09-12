@@ -1,0 +1,15 @@
+{
+  "project_name": "My Service",
+  "project_slug": "{{ cookiecutter.project_name | lower | replace(' ', '-') }}",
+  "package_name": "{{ cookiecutter.project_slug | replace('-', '_') }}",
+  "description": "A Python microservice generated from PyFr.",
+  "author_name": "Your Name",
+  "author_email": "you@example.com",
+  "github_org": "your-org",
+  "http_port": "8000",
+  "license": ["Apache-2.0", "MIT", "MPL-2.0", "Proprietary"],
+  "_copy_without_render": [
+    "ops/grafana/dashboards/*.json",
+    "ops/grafana/provisioning/dashboards/*.yaml"
+  ]
+}
