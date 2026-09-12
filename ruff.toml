@@ -10,7 +10,8 @@ src = ["scripts", "tests"]
 # pre-commit hooks pass the example's files with --force-exclude, and an
 # excluded path would be silently skipped. ruff picks the example's own
 # ruff.toml for those files.
-extend-exclude = ["{{cookiecutter.project_slug}}"]
+# Character classes, not literal braces: ruff's globs read {a,b} as alternation, so an unescaped {{…}} matches nothing.
+extend-exclude = ["[{][{]cookiecutter.project_slug[}][}]"]
 # Ruff's default `include` gained "*.md" (it now parses Python fences inside
 # Markdown as lintable/formattable source). Restated here without it: this
 # file governs the root's own Python -- hooks/, scripts/, tests/ -- not the
