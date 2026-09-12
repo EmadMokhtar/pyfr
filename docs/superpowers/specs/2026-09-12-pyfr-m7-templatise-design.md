@@ -47,14 +47,15 @@ Where one departs from that specification, the row says so and why.
 | # | Decision | Rationale |
 |---|---|---|
 | M7-1 | **Move, templatise, regenerate.** `examples/reference-service/` is `git mv`'d to `{{cookiecutter.project_slug}}/` and templatised in place; `just regen` recreates `examples/reference-service/` from it. From the first M7 pull request the example is output, never edited by hand. | History follows the files; the template and the example cannot drift for even one pull request; every template change appears in review as a diff of real files. This is the specification's Phase C, applied from the first pull request rather than after the last. |
-| M7-2 | **Fourteen prompts; Python is fixed at 3.13.** Section 9.1's list minus `python_version`. *Departs from the specification.* | The service is built and tested on 3.13 only — `.python-version`, ruff's target, the Docker base image. A 3.12 prompt would double the full-suite matrix for a choice nobody has asked for. Adding the prompt later breaks no generated project. |
-| M7-3 | **The API contract is the same in every combination.** `object_storage=none` keeps `GET /orders/{id}/receipt` on the in-memory receipt store, exactly as `database=none` keeps the orders API on the in-memory repository (ADR 0005). Pruning removes adapters and their infrastructure, never endpoints. | `openapi.json` and `openapi.baseline.json` stay plain JSON with no template syntax, and the generation tests can assert they are byte-identical across all eight renders. A conditional JSON document was the riskiest file in the conversion. |
+| M7-2 | **Twelve prompts; Python is fixed at 3.13; the two SLO prompts are dropped.** Section 9.1's list minus `python_version`, `slo_availability_target` and `slo_latency_ms`. *Departs from the specification.* | The service is built and tested on 3.13 only — `.python-version`, ruff's target, the Docker base image. A 3.12 prompt would double the full-suite matrix for a choice nobody has asked for. Adding the prompt later breaks no generated project. The SLO target and latency are threaded through `slo.py`, `otel.py`'s bucket boundaries, `slo.yml`, `slo_test.yml`, the copied-verbatim `slo.json` and two unit-test assertions — eight files of Jinja arithmetic for two prompts. The observability reference documents how to change the objective instead. |
+| M7-3 | **The API contract is the same in every combination.** `object_storage=none` keeps `GET /orders/{id}/receipt` on the in-memory receipt store, exactly as `database=none` keeps the orders API on the in-memory repository (ADR 0005). Pruning removes adapters and their infrastructure, never endpoints. | `openapi.json` and `openapi.baseline.json` carry one substitution — the `title` is `{{ cookiecutter.project_slug }}`, because the app titles the document with `settings.service_name` — and no conditional, so the generation tests can assert they are byte-identical across all eight renders. A conditional JSON document was the riskiest file in the conversion. |
 | M7-4 | **`uv.lock` is not template content.** The template ships no lock file. The golden diff excludes it; `uv lock --check` in the reference service's pre-commit configuration and CI keeps the committed lock consistent with the regenerated `pyproject.toml`. | A lock is the resolver's output for one dependency set, and pruning produces eight dependency sets. A lock cannot be a Jinja document. |
 | M7-5 | **`.pyfr-answers.yml` is a rendered template file,** not written by the post-generation hook. *Departs from section 11.1's wording; the file's content is unchanged.* | Regeneration then covers it, and the release's bump commit — which moves `_template_version` — regenerates the example so the golden diff on `main` stays green. |
 | M7-6 | **Two documentation sites, one deploy.** Pages about the service move into the template body; pages about PyFr stay at the root. PyFr's `docs.yml` builds both and deploys them as one site, the generated one under `reference-service/`. | One source for every page. Every deploy proves the generated site builds `--strict`. No mirror tree to maintain. |
 | M7-7 | **Five staged pull requests.** Each leaves `main` runnable with the golden diff green; the roadmap marks M7 done only after the last. | The full conversion is roughly three times M6. A single pull request would be a fifteen-to-twenty-thousand-line review in which a late mistake costs the whole branch. |
 | M7-8 | **Grafana dashboards are copied verbatim and identical in every combination.** A panel for a backend that is not present shows no data. | The dashboards select by the `$service` variable and contain Grafana's own `${...}` syntax; rendering them through Jinja for the sake of removing panels would trade a harmless empty panel for a fragile JSON template. |
 | M7-9 | **The generated service's Commitizen is its own.** Commitizen moves from PyFr's root `dev` group to the generated `pyproject.toml`'s `dev` group; PyFr's root keeps its own copy for its own release. | A generated project has its own version, its own tags and its own release workflow, and the tool that decides its version must be in its own lock file (ADR 0014). |
+| M7-10 | **`just adopt` copies Dependabot's edits back into the template.** Dependabot keeps pointing at `examples/reference-service/`; `scripts/regen.py --adopt` replaces, in the template file that renders it, each changed line of the example. The `golden` job runs it first on Dependabot pull requests; `adopt.yml` commits the same result to `main` after the merge. | Dependabot cannot parse Jinja. Pin lines never contain Jinja, so the replacement is literal; any other shape of change fails loudly and is made by hand. |
 
 ---
 
@@ -172,13 +173,11 @@ database                  postgres | none
 cache                     redis | none
 object_storage            s3 | none
 http_port                 8000
-slo_availability_target   99.9 | 99.95 | 99.5
-slo_latency_ms            300
-license                   Apache-2.0 | MIT | Proprietary
+license                   Apache-2.0 | MIT | MPL-2.0 | Proprietary
 ```
 
-Private keys, never prompted: `_template_version` (bumped by the release,
-section 4.4), `_copy_without_render` (section 7).
+Private keys, never prompted: `_copy_without_render` (section 7) from PR 1;
+`_template_version` (bumped by the release, section 4.4) from PR 2.
 
 A prompt exists only once the template can honour it (section 12): the
 three backend prompts arrive in the pruning pull request, not before.
@@ -192,7 +191,6 @@ Rejects, with one plain sentence each, before any file is written:
   `sys.stdlib_module_names` — a package named `email` or `types` breaks in
   ways that are confusing to debug.
 - `http_port` outside 1–65535.
-- `slo_latency_ms` that is not a positive integer.
 
 Exit code 1 with the message on standard error. Cookiecutter then writes
 nothing.
@@ -203,6 +201,8 @@ Two halves.
 
 **Pruning** always runs. It deletes the files and directories the chosen
 backends do not need (section 6) and then removes any directory left empty.
+In PR 1 the only pruning is the licence: four `LICENSE.<choice>` files ship
+in the template body and the hook keeps the chosen one as `LICENSE`.
 
 **Side effects** run only when `PYFR_REGEN` is not set: `git init`, `uv
 sync`, `uv run pre-commit install`, an initial commit, then a next-steps
@@ -264,11 +264,11 @@ content need a prompt value?**
 | File(s) | Contains | Handling |
 |---|---|---|
 | `justfile` | `{{name}}` recipe parameters | `{% raw %}` around the literal parts; the file must render because recipes are conditional on backends |
-| `ops/prometheus/rules/slo.yml` | `{{ $labels.job }}` in annotations | `{% raw %}`; the SLO target and latency come from prompts |
+| `ops/prometheus/rules/slo.yml` | `{{ $labels.job }}` in annotations | `{% raw %}`; the file must render because the service name in its annotations is a prompt value |
 | `.sqlfluff` | `{{ }}` in its templater settings | `{% raw %}` (the file is deleted when `database=none`) |
 | `tests/integration/test_observability_stack.py` | `{{ }}` in query strings | `{% raw %}` |
 | `.github/workflows/*.yml` (new in the template) | `${{ secrets.GITHUB_TOKEN }}`, `${{ matrix.* }}` | `{% raw %}`; the workflows are conditional on backends |
-| `ops/grafana/dashboards/*.json`, `ops/grafana/provisioning/dashboards/*.yaml` | Grafana `${service}` variable syntax | `_copy_without_render`; byte-identical in every project (M7-8) |
+| `ops/grafana/dashboards/*.json`, `ops/grafana/provisioning/dashboards/*.yaml` | Grafana `${service}` variable syntax; a comment containing `{{ }}` | `_copy_without_render`; byte-identical in every project (M7-8) |
 
 The generation test asserting that no `{{` or `{%` survives in any render is
 what keeps this table from rotting: a future file that trips the collision
@@ -297,9 +297,10 @@ Commitizen becomes a `dev` dependency of the generated `pyproject.toml`
 `.pre-commit-config.yaml` and the `changelog` and `next-version` recipes move
 into the template body with it.
 
-The generated project's `LICENSE` and the licence classifier in
-`pyproject.toml` follow the `license` prompt: the Apache-2.0 and MIT texts
-with the author's name and the year, or a one-paragraph proprietary notice.
+The generated project's `LICENSE` follows the `license` prompt from PR 1
+onward: the Apache-2.0, MIT or MPL-2.0 text, or a one-paragraph proprietary
+notice, with the author's name and no year — a year would change the
+reference render every January.
 
 ---
 
@@ -441,8 +442,8 @@ Each leaves `main` runnable and the golden diff green.
 
 | PR | Lands | Prompts live afterwards |
 |---|---|---|
-| 1 — skeleton | `git mv examples/reference-service '{{cookiecutter.project_slug}}'`; `cookiecutter.json`; both hooks with an empty pruning half; the collision pass (section 7); `scripts/regen.py`, `just regen`, `tests/reference-answers.yaml`, `test_golden.py`; the identity, port, SLO and licence substitutions throughout the tree; `cookiecutter` and `pytest-cookies` in the root `dev` group; the `golden` and `generation` CI jobs; roadmap "In progress". | identity, `http_port`, `slo_availability_target`, `slo_latency_ms`, `license` |
-| 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`. | all fourteen |
+| 1 — skeleton | `git mv examples/reference-service '{{cookiecutter.project_slug}}'`; `cookiecutter.json` (without `_template_version`, which arrives with `.pyfr-answers.yml`); both hooks with an empty pruning half; the collision pass (section 7); `scripts/regen.py`, `just regen`, `tests/reference-answers.yaml`, `test_golden.py`; the identity, port, organisation and licence substitutions throughout the tree; a `.gitignore` for generated projects; `just adopt` and `adopt.yml` (M7-10); a root `.pre-commit-config.yaml`; `cookiecutter` and `pytest-cookies` in the root `dev` group; the `golden` and `generation` CI jobs; roadmap "In progress". | identity, `http_port`, `license` |
+| 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`. | all twelve |
 | 3 — generated `.github/` | Section 8 in full; Commitizen moves (M7-9); the reference service's `.github/` appears as output. | — |
 | 4 — docs split | Section 9 in full; `docs.yml` builds both sites; the hygiene scripts move; root pages rewritten. | — |
 | 5 — done | Full-suite tests and `full-suite.yml`; `_template_version` with the release's regen step; ADR 0017; roadmap **Done**; README status; `v0.7.0`. | — |
@@ -479,6 +480,7 @@ conditional exists.
 | Empty Grafana panels for absent backends (M7-8) | Documented in the observability reference; the alternative was a rendered JSON dashboard |
 | The moved tree loses `git blame` | `git mv` preserves history through rename detection; the example's history restarts, and its files' history lives on in the template body |
 | `_copy_without_render` file names still render | The dashboard and provisioning file names contain no template syntax; the generation tests would fail on a surviving `{{` if one were added |
+| Dependabot edits the rendered example | `just adopt` in the `golden` job and `adopt.yml` after the merge (M7-10); a change `adopt` cannot express fails with the file name and is made in the template by hand |
 
 ---
 
@@ -509,3 +511,4 @@ conditional exists.
 | Collision | A file whose own syntax uses `{{` or `{%`, which Jinja would otherwise interpret |
 | `_copy_without_render` | Cookiecutter's list of paths copied byte for byte instead of rendered |
 | Full suite | Generating a project without `PYFR_REGEN` and running its own `just check` and `just check-all` |
+| Adopt | Copying a line changed in the rendered example back into the template file that renders it — the reverse direction, used only for Dependabot's pin changes |
