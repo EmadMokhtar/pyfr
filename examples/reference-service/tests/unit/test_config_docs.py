@@ -427,3 +427,36 @@ def test_json_defaults_are_single_quoted_in_the_env_example() -> None:
     assert "APP_LOG__LEVELS='{}'" in env
     assert "APP_LOG__REDACT_FIELDS='[\"" in env
     assert "APP_LOG__REDACT_FIELDS=[" not in env
+
+
+def test_generated_env_example_starts_the_service_with_no_backends(
+    tmp_path: Path,
+) -> None:
+    """The file's header promises a working starting point. Prove it.
+
+    Every optional group must stay wholly commented out, defaults included.
+    A single active `APP_DATABASE__POOL_SIZE=10` is enough for
+    pydantic-settings to build DatabaseSettings and reject the missing DSN,
+    stopping the service with exit 78 -- which is exactly what the first
+    generated version of this file did, and no test noticed because the
+    tests only checked which lines were commented, never whether the file
+    loaded.
+    """
+    from reference_service.settings import Settings
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(render_env_example(), encoding="utf-8")
+    settings = Settings(_env_file=str(env_file))  # type: ignore[call-arg]
+    assert settings.database is None
+    assert settings.payment is None
+    assert settings.cache is None
+    assert settings.storage is None
+
+
+def test_groups_nested_under_an_optional_group_are_optional() -> None:
+    """PaymentSettings.http is not `X | None`, but it only exists when
+    APP_PAYMENT__* does. Without ancestor propagation its defaults were
+    emitted as active assignments, which built PaymentSettings on its own.
+    """
+    by_path = {group.path: group for group in walk_settings()}
+    assert by_path[("payment", "http")].optional is True

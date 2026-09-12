@@ -141,10 +141,11 @@ contract-gates:
     uv run pytest -m contract
     uv run python scripts/check_contract_compatibility.py
 
-# Promote the current contract to the baseline. Run this as part of
-# CUTTING a release, never to make `contract-gates` stop complaining:
-# silencing it that way is precisely the silent breaking change the gate
-# exists to catch (spec 10.2).
+# Promote the current contract to the baseline. `.github/workflows/release.yml`
+# runs this inside every release's bump commit, so nobody runs it by hand
+# -- and never to make `contract-gates` stop complaining: silencing it that
+# way is precisely the silent breaking change the gate exists to catch
+# (spec 10.2).
 contract-release:
     cp openapi.json openapi.baseline.json
 
@@ -272,23 +273,33 @@ docs-examples:
     # one: the stack must come down whether the examples pass, fail, or the
     # run is interrupted. The trap is armed BEFORE `up`, so a healthcheck
     # timeout in `--wait` cannot leave the stack running.
-    # `up --wait app`, naming the service: `up --wait` with no name also
-    # starts the `seed` one-shot, and compose counts a container that has
-    # EXITED -- even with status 0 -- as a failed wait unless some started
-    # service depends on it with service_completed_successfully. `app`
-    # depends on `migrate` and `minio-bootstrap` that way, which is why
-    # they never tripped this; nothing depends on `seed`. Naming `app`
+    #
+    # Its own Compose project, `-p`, and never the default one: `down -v`
+    # removes the project's volumes, and in the default project those are
+    # `postgres-data` and `minio-data` -- the database and receipts of a
+    # `just up` stack a developer may have running. With its own project
+    # the volumes are its own, and `down -v` deletes nothing anyone keeps.
+    # The host ports are still the same, so this cannot run WHILE `just
+    # up` is running -- `up --wait` fails on the port clash, the trap
+    # tears down only this project, and nothing of the other is touched.
+    #
+    # `up --wait app redis`, naming the services: `up --wait` with no name
+    # also starts the `seed` one-shot, and compose counts a container that
+    # has EXITED -- even with status 0 -- as a failed wait unless some
+    # started service depends on it with service_completed_successfully.
+    # `app` depends on `migrate` and `minio-bootstrap` that way, which is
+    # why they never tripped this; nothing depends on `seed`. Naming `app`
     # starts exactly its dependency graph, which is the stack the
     # documented examples need -- none of them relies on seeded data, and
     # the plan forbids one from doing so, because seeded ids differ per
-    # machine.
-    # `redis` is named too: `app` deliberately does not depend on it (the
-    # cache is optional, fail-open), so naming `app` alone would start the
-    # stack without a cache and the examples would exercise the fail-open
-    # path rather than the cached one `just up` runs.
+    # machine. `redis` is named too: `app` deliberately does not depend on
+    # it (the cache is optional, fail-open), so naming `app` alone would
+    # start the stack without a cache and the examples would exercise the
+    # fail-open path rather than the cached one `just up` runs.
     set -euo pipefail
-    trap 'docker compose down -v' EXIT
-    docker compose up -d --wait app redis
+    project=reference-service-docs-examples
+    trap 'docker compose -p "$project" down -v' EXIT
+    docker compose -p "$project" up -d --wait app redis
     python3 ../../scripts/check_doc_examples.py ../../docs
 
 # An interactive psql session against the running compose database.

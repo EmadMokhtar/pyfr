@@ -271,7 +271,9 @@ are easy to miss when standing up a fork.
   assumes the pull request title becomes the commit on `main`.
 - **Settings → Actions → General → Workflow permissions → "Read and write
   permissions".** The `Release` workflow (`.github/workflows/release.yml`)
-  pushes a tag (and, after the first release, a bump commit) back to `main`.
+  pushes a tag (and, after the first release, a bump commit carrying the
+  version, the changelog and the promoted API contract baseline) back to
+  `main`.
   With the default read-only permission, that push fails with a 403 error —
   and it fails *after* `cz bump` has already created the commit and tag in
   the runner's local checkout, so the run looks like it did most of the work

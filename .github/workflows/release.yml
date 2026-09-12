@@ -42,7 +42,13 @@ jobs:
     # property reads as an empty string, `startsWith('', 'bump:')` is
     # false, and the job runs -- which is the wanted behaviour for a
     # manually triggered release.
-    if: "!startsWith(github.event.head_commit.message, 'bump:')"
+    #
+    # `github.ref == 'refs/heads/main'` is the second guard, for the
+    # workflow_dispatch trigger: the Actions UI lets a manual run be
+    # launched from ANY branch, and without this a run started from a
+    # feature branch would `cz bump` that branch, tag an unmerged commit,
+    # and publish it as the repository's release.
+    if: "github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.bump.outputs.released }}
@@ -73,6 +79,13 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install just
+        # For `just contract-release` in the bump step. This puts a binary
+        # on the runner's PATH and writes nothing into the checkout, so it
+        # does not fall foul of the "nothing writes before the bump" rule
+        # that step's comment explains.
+        uses: extractions/setup-just@v2
+
       - name: Identify the committer
         # The bump commit needs an author. Using the Actions bot rather
         # than impersonating whoever merged: the commit is made by
@@ -90,10 +103,13 @@ jobs:
         #
         # `cz bump` commits with `git commit -a`, which stages every
         # tracked modification in the tree -- so nothing may write into
-        # the working tree before this step. `uv run --locked` is safe
-        # here: it refuses to rewrite uv.lock rather than updating it, and
-        # `.venv/` is untracked and ignored (M6 plan, Verified Fact 12).
-        # There is still deliberately no `uv sync` step above.
+        # the working tree before this step BY ACCIDENT. There is
+        # deliberately no `uv sync` above for that reason, and `uv run
+        # --locked` is safe here: it refuses to rewrite uv.lock rather than
+        # updating it, and `.venv/` is untracked and ignored (M6 plan,
+        # Verified Fact 12). The one deliberate write is the
+        # contract-baseline promotion inside the else branch below, which
+        # relies on exactly this behaviour to ride along in the bump commit.
         #
         # This repository starts with no git tags at all, and `cz bump`
         # cannot cut the first release under that condition -- verified,
@@ -134,6 +150,21 @@ jobs:
             echo "released=true" >> "$GITHUB_OUTPUT"
             echo "version=${version}" >> "$GITHUB_OUTPUT"
           else
+            # Promote the API contract baseline so it rides in the bump
+            # commit. The contract gate compares openapi.json against
+            # openapi.baseline.json, and reads commit markers over the
+            # window since the last tag -- so the baseline and the tag
+            # must move together, or the gate goes red on the first pull
+            # request after a release and stays red until someone
+            # promotes by hand. Steady-state only: the bootstrap branch
+            # above makes no commit, so its baseline was promoted on the
+            # branch that introduced this workflow instead.
+            #
+            # If cz then decides there is nothing to release (exit 3 or
+            # 21 below), this write is discarded with the runner: nothing
+            # is committed and nothing is pushed.
+            (cd examples/reference-service && just contract-release)
+
             set +e
             uv run --locked --group dev cz bump --yes --changelog
             status=$?
@@ -189,9 +220,19 @@ jobs:
           fi
 
       - name: Publish the GitHub Release
-        if: steps.bump.outputs.released == 'true'
+        # Deliberately NOT gated on `released == 'true'`, and idempotent
+        # for an existing tag. If `gh release create` fails after the tag
+        # (and, steady-state, the bump commit) have already been pushed, a
+        # rerun of this workflow finds no releasable commits after that
+        # tag: `cz bump` exits 3, `released` is false, and a step gated on
+        # it would be skipped forever -- leaving a pushed tag with no
+        # release, repairable only by hand. So this step always runs,
+        # works out the tag it should be publishing (the one just cut, or
+        # otherwise the most recent tag on `main`), and creates the
+        # release only if that tag has none yet.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASED: ${{ steps.bump.outputs.released }}
           VERSION: ${{ steps.bump.outputs.version }}
         # --notes-from-tag would use the tag message; `cz changelog`'s own
         # rendering of this version's commits is better prose.
@@ -204,10 +245,23 @@ jobs:
         # describe the same release; they are not guaranteed to describe
         # it in the same words.
         run: |
-          uv run --locked --group dev cz changelog "v${VERSION}" \
+          if [ "$RELEASED" = "true" ]; then
+            tag="v${VERSION}"
+          else
+            tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          fi
+          if [ -z "$tag" ]; then
+            echo "No tag exists yet, so there is no release to publish."
+            exit 0
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; nothing to do."
+            exit 0
+          fi
+          uv run --locked --group dev cz changelog "$tag" \
             --dry-run > release-notes.md
-          gh release create "v${VERSION}" \
-            --title "v${VERSION}" \
+          gh release create "$tag" \
+            --title "$tag" \
             --notes-file release-notes.md
 
   publish-images:
