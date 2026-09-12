@@ -50,6 +50,9 @@ jobs:
     # and publish it as the repository's release.
     if: "github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.bump.outputs.released }}
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -93,17 +96,20 @@ jobs:
 
       - name: Bump the version and write the changelog
         id: bump
-        # Pinned to the version .pre-commit-config.yaml pins, so the tool
-        # deciding the version here is the tool that validated the commit
-        # messages it reads.
+        # Commitizen comes from the root uv.lock -- the one place its
+        # version lives (ADR 0014) -- so the tool deciding the version
+        # here is the tool the commit-msg hook ran on every message it
+        # reads.
         #
         # `cz bump` commits with `git commit -a`, which stages every
         # tracked modification in the tree -- so nothing may write into
         # the working tree before this step BY ACCIDENT. There is
-        # deliberately no `uv sync` above for that reason. The one
-        # deliberate write is the contract-baseline promotion inside the
-        # else branch below, which relies on exactly this behaviour to
-        # ride along in the bump commit.
+        # deliberately no `uv sync` above for that reason, and `uv run
+        # --locked` is safe here: it refuses to rewrite uv.lock rather than
+        # updating it, and `.venv/` is untracked and ignored (M6 plan,
+        # Verified Fact 12). The one deliberate write is the
+        # contract-baseline promotion inside the else branch below, which
+        # relies on exactly this behaviour to ride along in the bump commit.
         #
         # This repository starts with no git tags at all, and `cz bump`
         # cannot cut the first release under that condition -- verified,
@@ -131,7 +137,7 @@ jobs:
           if [ -z "$(git tag -l)" ]; then
             echo "No tags found: bootstrapping the first release."
 
-            version=$(uvx --from commitizen==4.18.0 cz version --project)
+            version=$(uv run --locked --group dev cz version --project)
             tag="v${version}"
 
             # A plain (lightweight) tag: cz's own tags carry no message
@@ -160,7 +166,7 @@ jobs:
             (cd examples/reference-service && just contract-release)
 
             set +e
-            uvx --from commitizen==4.18.0 cz bump --yes --changelog
+            uv run --locked --group dev cz bump --yes --changelog
             status=$?
             set -e
 
@@ -183,7 +189,7 @@ jobs:
 
             echo "mode=bump" >> "$GITHUB_OUTPUT"
             echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "version=$(uvx --from commitizen==4.18.0 cz version --project)" \
+            echo "version=$(uv run --locked --group dev cz version --project)" \
               >> "$GITHUB_OUTPUT"
           fi
 
@@ -252,8 +258,92 @@ jobs:
             echo "Release $tag already exists; nothing to do."
             exit 0
           fi
-          uvx --from commitizen==4.18.0 cz changelog "$tag" \
+          uv run --locked --group dev cz changelog "$tag" \
             --dry-run > release-notes.md
           gh release create "$tag" \
             --title "$tag" \
             --notes-file release-notes.md
+
+  publish-images:
+    # Both images, both architectures, tagged with the REPOSITORY version
+    # just released and, once verified, `latest` (ADR 0015). In order:
+    # build the single-architecture images and scan them, so a fixed HIGH
+    # or CRITICAL finding stops the push before anything leaves the
+    # runner; push both platforms under the version tag only; scan the
+    # PUSHED digests for both platforms -- that is the artifact people
+    # will pull, and the arm64 side is only ever scanned here; write the
+    # SBOMs from those same references; only then create `latest` from the
+    # version tag; and attach the SBOMs to the GitHub Release. A finding on
+    # the pushed image leaves the version tag in the registry but never
+    # becomes `latest`, and the failed job says why.
+    #
+    # Checks out the TAG, not `main`: the release job's bump commit is
+    # what the tag points at, and `main` may already have moved on.
+    #
+    # No `docker/setup-buildx-action`: it makes its own `docker-container`
+    # builder the CURRENT one, and on Docker >= 23 `docker build` is
+    # `docker buildx build` on the current builder -- so `just
+    # build-images` would build inside that container builder and never
+    # load `reference-service:ci` into the daemon, and `just scan` would
+    # find no such image. The `pyfr` builder `publish-images` needs is
+    # created by the recipe itself (`_buildx-builder`), never made
+    # current, and `docker buildx` is preinstalled on ubuntu-latest. QEMU
+    # stays: it registers the emulator that builder uses for arm64.
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release upload
+      packages: write   # ghcr.io push; includes pull, which the SBOM step needs
+    defaults:
+      run:
+        working-directory: examples/reference-service
+    env:
+      VERSION: v${{ needs.release.outputs.version }}
+      # Registry credentials for the post-push scan and SBOM steps below,
+      # which read the images just pushed rather than local ones.
+      # compose.yaml forwards both into the trivy container; nightly.yml
+      # uses the same pair.
+      TRIVY_USERNAME: ${{ github.actor }}
+      TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: extractions/setup-just@v2
+      - name: Build both images
+        run: just build-images
+      - name: Scan both images
+        run: just scan
+      - name: Push both images for both architectures under the version tag
+        run: just publish-images "$VERSION"
+      - name: Scan the pushed images for both architectures
+        run: just scan-published "$VERSION"
+      - name: Write the software bills of materials from the pushed images
+        # After the push, and from the pushed references rather than the
+        # local `:ci` build: the SBOM's subject is then the image reference
+        # people pull, so a document can be matched to the artifact it is
+        # attached to. `publish-images` rebuilds through the buildx
+        # builder, so the local `:ci` image is a different image ID from
+        # what was pushed. Trivy reads the manifest for the runner's own
+        # platform (amd64) out of the index -- the arm64 manifest resolves
+        # the same lockfile and Debian package versions.
+        run: >-
+          just sbom
+          "ghcr.io/emadmokhtar/pyfr-reference-service:$VERSION"
+          "ghcr.io/emadmokhtar/pyfr-reference-service-migrations:$VERSION"
+      - name: Point latest at the scanned version
+        run: just promote-latest "$VERSION"
+      - name: Attach the SBOMs to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # `--clobber` so "re-run failed jobs" after a failed upload does
+        # not die on "asset already exists" when one of the two files had
+        # already made it up.
+        run: gh release upload --clobber "$VERSION" sbom/reference-service.cdx.json sbom/reference-service-migrations.cdx.json

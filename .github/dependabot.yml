@@ -1,0 +1,80 @@
+# Automated dependency updates (ADR 0014). Weekly, one grouped pull
+# request per ecosystem, so a Monday brings at most six PRs rather than
+# thirty. Every PR carries `no-docs-needed`: a version bump is exactly the
+# internal-only change ci.yml's docs-freshness job has that label for.
+#
+# What is NOT here, and why: a `pip` entry (the root project's ecosystem
+# is `uv`), and any way to update a version literal inside a justfile or
+# a workflow -- Dependabot has none, which is why M6 removed every such
+# literal instead (see the ADR for the two that remain).
+version: 2
+
+updates:
+  # Both lockfiles. `uv` updates uv.lock and the pins in pyproject.toml.
+  - package-ecosystem: "uv"
+    directories:
+      - "/"
+      - "/examples/reference-service"
+    schedule:
+      interval: "weekly"
+    groups:
+      python:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies", "no-docs-needed"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"
+    labels: ["dependencies", "no-docs-needed"]
+
+  # Dockerfile and Dockerfile.migrations: the file fetcher matches any
+  # name containing "dockerfile" (M6 plan, Verified Fact 10).
+  - package-ecosystem: "docker"
+    directory: "/examples/reference-service"
+    schedule:
+      interval: "weekly"
+    groups:
+      images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies", "no-docs-needed"]
+
+  # compose.yaml: postgres, redis, minio, mc, wiremock, otel-lgtm, trivy.
+  # The integration tests and `just o11y-gates` read their pins from this
+  # file, so a bump here IS the bump everywhere.
+  - package-ecosystem: "docker-compose"
+    directory: "/examples/reference-service"
+    schedule:
+      interval: "weekly"
+    groups:
+      compose-images:
+        patterns: ["*"]
+    ignore:
+      # `image: reference-service:compose` is built locally by `app`; there
+      # is nothing on Docker Hub to update it from.
+      - dependency-name: "reference-service"
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies", "no-docs-needed"]
+
+  # gitleaks, sqlfluff and pre-commit-hooks. ruff, uv and Commitizen are
+  # local hooks resolved through uv.lock and need no rev.
+  - package-ecosystem: "pre-commit"
+    directory: "/examples/reference-service"
+    schedule:
+      interval: "weekly"
+    groups:
+      hooks:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies", "no-docs-needed"]

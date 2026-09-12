@@ -84,6 +84,7 @@ nav:
       - Errors: reference/errors.md
       - Logging: reference/logging.md
       - Observability: reference/observability.md
+      - Supply chain: reference/supply-chain.md
   - Decisions:
       - Overview: adr/README.md
       - 0001 Four-layer dependency rule: adr/0001-four-layer-dependency-rule.md
@@ -98,6 +99,10 @@ nav:
       - 0010 The OpenAPI document is committed and drift-gated: adr/0010-the-openapi-document-is-committed-and-drift-gated.md
       - 0011 readyz reports optional dependencies without gating: adr/0011-readyz-reports-optional-dependencies-without-gating.md
       - 0012 mypy is strict on the inner layers only: adr/0012-mypy-is-strict-on-the-inner-layers-only.md
+      - 0013 Redact by key name, in the shared processor chain: adr/0013-redaction-is-a-processor-in-the-shared-chain.md
+      - 0014 Dependabot, and one pin per tool: adr/0014-dependabot-and-one-pin-per-tool.md
+      - 0015 Images are published on release, under the repository's version: adr/0015-images-are-published-on-release-under-the-repository-version.md
+      - 0016 Image scanning fails on fixed findings, and exemptions expire: adr/0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire.md
   - Explanation:
       - Architecture: explanation/architecture.md
       - Why a template, not a framework: explanation/why-a-template.md

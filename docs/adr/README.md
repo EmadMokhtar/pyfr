@@ -46,3 +46,7 @@ reconstruction, and it shows.
 | 0010 | [The OpenAPI document is committed and drift-gated](0010-the-openapi-document-is-committed-and-drift-gated.md) | M3 |
 | 0011 | [`/readyz` reports optional dependencies without gating](0011-readyz-reports-optional-dependencies-without-gating.md) | M4 |
 | 0012 | [mypy is strict on the inner layers only](0012-mypy-is-strict-on-the-inner-layers-only.md) | M0 |
+| 0013 | [Redact by key name, in the shared processor chain](0013-redaction-is-a-processor-in-the-shared-chain.md) | M6 |
+| 0014 | [Dependabot, and one pin per tool](0014-dependabot-and-one-pin-per-tool.md) | M6 |
+| 0015 | [Images are published on release, under the repository's version](0015-images-are-published-on-release-under-the-repository-version.md) | M6 |
+| 0016 | [Image scanning fails on fixed findings, and exemptions expire](0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire.md) | M6 |

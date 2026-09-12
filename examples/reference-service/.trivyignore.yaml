@@ -1,0 +1,35 @@
+# The ONLY way a finding is exempted from `just scan` (ADR 0016). Every
+# entry names why, is pinned to the path it applies to, and EXPIRES: after
+# `expired_at`, the finding fails the scan again until someone re-decides.
+# Renewing an entry means re-checking whether a fix has shipped -- that is
+# what the date is for. `trivy image --show-suppressed` lists what this
+# file is currently hiding.
+#
+# All five below are vendored inside the migrate/migrate Go binary. The
+# newest release (v4.20.1, 2026-09-09) still carries them, so no image bump
+# can clear them today (M6 plan, Verified Fact 6). None is reachable from
+# `migrate up` against PostgreSQL: the ssh client, the gRPC xDS server
+# paths and the unicode normaliser are not on that code path. A Dependabot
+# bump to the next migrate release is the moment to re-scan and drop
+# whichever have gone.
+vulnerabilities:
+  - id: CVE-2026-56854
+    paths: ["usr/local/bin/migrate"]
+    statement: "golang.org/x/crypto/ssh authentication bypass. migrate opens no ssh connection here. Fixed in x/crypto 0.55.0; not in any migrate release yet."
+    expired_at: 2026-12-10
+  - id: CVE-2026-56852
+    paths: ["usr/local/bin/migrate"]
+    statement: "golang.org/x/text denial of service on invalid UTF-8 in the normaliser. Not on the migrate up code path. Fixed in x/text 0.39.0; not in any migrate release yet."
+    expired_at: 2026-12-10
+  - id: CVE-2026-84304
+    paths: ["usr/local/bin/migrate"]
+    statement: "gRPC-Go server-side issue. migrate runs no gRPC server. Fixed in grpc 1.83.1; not in any migrate release yet."
+    expired_at: 2026-12-10
+  - id: CVE-2026-84445
+    paths: ["usr/local/bin/migrate"]
+    statement: "gRPC-Go xDS server crash. migrate runs no xDS server. Fixed in grpc 1.82.2; not in any migrate release yet."
+    expired_at: 2026-12-10
+  - id: GHSA-hrxh-6v49-42gf
+    paths: ["usr/local/bin/migrate"]
+    statement: "gRPC-Go xDS RBAC and HTTP/2 issues. migrate runs no xDS server. Fixed in grpc 1.82.1; not in any migrate release yet."
+    expired_at: 2026-12-10

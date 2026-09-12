@@ -7,6 +7,7 @@ incorrect rather than obviously broken -- which is the worse failure.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import Annotated
 
 import pytest
 from pydantic import BaseModel, Field
+
+from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
 
 # scripts/ is not an installed package; the generator is a build tool that
 # lives beside the code it reads.
@@ -44,8 +47,11 @@ def by_name(groups: list[ConfigGroup]) -> dict[str, ConfigVariable]:
 
 
 def test_walks_every_environment_variable(by_name: dict[str, ConfigVariable]) -> None:
-    """38 variables across 8 models -- see the plan's Verified Fact 6."""
-    assert len(by_name) == 38
+    """39 variables across 8 models -- see the plan's Verified Fact 6.
+
+    38 before Task 2 added `APP_LOG__REDACT_FIELDS`.
+    """
+    assert len(by_name) == 39
 
 
 def test_top_level_fields_carry_no_group_prefix(
@@ -238,8 +244,8 @@ def test_no_secret_field_has_a_default(by_name: dict[str, ConfigVariable]) -> No
 def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
     table = render_markdown_table()
     lines = [line for line in table.splitlines() if line.startswith("|")]
-    # header + separator + 38 rows
-    assert len(lines) == 40
+    # header + separator + 39 rows
+    assert len(lines) == 41
     assert lines[0].startswith("| Variable |")
 
 
@@ -398,6 +404,29 @@ def test_configuration_doc_keeps_its_generated_markers() -> None:
     text = CONFIGURATION_DOC.read_text(encoding="utf-8")
     assert text.count(MARKER_BEGIN) == 1
     assert text.count(MARKER_END) == 1
+
+
+def test_json_array_fields_render_as_compact_sorted_json(
+    by_name: dict[str, ConfigVariable],
+) -> None:
+    redact = by_name["APP_LOG__REDACT_FIELDS"]
+
+    assert redact.type_label == "JSON array"
+    assert redact.default_label == json.dumps(
+        sorted(DEFAULT_REDACT_FIELDS), separators=(",", ":")
+    )
+    assert "frozenset" not in redact.default_label
+
+
+def test_json_defaults_are_single_quoted_in_the_env_example() -> None:
+    """Verified Fact 13: `just`'s dotenv loader strips DOUBLE quotes out of
+    an unquoted value, so `APP_X=["a","b"]` reaches a recipe as `[a,b]` —
+    no longer JSON. Single quotes survive both loaders."""
+    env = render_env_example()
+
+    assert "APP_LOG__LEVELS='{}'" in env
+    assert "APP_LOG__REDACT_FIELDS='[\"" in env
+    assert "APP_LOG__REDACT_FIELDS=[" not in env
 
 
 def test_generated_env_example_starts_the_service_with_no_backends(

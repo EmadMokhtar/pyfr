@@ -330,3 +330,8 @@ pyrightconfig.json
 # tests/, rebuilt by every `just mutants` run. Build output, not a source
 # tree — never commit it.
 mutants/
+
+# Seed state and SBOMs (examples/reference-service): per-checkout output of
+# `just seed` and `just sbom`. Never commit either.
+examples/reference-service/.seed-state.json
+examples/reference-service/sbom/

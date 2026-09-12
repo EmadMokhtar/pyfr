@@ -129,3 +129,27 @@ def test_a_third_party_record_is_exported_too(
     logging.getLogger("some.library").warning("connection retried")
 
     assert _body(exporter.get_finished_logs()[0])["logger"] == "some.library"
+
+
+def test_a_third_party_extra_field_is_redacted_in_the_exported_attributes(
+    exporter: InMemoryLogRecordExporter, logger_provider: LoggerProvider
+) -> None:
+    """LoggingHandler copies record attributes into OTLP attributes without
+    the processor chain; RedactingFilter masks them first."""
+    configure_logging(
+        environment="production",
+        level="info",
+        levels={},
+        logger_provider=logger_provider,
+    )
+
+    logging.getLogger("some.library").warning(
+        "retrying", extra={"authorization": "Bearer abc", "attempt": 2}
+    )
+
+    [exported] = exporter.get_finished_logs()
+    attributes = dict(exported.log_record.attributes or {})
+    assert attributes["authorization"] == "[REDACTED]"
+    assert attributes["attempt"] == 2
+    assert "Bearer abc" not in json.dumps(attributes)
+    assert "Bearer abc" not in str(exported.log_record.body)

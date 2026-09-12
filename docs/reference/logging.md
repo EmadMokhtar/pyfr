@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 covers:
   - examples/reference-service/src/reference_service/observability/
 ---
@@ -126,6 +126,45 @@ APP_LOG__LEVELS='{"httpx": "warning"}'
 
 The keys are logger names, which appear in the `logger` field of the records
 you want to quieten.
+
+## Redaction
+
+A field is masked by name, at any depth of nested objects and lists, ignoring
+case and treating `-` and `_` alike. The masked value becomes the literal
+string `[REDACTED]`.
+
+The redactor runs last in the shared processor chain (`_shared_processors` in
+`observability/logging.py`), so it sees the fully assembled record —
+including values middleware bound into context earlier in the request. That
+same chain is also the `foreign_pre_chain` that formats standard-library
+records, so a third-party library's log line is masked by the same rule.
+The OTLP export leg masks a record's `extra=` attributes with the same rule,
+through a filter on that handler. That beats redacting at each call site:
+the one call site where someone forgets is the one that matters.
+
+The default field names are `access_token`, `api_key`, `apikey`,
+`authorization`, `card_number`, `cookie`, `cvv`, `passwd`, `password`,
+`refresh_token`, `secret`, `secret_access_key`, `secret_key`, `set_cookie`,
+and `token`. `APP_LOG__REDACT_FIELDS` **replaces** this list rather than
+adding to it — see [Configuration](configuration.md#variables).
+
+```python
+log.info("user.login", user="ann", password="hunter2")
+```
+
+produces (other fields every record carries are omitted here for clarity):
+
+```json
+{"event": "user.login", "user": "ann", "password": "[REDACTED]"}
+```
+
+Matching is by key name only. A secret interpolated into the message string,
+as in `log.info(f"token {token}")`, is not something a key-name rule can
+see — nothing reads message text. `SecretStr` and the startup path's
+`include_input=False` close the other two ways a secret could reach one of
+our own records as a value. Put secrets in fields, never in the event string.
+
+See [ADR 0013](../adr/0013-redaction-is-a-processor-in-the-shared-chain.md).
 
 ## Exceptions are one record
 

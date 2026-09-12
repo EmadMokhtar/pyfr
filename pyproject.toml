@@ -49,6 +49,12 @@ docs = [
 # The repository's own scripts have tests. The service's suite is entirely
 # separate and lives under examples/reference-service/.
 dev = [
+    # Pinned exactly, and pinned HERE only: the version that decides what
+    # each release is numbered must be one version, in one file that
+    # Dependabot updates. .pre-commit-config.yaml's commit-message hook,
+    # the root justfile and release.yml all run it through
+    # `uv run --locked --group dev cz` (ADR 0014).
+    "commitizen==4.18.0",
     "pytest>=8.3",
     # tests/test_check_docs_freshness.py imports scripts/check_docs_freshness.py,
     # which does `import yaml` directly. Declared here rather than left to

@@ -24,7 +24,40 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Must match the builder's Debian release; see the note above.
 FROM python:3.13-slim-trixie AS runtime
 
+# Apply Debian's security updates at build time. The official python:slim
+# tag is rebuilt on Python's schedule, not Debian's, so it lags the
+# security archive by days or weeks: the first CI run of the scan gate
+# found twelve fixed HIGH and CRITICAL findings (perl-base, gzip, libpcre2,
+# libsqlite3) in a base whose fixes had already shipped in Debian 13.7,
+# while the same base scanned clean a day earlier against an older
+# vulnerability database. `apt-get upgrade` installs exactly the fixed
+# versions the scan names, so the image is as current as Debian's archive
+# on the day it is built rather than the day the base tag was cut. The
+# package lists are removed afterwards so they do not ship in the image.
+# The cost is that two builds days apart can differ in Debian package
+# versions; the SBOM records which versions a given image carries.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
+
+# pip is not used at runtime -- the virtual environment copied in below
+# was built by uv -- and the copy the base image ships is the ONLY source
+# of vulnerability findings in this image: its vendored msgpack
+# (GHSA-6v7p-g79w-8964) and pkg_resources (CVE-2025-47273) are both HIGH,
+# both fixed upstream, and both unreachable from anything this service
+# runs (M6 plan, Verified Fact 5). Removing pip removes the findings, and
+# a tool nobody should run inside a production container. The interpreter
+# is named by its full path on purpose: /app/.venv/bin goes first on PATH
+# below, and the venv's own python has no pip to uninstall.
+RUN /usr/local/bin/python -m pip uninstall -y pip
+
+# What links a pushed image to this repository on GHCR, so the package
+# inherits the repository's visibility and README. Version and revision
+# are stamped at publish time (`just publish-images`); they are not known
+# here. Becomes a template variable in M7.
+LABEL org.opencontainers.image.source="https://github.com/EmadMokhtar/pyfr"
 
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv

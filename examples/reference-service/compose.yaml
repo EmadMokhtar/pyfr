@@ -83,7 +83,13 @@ services:
   # here runs against Amazon S3 in production with only endpoint_url
   # changing (spec 9.1).
   minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # quay.io, not Docker Hub: MinIO withdrew its Docker Hub images in
+    # September 2026 (`docker pull minio/minio:latest` answers "pull access
+    # denied ... repository does not exist"), which broke every pull of the
+    # previous pin. The same release tags are published on quay.io. The
+    # integration tests read this pin from here, so this is the one place
+    # to change it.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -115,7 +121,8 @@ services:
   # once, exits 0, and that `app` waits on with
   # service_completed_successfully.
   minio-bootstrap:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # quay.io for the same reason as the `minio` service above.
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
@@ -129,6 +136,11 @@ services:
 
   app:
     build: .
+    # Named so the `seed` one-shot below can run from the same image
+    # without a second `build:` block. `up --build` builds every buildable
+    # service before creating any container, so the name exists by the time
+    # `seed` needs it.
+    image: reference-service:compose
     ports:
       - "8000:8000"
     depends_on:
@@ -196,6 +208,36 @@ services:
     # APP_HTTP_PORT is overridden — Compose applies the image's own
     # healthcheck automatically, so duplicating it just to hardcode the
     # port both drifts and repeats the same instruction twice.
+
+  # A one-shot, like `migrate` and `minio-bootstrap`: runs once `app` is
+  # healthy, creates the fixed orders in reference_service/seed.py through
+  # the API, and exits 0. `just up` therefore yields a service with data in
+  # it, and `GET /api/v1/orders/<id>` works before anyone has typed a POST.
+  # Idempotent: re-running `up` without `down` creates nothing new.
+  seed:
+    image: reference-service:compose
+    depends_on:
+      # service_healthy, not service_started: the image's HEALTHCHECK is
+      # what says the API is answering.
+      app:
+        condition: service_healthy
+    # Root, deliberately, and only here. The state file that makes the seed
+    # idempotent lives in the named volume below, and Docker creates a fresh
+    # volume's mount point owned by root -- the image's `app` user cannot
+    # write into it. This container runs an HTTP client against `app` and
+    # touches nothing else; the `migrate` one-shot above already runs as
+    # root for its own reasons (see `just migrate-new`'s comment).
+    user: root
+    command:
+      - python
+      - -m
+      - reference_service.seed
+      - --base-url
+      - http://app:8000
+      - --state
+      - /state/seed.json
+    volumes:
+      - seed-state:/state
 
   # A local stub of the payment provider, not the provider itself — there
   # is no real one to build a reference service against. WireMock serves
@@ -267,6 +309,31 @@ services:
       timeout: 3s
       retries: 30
 
+  # Trivy, for `just scan` and `just sbom`. A compose service rather than a
+  # `docker run` in the justfile so that its image pin lives HERE, with
+  # every other one, where Dependabot moves it (ADR 0014). The `tools`
+  # profile keeps it out of `just up`; `docker compose run` enables a
+  # service's profile on its own.
+  #
+  # The Docker socket is how Trivy reads an image that was `docker build`
+  # -- not pushed anywhere -- and the cache volume is what makes the second
+  # run take seconds rather than re-downloading the vulnerability database.
+  trivy:
+    profiles: ["tools"]
+    image: aquasec/trivy:0.74.0
+    environment:
+      # Registry credentials for scanning a remote image that is not
+      # public. Empty locally, where every scan is of a local image.
+      TRIVY_USERNAME: ${TRIVY_USERNAME:-}
+      TRIVY_PASSWORD: ${TRIVY_PASSWORD:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trivy-cache:/root/.cache/trivy
+      - ./.trivyignore.yaml:/.trivyignore.yaml:ro
+      - ./sbom:/sbom
+
 volumes:
   postgres-data:
   minio-data:
+  seed-state:
+  trivy-cache:

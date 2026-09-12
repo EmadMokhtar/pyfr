@@ -1,7 +1,8 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 covers:
   - examples/reference-service/Dockerfile
+  - examples/reference-service/Dockerfile.migrations
   - examples/reference-service/compose.yaml
 ---
 
@@ -12,8 +13,10 @@ just up
 ```
 
 That builds the image and starts the stack, serving on
-<http://localhost:8000>. Stop it with `just down`, which also removes the
-volumes.
+<http://localhost:8000>. Once the API is healthy, a one-shot `seed` container
+creates five orders through it, so there is something to `GET` before you
+have placed anything — see [Getting started](../getting-started.md#start-with-data-in-it).
+Stop it with `just down`, which also removes the volumes.
 
 Run these from `examples/reference-service/`.
 
@@ -35,6 +38,11 @@ Other properties worth knowing:
   quietly resolving something new. Builds are reproducible.
 - **Dependencies are installed before the source is copied**, so editing a
   Python file does not re-resolve the dependency tree.
+- **pip is removed** from the runtime stage. The virtual environment was built
+  by uv, nothing at runtime uses pip, and the copy the base image ships was
+  the only source of vulnerability findings in the image. Why the image is
+  scanned, and why it is still not distroless, is in
+  [Supply chain](../reference/supply-chain.md#the-hardened-image).
 
 !!! warning "Both stages must stay on the same Debian release"
 
@@ -42,6 +50,65 @@ Other properties worth knowing:
     `python:3.13-slim-trixie`. Both are Debian trixie, and that is load-bearing:
     a virtual environment built against one version of the C library is not
     safe to run on an older one. If you change one base image, change both.
+
+## Pull the published images instead of building
+
+Every release pushes both images to GHCR (the GitHub Container Registry), for
+`linux/amd64` and `linux/arm64`, tagged with the repository's version and
+`latest`:
+
+```bash
+docker pull ghcr.io/emadmokhtar/pyfr-reference-service:vX.Y.Z
+docker pull ghcr.io/emadmokhtar/pyfr-reference-service-migrations:vX.Y.Z
+```
+
+`vX.Y.Z` is a tag from the repository's Releases page — the same string as
+the git tag. Pin it in anything that deploys. `latest` moves with every
+release; it exists for the nightly scan, which wants whatever is current.
+
+The service image runs on its own with no configuration at all — every
+dependency is optional, and unset means in-memory:
+
+```bash
+docker run --rm -p 8000:8000 ghcr.io/emadmokhtar/pyfr-reference-service:vX.Y.Z
+```
+
+The migrations image is the schema and nothing else, built `FROM
+migrate/migrate` with `migrations/` copied in. Its entrypoint is `migrate`
+itself and its default command is `-path=/migrations up`; the database URL is
+deliberately absent from the image and is passed at run time, so it runs as a
+Kubernetes init container or a pre-deployment job with the arguments spelled
+out:
+
+```bash
+docker run --rm ghcr.io/emadmokhtar/pyfr-reference-service-migrations:vX.Y.Z \
+  -path=/migrations -database 'postgres://app:secret@db:5432/app?sslmode=disable' up
+```
+
+`?sslmode=disable` is a libpq parameter golang-migrate needs against a server
+with no TLS; it belongs on this URL and never in `APP_DATABASE__DSN`, which
+rejects it.
+
+What the two images are, how they are tagged and labelled, and what they are
+scanned for before the push, is on
+[Supply chain](../reference/supply-chain.md#the-images).
+
+## Check an environment before starting
+
+The same settings model that stops a misconfigured container at startup can
+be run on its own, against the environment a container would be given:
+
+```bash
+docker compose run --rm app python -m reference_service.config_check
+```
+
+A bad environment exits 78 with the same message the service would have
+printed — the field, what is wrong with it, and the rule that rejected it,
+never the value. A good one prints the configuration the service would start
+with, as one JSON object, with every `SecretStr` and every URL password
+masked. Compare it with what you meant to set. Add `--no-deps` to skip
+starting the databases, which the check does not need. Outside compose,
+`just config-check` does the same against `.env` on the host.
 
 ## The health check
 

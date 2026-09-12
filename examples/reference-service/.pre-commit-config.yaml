@@ -5,29 +5,56 @@
 default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Pinned to match the ruff version uv.lock resolves, so `pre-commit run`
-    # and `just lint` format the same file the same way.
-    rev: v0.16.5
+  # ruff, uv and Commitizen run from the environments uv.lock pins -- the
+  # ONE place their versions live (ADR 0014). Before M6 each was a remote
+  # hook repository with its own `rev`, kept equal to the locked version by
+  # hand; the M5 plan even pinned commitizen in two files "so the two
+  # cannot drift". They drift. `language: system` runs the command as-is
+  # and the command resolves the tool through uv.
+  #
+  # pre-commit runs every hook from the repository ROOT with root-relative
+  # paths, even when invoked from this directory (M6 plan, Verified Fact
+  # 11). Hence `--project examples/reference-service`, which selects that
+  # project's environment WITHOUT changing directory -- `--directory`
+  # would chdir and the paths pre-commit passes would no longer resolve.
+  # In a standalone generated project (M7) the flag goes away.
+  - repo: local
     hooks:
-      # No args: ["--fix"] here. `just check`'s precommit recipe runs this
-      # hook, and "check" must never mutate the tree - it would rewrite
-      # source files, fail on the first CI run and pass on the second.
-      # `just lint` checks, `just fmt` fixes (via `ruff check --fix`); this
-      # hook mirrors `just lint`, not `just fmt`.
+      # No --fix here. `just check`'s precommit recipe runs this hook, and
+      # "check" must never mutate the tree - it would rewrite source files,
+      # fail on the first CI run and pass on the second. `just lint`
+      # checks, `just fmt` fixes; this hook mirrors `just lint`.
       - id: ruff-check
+        name: ruff check
+        entry: uv run --project examples/reference-service ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: ruff-format
-
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    # Pinned to match the installed uv, for the same reason as ruff above.
-    rev: 0.11.12
-    hooks:
+        name: ruff format --check
+        entry: uv run --project examples/reference-service ruff format --check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: uv-lock
-
-  - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.18.0
-    hooks:
+        name: uv lock --check (reference service)
+        entry: uv lock --check --project examples/reference-service
+        language: system
+        pass_filenames: false
+        files: ^examples/reference-service/(pyproject\.toml|uv\.lock)$
+      - id: uv-lock-root
+        name: uv lock --check (repository)
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+      # The root project owns Commitizen (see the root pyproject.toml).
+      # pre-commit passes the commit-message file as the one argument.
       - id: commitizen
+        name: commitizen check
+        entry: uv run --locked --group dev cz check --allow-abort --commit-msg-file
+        language: system
+        stages: [commit-msg]
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1

@@ -32,15 +32,30 @@ links:
 test:
     uv run --group dev pytest tests/
 
+# Audit the documentation and release toolchain's lock the same way the
+# reference service audits its own -- see that justfile's `audit` for the
+# flags. Two locks, two audits, one CI job.
+#
+# A `#!`-shebang recipe with `pipefail`, not a plain line: the gate must
+# be red when the producer fails, and without `pipefail` a failing
+# `uv export` leaves pip-audit reading an empty stdin, which passes
+# (verified: an empty stdin prints "No known vulnerabilities found" and
+# exits 0).
+audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv export --frozen --all-groups --format requirements.txt --no-emit-project \
+        | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
+
 # Preview the changelog entry the next release will write. Read-only.
 changelog:
-    uvx --from commitizen==4.18.0 cz changelog --dry-run --incremental
+    uv run --locked --group dev cz changelog --dry-run --incremental
 
 # Preview the version the next release will choose, without doing it.
 next-version:
     # The release itself runs in CI (.github/workflows/release.yml); this is
     # for answering "what will merging this produce?" before merging.
-    uvx --from commitizen==4.18.0 cz bump --dry-run
+    uv run --locked --group dev cz bump --dry-run
 
 # Documentation hygiene warnings for a pull request range. Never fails --
 # see docs/contributing.md for why, and for what has to be true before

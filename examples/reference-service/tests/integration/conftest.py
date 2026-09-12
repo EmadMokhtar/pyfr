@@ -52,31 +52,21 @@ from reference_service.infrastructure.storage.client import (
 )
 from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
 from reference_service.settings import CacheSettings, DatabaseSettings, StorageSettings
+from tests.compose_images import compose_image, dockerfile_base_image
 
-# Pinned, and pinned to the same versions compose uses. A gate that passes
-# against a different PostgreSQL than production runs is not a gate.
-POSTGRES_IMAGE = "postgres:16-alpine"
-MIGRATE_IMAGE = "migrate/migrate:v4.19.0"
-
-# Pinned, and pinned to the same tag compose.yaml uses. A gate that passes
-# against a different Redis than the local stack runs is not a gate.
+# Read from compose.yaml and Dockerfile.migrations rather than pinned here
+# (ADR 0014): a gate that passes against a different PostgreSQL than
+# `just up` runs is not a gate, and Dependabot moves those files, not this
+# one.
 #
-# testcontainers.redis (the short path) is a deprecated shim that calls
-# warnings.warn on import, and this project runs filterwarnings=["error"],
-# so importing it would fail outright. The community path above is the
-# supported one and is what this module already uses for PostgreSQL.
-REDIS_IMAGE = "redis:8-alpine"
-
-# Pinned to the same tag compose.yaml uses. MinioContainer's own default is
-# minio/minio:RELEASE.2022-12-02T19-19-22Z — nearly four years old — so this
-# is never left to the default.
-#
-# testcontainers.minio (the short path) is a deprecated shim that calls
-# warnings.warn on import, and this project runs filterwarnings=["error"],
-# so importing it would fail outright. The community path above is the
-# supported one and is what this module already uses for PostgreSQL and
-# Redis.
-MINIO_IMAGE = "minio/minio:RELEASE.2025-09-07T16-13-09Z"
+# testcontainers.redis and testcontainers.minio (the short paths) are
+# deprecated shims that call warnings.warn on import, and this project runs
+# filterwarnings=["error"], so importing them would fail outright. The
+# community paths above are the supported ones.
+POSTGRES_IMAGE = compose_image("postgres")
+MIGRATE_IMAGE = dockerfile_base_image()
+REDIS_IMAGE = compose_image("redis")
+MINIO_IMAGE = compose_image("minio")
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
 RECEIPTS_BUCKET = "receipts"
@@ -349,7 +339,7 @@ def minio_container() -> Iterator[MinioContainer]:
     MinioContainer's constructor sets the LEGACY credential variables
     (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). This is now KNOWN, not hedged: a
     divergent-credentials probe against the pinned MINIO_IMAGE
-    (minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
+    (quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
     legacy pair with InvalidAccessKeyId and honours only MINIO_ROOT_USER /
     MINIO_ROOT_PASSWORD, which is why both are set below, to the same
     values, with `.with_env`.

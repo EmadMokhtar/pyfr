@@ -35,6 +35,7 @@ edit `Field(description=...)` in
 | `APP_HTTP_PORT` | integer, 1–65535 | `8000` | The port to serve on. Read by `just dev`, by the container's start command, and by the image's health check. |
 | `APP_LOG__LEVEL` | `debug` \| `info` \| `warning` \| `error` \| `critical` | `info` | The root log level. |
 | `APP_LOG__LEVELS` | JSON object | `{}` | Per-logger overrides, as JSON. Silencing a chatty library is configuration, not a code change. |
+| `APP_LOG__REDACT_FIELDS` | JSON array | `["access_token","api_key","apikey","authorization","card_number","cookie","cvv","passwd","password","refresh_token","secret","secret_access_key","secret_key","set_cookie","token"]` | Field names whose values are replaced by `[REDACTED]` before a record is rendered, as a JSON array. Matched by exact name at any depth, ignoring case and treating `-` and `_` alike. Setting this REPLACES the default list rather than adding to it. |
 | `APP_OTEL__ENABLED` | boolean | `false` | Turn on traces and metrics. Off by default: with it off the process builds no providers, opens no socket and starts no background task. |
 | `APP_OTEL__LOGS_ENABLED` | boolean | `false` | Export logs over OTLP **in addition to** standard output. Requires `APP_OTEL__ENABLED`. |
 | `APP_OTEL__ENDPOINT` | string | unset | Where traces and metrics go, over OTLP/gRPC. **Required** when `APP_OTEL__ENABLED` is true — enabling the SDK with nowhere to send data stops the process at startup rather than dropping every span from a background thread. |
@@ -101,6 +102,18 @@ message naming the field, not a traceback from inside a driver an hour later.
 ```bash
 APP_LOG__LEVELS='{"httpx": "warning", "uvicorn.error": "warning"}'
 ```
+
+`APP_LOG__REDACT_FIELDS` takes a JSON array the same way, and **replaces**
+the default list rather than adding to it — copy the default from the table
+above and add your own names to it:
+
+```bash
+APP_LOG__REDACT_FIELDS='["password","token","authorization","pin","otp"]'
+```
+
+Matching is by field name only, at any depth, ignoring case and treating
+`-` and `_` alike. See [Logging](logging.md#redaction) for what that does and
+does not cover.
 
 !!! danger "`APP_OTEL__LOGS_ENABLED` doubles your log bill"
 

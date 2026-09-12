@@ -11,11 +11,12 @@ the service starts and serves correctly with none of them configured.
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) — the only Python tool you need
-- Docker, for `just up` and for the integration test tier (`just test-integration`,
-  `just gates`) — real containers throughout: PostgreSQL, Redis and MinIO
+- Docker, for `just up`, for the integration test tier (`just test-integration`,
+  `just gates`) — real containers throughout: PostgreSQL, Redis and MinIO — and
+  for `just security`, which scans the built images
 - [just](https://github.com/casey/just) — the command runner
 - PostgreSQL 16, Redis 8 and MinIO — none installed locally; pulled as
-  `postgres:16-alpine`, `redis:8-alpine` and the pinned `minio/minio` image by
+  `postgres:16-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
   `just up` and by the integration tests
 
 ## Five-minute start
@@ -30,7 +31,11 @@ just dev                   # http://localhost:8000/docs — in-memory repository
 Redis and MinIO, waits for PostgreSQL and MinIO to report healthy, applies
 every migration and creates the receipts bucket, and only then starts the
 API — in that order, so there is no window where the API is up against a
-schema that is not there yet, or a bucket that does not exist yet.
+schema that is not there yet, or a bucket that does not exist yet. Once the
+API reports healthy, a one-shot `seed` container creates five fixed orders
+through it and exits, so `GET /api/v1/orders/<id>` has something to return
+before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
+`just seed` does the same against `just dev`.
 
 ## Commands
 
@@ -44,6 +49,7 @@ schema that is not there yet, or a bucket that does not exist yet.
 | `just gates` | All five schema governance gates, plus the configuration reference drift check — see [Database](#database) |
 | `just config-docs` | Regenerate `.env.example` and the configuration table from `settings.py` — see [Configuration](#configuration) |
 | `just config-docs-check` | Fail if either generated file has drifted from `settings.py`. Runs as part of `just gates` |
+| `just config-check` | Print the resolved configuration as JSON with every secret and URL password masked, or exit 78 with the same message the service prints when it refuses to start — see [Configuration](#configuration) |
 | `just schema-snapshot` | Regenerate the committed `schema.sql` after a migration change |
 | `just migrate` | Apply every outstanding migration |
 | `just migrate-new NAME` | Write a new `.up.sql` / `.down.sql` pair |
@@ -57,8 +63,17 @@ schema that is not there yet, or a bucket that does not exist yet.
 | `just imports` | Verify the layer dependency rule |
 | `just check` | lint, typecheck, imports, test, precommit, then `git diff --exit-code` — fails loudly if any pre-commit hook (ruff-format, uv-lock, and others mutate files) changed the tree instead of silently passing on a second run; needs no Docker; run this before pushing |
 | `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same five gates CI runs as separate jobs, in one local command; run it before a pull request that touches the schema, the adapter, the API contract, or observability |
-| `just up` / `just down` | Start / stop the container stack |
-| `just build-images` | Build both container images without starting them, exactly as CI's `build` job does |
+| `just up` / `just down` | Start / stop the container stack; `up` seeds five orders once the API is healthy, `down` removes the volumes, the seed's state included |
+| `just seed` | Create the same five orders against `just dev` (`localhost:${APP_HTTP_PORT}`), idempotently — state in `.seed-state.json`, ignored by git |
+| `just build-images` | Build both container images for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning |
+| `just audit` | pip-audit over every pin in `uv.lock`, reading a `uv export` so nothing is resolved or installed — see [Supply chain](#supply-chain) |
+| `just scan` | Trivy over both built images; fails on a fixed HIGH or CRITICAL finding, exemptions only through `.trivyignore.yaml` — needs Docker |
+| `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
+| `just security` | `build-images`, `audit`, `scan`, `sbom` — what CI's `security` job runs; not part of `check-all` because its result changes with the advisory databases, not the code |
+| `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` with no output — what CI's `build` job runs |
+| `just publish-images VERSION` | Push both platforms of both images to GHCR under `VERSION` — run by the release workflow, not by hand |
+| `just scan-published VERSION` | Scan the pushed images for both platforms — release workflow only |
+| `just promote-latest VERSION` | Point `latest` at the scanned `VERSION` — release workflow only |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
 | `just test-contract` | The contract tier: Schemathesis conformance testing over ASGI. The drift check runs in `just test` / `just check` instead — see [Contract governance](#contract-governance) |
 | `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |
@@ -343,6 +358,7 @@ instead of falling back to the in-memory repository.
 | `APP_HTTP_PORT` | `8000` | Port to serve on — read by `just dev` and the container's `CMD` |
 | `APP_LOG__LEVEL` | `info` | Root log level |
 | `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
+| `APP_LOG__REDACT_FIELDS` | the fifteen names in `.env.example` (`password`, `token`, `authorization`, `card_number`, …) | Field names whose values are replaced by `[REDACTED]` before a record is rendered, as a JSON array — matched by name at any depth, ignoring case and treating `-` and `_` alike. Setting it **replaces** the default list. Keys only: a secret interpolated into the message string is not seen, so put secrets in fields, never in the event string |
 | `APP_DATABASE__DSN` | unset (commented out in `.env.example`) | PostgreSQL connection string, read by the **application only** — `just up`'s migrate service and every `just migrate-*` recipe carry their own hardcoded URL in `compose.yaml` and never read this one, so there is no golang-migrate/SQLAlchemy drift to worry about here. Unset selects the in-memory repository (see [Database](#database)); when set, store it WITHOUT a `+asyncpg` driver suffix and WITHOUT an `sslmode` parameter — `infrastructure/db/engine.py` adds `+asyncpg` itself, and `sslmode` is a libpq parameter asyncpg does not understand, rejected at settings-validation time (exit 78, naming the field) rather than reaching asyncpg as a raw error |
 | `APP_DATABASE__POOL_SIZE` | `10` | The hard ceiling on concurrent database connections this instance opens. `infrastructure/db/engine.py` pins SQLAlchemy's `max_overflow` to `0`, so this is an exact number, not this plus SQLAlchemy's own default overflow of 10 — the difference matters when this figure is used for capacity planning against the database's own `max_connections` |
 | `APP_DATABASE__STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout`, applied per connection — a runaway query is cancelled by the server rather than holding a pooled connection forever |
@@ -357,7 +373,42 @@ instead of falling back to the in-memory repository.
 | `APP_STORAGE__ACCESS_KEY_ID` / `APP_STORAGE__SECRET_ACCESS_KEY` | unset | `SecretStr`, so neither can reach a log line or a traceback by accident |
 
 Invalid configuration stops the process at startup with exit code 78 and a
-readable message, rather than causing a 500 response later.
+readable message, rather than causing a 500 response later. `just config-check`
+— or, inside the image, `docker compose run --rm app python -m
+reference_service.config_check` — loads settings the same way and either
+exits 78 with that message or prints the configuration the service would
+start with, as JSON, with every `SecretStr` and every URL password masked.
+
+## Supply chain
+
+```
+just audit             pip-audit over uv.lock — no Docker
+just scan              Trivy over both built images — fails on a fixed HIGH or CRITICAL finding
+just sbom              a CycloneDX bill of materials per image, into sbom/
+just security          build-images, then all three — what CI's security job runs
+just build-multiarch   both images for linux/amd64 and linux/arm64, no output — what CI's build job runs
+```
+
+A finding is exempted only through `.trivyignore.yaml`, where every entry
+names a reason, a path and an `expired_at` date; after that date the finding
+fails the scan again. There is no skip flag anywhere else. The five entries
+there today are all in the `migrate/migrate` Go binary, in code `migrate up`
+never runs; a Dependabot bump of that base image is the moment to re-scan
+and drop them.
+
+On release, the repository's workflow builds and scans the
+single-architecture images first, then builds both images for both
+architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
+`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` under the
+repository's version, scans the pushed digests for both platforms, generates
+the SBOMs from those same references (so their subject is the image people
+pull), and only then points `latest` at that version; the SBOMs are attached
+to the GitHub Release. On a pull request the
+SBOMs come from the local build instead and are uploaded as the `sbom`
+workflow artifact. Nothing is pushed from a pull request. pip is removed from the
+runtime image — it was the only source of findings there — and the image is
+deliberately not distroless: the start command needs a shell to expand
+`APP_HTTP_PORT`.
 
 ## Graceful shutdown and the orchestrator's kill deadline
 
