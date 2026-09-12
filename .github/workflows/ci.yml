@@ -29,15 +29,15 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Install just
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@v4
 
       - name: Install the project
         run: uv sync
@@ -55,11 +55,11 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: uv sync
       - run: just test-integration
 
@@ -72,11 +72,11 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: uv sync
       - run: just gates
 
@@ -96,13 +96,13 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: uv sync
       - run: just contract-gates
 
@@ -114,8 +114,8 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v2
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - run: just o11y-gates
 
   docs:
@@ -129,15 +129,15 @@ jobs:
     # verify from here.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Install just
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@v4
 
       - name: Install the documentation toolchain
         run: uv sync --group docs
@@ -155,7 +155,7 @@ jobs:
       !contains(github.event.pull_request.labels.*.name, 'no-docs-needed')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # `git diff base...head` needs both sides of the history.
           fetch-depth: 0
@@ -174,18 +174,18 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # `just docs-freshness` diffs base...head, which needs real history.
           fetch-depth: 0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Install just
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@v4
 
       - name: Install the documentation toolchain
         # `scripts/check_docs_freshness.py` does `import yaml` directly.
@@ -222,7 +222,7 @@ jobs:
     # same config file and the same paths that recipe uses.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check external links
         uses: lycheeverse/lychee-action@v2
         with:
@@ -236,8 +236,8 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v2
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - run: just docs-examples
 
   build:
@@ -258,9 +258,9 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: extractions/setup-just@v2
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: extractions/setup-just@v4
       - name: Build both images for both architectures
         run: just build-multiarch
 
@@ -279,11 +279,11 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - name: Build both images
         run: just build-images
       - name: Audit the reference service's lock
@@ -295,7 +295,7 @@ jobs:
         run: just scan
       - name: Write the software bills of materials
         run: just sbom
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: examples/reference-service/sbom/*.cdx.json

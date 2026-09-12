@@ -54,7 +54,7 @@ jobs:
       released: ${{ steps.bump.outputs.released }}
       version: ${{ steps.bump.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # cz reads every commit since the last tag, and needs the tags
           # themselves to know where that is.
@@ -75,7 +75,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -84,7 +84,7 @@ jobs:
         # on the runner's PATH and writes nothing into the checkout, so it
         # does not fall foul of the "nothing writes before the bump" rule
         # that step's comment explains.
-        uses: extractions/setup-just@v2
+        uses: extractions/setup-just@v4
 
       - name: Identify the committer
         # The bump commit needs an author. Using the Actions bot rather
@@ -307,16 +307,16 @@ jobs:
       TRIVY_USERNAME: ${{ github.actor }}
       TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.version }}
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - name: Build both images
         run: just build-images
       - name: Scan both images
