@@ -86,7 +86,9 @@ first on those pull requests, and `.github/workflows/adopt.yml` commits
 the same result to `main` after the merge. `adopt` copies a replaced
 line back into the template file that renders it; a change of any other
 shape — an inserted hook, a new dependency — fails with the file name,
-and you make it in the template by hand.
+and you make it in the template by hand. If `main` is ever red on
+`golden` after a Dependabot merge — `adopt.yml` lost a race with another
+merge, or its rebase conflicted — run `just adopt`, commit and push.
 
 ## Working on the documentation
 

@@ -71,7 +71,13 @@ jobs:
         run: uv sync --group dev
 
       - name: Adopt Dependabot's pins into the template
-        if: github.actor == 'dependabot[bot]' || github.event.head_commit.author.name == 'dependabot[bot]'
+        # The pull request's author, not `github.actor`: the actor is
+        # whoever triggered the run, and changes to the maintainer when
+        # one pushes a fix to a Dependabot branch -- which would skip the
+        # adoption and fail the render on Dependabot's own pin change.
+        # The second clause is the push event that merges the pull
+        # request.
+        if: github.event.pull_request.user.login == 'dependabot[bot]' || github.event.head_commit.author.name == 'dependabot[bot]'
         run: just adopt
 
       - name: Render and compare
