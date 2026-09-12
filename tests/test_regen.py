@@ -6,6 +6,7 @@ here the render is a directory the test writes by hand.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,7 +23,12 @@ PINS_TEMPLATE = "pin = 1\nname = {{ cookiecutter.project_slug }}\n"
 
 
 def git(example: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=example, check=True, capture_output=True)
+    # Neither the contributor's global git configuration (commit signing,
+    # hooks, an excludes file) nor the system one reaches the fixture.
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    subprocess.run(
+        ["git", *args], cwd=example, check=True, capture_output=True, env=env
+    )
 
 
 @pytest.fixture
@@ -69,26 +75,46 @@ def test_compare_reports_missing_extra_and_differing(trees) -> None:
     assert not comparison.clean
 
 
-def test_sync_writes_the_render_and_removes_tracked_leftovers(trees) -> None:
+def test_compare_sees_untracked_files_but_not_ignored_ones(trees) -> None:
     _, rendered, example = trees
+    # The render carries the .gitignore, as the real one does.
+    (rendered / ".gitignore").write_text(".venv/\n")
+    # A fresh render counts before `git add`; so does a stray file; an
+    # ignored directory never does.
+    regen.sync(rendered, example)
+    (example / "stray.txt").write_text("not in the template\n")
+    (example / ".venv").mkdir()
+    (example / ".venv" / "lib").write_text("ignored\n")
+
+    comparison = regen.compare(rendered, example)
+
+    assert comparison.missing == []
+    assert comparison.extra == ["stray.txt"]
+    assert comparison.differing == []
+
+
+def test_sync_writes_the_render_and_removes_leftovers(trees) -> None:
+    _, rendered, example = trees
+    (rendered / ".gitignore").write_text(".venv/\n")
     (example / "stale.txt").write_text("gone\n")
     (example / "uv.lock").write_text("resolver output\n")
     commit_all(example)
-    # Untracked, like a virtual environment: never the render's to remove.
+    # A tracked leftover and an untracked stray both go; an ignored file,
+    # like a virtual environment, is never the render's to remove.
+    (example / "stray.txt").write_text("untracked\n")
     (example / ".venv").mkdir()
-    (example / ".venv" / "keep").write_text("ignored, untracked\n")
+    (example / ".venv" / "keep").write_text("ignored\n")
 
     regen.sync(rendered, example)
 
     assert (example / "src" / "demo" / "a.py").read_text() == "X = 1\n"
     assert (example / "LICENSE").read_text() == "MIT\n"
     assert not (example / "stale.txt").exists()
+    assert not (example / "stray.txt").exists()
     assert (example / "uv.lock").read_text() == "resolver output\n"
     assert (example / ".venv" / "keep").exists()
     # sync writes files and leaves staging to the caller, as `just regen`
-    # does: stage the deletion and the new files, then the check is clean.
-    git(example, "add", "-u")
-    git(example, "add", "--", "src", "LICENSE", "pins.txt")
+    # does; the check is clean before anything is staged.
     assert regen.compare(rendered, example).clean
 
 
@@ -128,6 +154,35 @@ def test_adopt_refuses_a_change_it_cannot_express(trees) -> None:
     (example / "pins.txt").write_text("pin = 1\nextra = true\nname = demo\n")
 
     with pytest.raises(regen.AdoptError, match=r"pins\.txt"):
+        regen.adopt(rendered, example, template_body, ANSWERS)
+
+
+def test_adopt_matches_whole_lines_not_substrings(trees) -> None:
+    template_body, rendered, example = trees
+    # A comment that quotes the pin line: a substring match would count it
+    # as a second occurrence, and a substring replace would edit it.
+    (template_body / "pins.txt").write_text("# pin = 1\n" + PINS_TEMPLATE)
+    (rendered / "pins.txt").write_text("# pin = 1\npin = 1\nname = demo\n")
+    regen.sync(rendered, example)
+    commit_all(example)
+    (example / "pins.txt").write_text("# pin = 1\npin = 2\nname = demo\n")
+
+    adopted = regen.adopt(rendered, example, template_body, ANSWERS)
+
+    assert adopted == ["pins.txt"]
+    expected = "# pin = 1\n" + PINS_TEMPLATE.replace("pin = 1", "pin = 2")
+    assert (template_body / "pins.txt").read_text() == expected
+
+
+def test_adopt_names_a_rendered_file_no_template_file_renders(trees) -> None:
+    template_body, rendered, example = trees
+    # Present in the render and the example, absent from the template body.
+    (rendered / "orphan.txt").write_text("from nowhere\n")
+    regen.sync(rendered, example)
+    commit_all(example)
+    (example / "orphan.txt").write_text("edited\n")
+
+    with pytest.raises(regen.AdoptError, match=r"orphan\.txt"):
         regen.adopt(rendered, example, template_body, ANSWERS)
 
 

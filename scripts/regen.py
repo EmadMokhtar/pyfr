@@ -59,8 +59,8 @@ class AdoptError(Exception):
 
 @dataclass
 class Comparison:
-    missing: list[str] = field(default_factory=list)  # in the render, not tracked
-    extra: list[str] = field(default_factory=list)  # tracked, not in the render
+    missing: list[str] = field(default_factory=list)  # in the render, not the example
+    extra: list[str] = field(default_factory=list)  # in the example, not the render
     differing: list[str] = field(default_factory=list)
 
     @property
@@ -86,6 +86,9 @@ def render(template_root: Path, answers: dict[str, str], output_dir: Path) -> Pa
             no_input=True,
             extra_context=answers,
             output_dir=str(output_dir),
+            # Never read ~/.cookiecutterrc: a contributor's defaults must
+            # not reach a render the golden diff compares.
+            default_config=True,
         )
     )
 
@@ -96,19 +99,31 @@ def files_under(root: Path) -> set[str]:
     }
 
 
-def tracked_files(example: Path) -> set[str]:
+def example_files(example: Path) -> set[str]:
+    """The example's files as git sees them: tracked, plus untracked files
+    .gitignore does not cover.
+
+    So a freshly rendered file counts as present before `git add`, a stray
+    untracked file counts as extra, and .venv, the caches and everything
+    else ignored never count. Restricted to what is on disk, so a deletion
+    counts as gone before it is staged.
+    """
     listed = subprocess.run(
-        ["git", "ls-files", "-z"],
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         cwd=example,
         check=True,
         capture_output=True,
     ).stdout
-    return {name for name in listed.decode().split("\0") if name}
+    return {
+        name
+        for name in listed.decode().split("\0")
+        if name and (example / name).is_file()
+    }
 
 
 def compare(rendered: Path, example: Path) -> Comparison:
     wanted = files_under(rendered) - EXCLUDED
-    present = tracked_files(example) - EXCLUDED
+    present = example_files(example) - EXCLUDED
     comparison = Comparison(
         missing=sorted(wanted - present),
         extra=sorted(present - wanted),
@@ -125,12 +140,11 @@ def sync(rendered: Path, example: Path) -> None:
         target = example / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((rendered / name).read_bytes())
-    # Only tracked leftovers go: untracked and ignored files (.venv, the
-    # caches, uv.lock) are never the render's to remove.
-    for name in tracked_files(example) - EXCLUDED - wanted:
+    # Only leftovers git can see go: ignored files (.venv, the caches) and
+    # uv.lock are never the render's to remove.
+    for name in example_files(example) - EXCLUDED - wanted:
         stale = example / name
-        if stale.exists():
-            stale.unlink()
+        stale.unlink()
         parent = stale.parent
         while parent != example and parent.is_dir() and not any(parent.iterdir()):
             parent.rmdir()
@@ -167,10 +181,15 @@ def adopt(
     mapping = template_paths(template_body, answers)
     adopted: list[str] = []
     for name in comparison.differing:
+        if name not in mapping:
+            raise AdoptError(
+                f"{name}: no template file renders this path; "
+                "make this change in the template by hand"
+            )
         template_file = template_body / mapping[name]
         old_lines = (rendered / name).read_text().splitlines(keepends=True)
         new_lines = (example / name).read_text().splitlines(keepends=True)
-        text = template_file.read_text()
+        template_lines = template_file.read_text().splitlines(keepends=True)
         matcher = difflib.SequenceMatcher(None, old_lines, new_lines, autojunk=False)
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "equal":
@@ -180,18 +199,30 @@ def adopt(
                     f"{name}: lines were {tag}d, not replaced; "
                     "make this change in the template by hand"
                 )
-            old = "".join(old_lines[i1:i2])
-            new = "".join(new_lines[j1:j2])
-            if text.count(old) != 1:
+            old = old_lines[i1:i2]
+            # Whole lines, not a substring: a comment quoting the changed
+            # line must neither be replaced nor count as a second match.
+            starts = line_runs(template_lines, old)
+            if len(starts) != 1:
                 raise AdoptError(
                     f"{name}: the changed lines must appear exactly once in "
-                    f"{mapping[name]} (found {text.count(old)}); "
+                    f"{mapping[name]} (found {len(starts)}); "
                     "make this change in the template by hand"
                 )
-            text = text.replace(old, new)
-        template_file.write_text(text)
+            template_lines[starts[0] : starts[0] + len(old)] = new_lines[j1:j2]
+        template_file.write_text("".join(template_lines))
         adopted.append(name)
     return adopted
+
+
+def line_runs(lines: list[str], block: list[str]) -> list[int]:
+    """Every index at which `block` occurs in `lines` as a contiguous run."""
+    width = len(block)
+    return [
+        start
+        for start in range(len(lines) - width + 1)
+        if lines[start : start + width] == block
+    ]
 
 
 def report(comparison: Comparison, rendered: Path, example: Path) -> None:
