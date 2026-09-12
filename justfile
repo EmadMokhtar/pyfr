@@ -38,6 +38,22 @@ test:
 precommit:
     uv run --group dev pre-commit run --all-files
 
+# Regenerate examples/reference-service from the template with the answers in
+# tests/reference-answers.yaml. The template is the source of truth; run this
+# after every change to {{cookiecutter.project_slug}}/ and commit the result.
+regen:
+    uv run --group dev python scripts/regen.py
+
+# The golden diff: render and compare, writing nothing. CI's `golden` job.
+regen-check:
+    uv run --group dev python scripts/regen.py --check
+
+# Copy Dependabot's edits to the rendered example back into the template,
+# then check. Only for line-for-line replacements (a pin bump); anything else
+# fails with the file name and is made in the template by hand.
+adopt:
+    uv run --group dev python scripts/regen.py --adopt
+
 # ruff over the root's own Python -- hooks/, scripts/, tests/. ruff.toml's
 # extend-exclude keeps it out of the template body and the example.
 lint:
@@ -76,4 +92,4 @@ docs-freshness base="origin/main" head="HEAD":
     uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
 
 # Everything CI checks at the repository level.
-check: docs-build test
+check: docs-build test regen-check

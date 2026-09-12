@@ -1,0 +1,38 @@
+interactions:
+- request:
+    body: '{"order_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","amount":"42.00","currency":"EUR"}'
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '85'
+      content-type:
+      - application/json
+      host:
+      - localhost:9099
+      user-agent:
+      - python-httpx/0.28.1
+    method: POST
+    uri: http://localhost:9099/authorisations
+  response:
+    body:
+      string: !!binary |
+        H4sIAAAAAAAAAKtWykxRslJKLC3JiC8uKU2KNzAwMFTSUSouSSwpLYbK5BdlFqemKNUCAMfMxxwt
+        AAAA
+    headers:
+      content-encoding:
+      - gzip
+      content-type:
+      - application/json
+      matched-stub-id:
+      - 16be4401-4610-4a9c-a35d-f41ae2c1584c
+      transfer-encoding:
+      - chunked
+    status:
+      code: 201
+      message: Created
+version: 1

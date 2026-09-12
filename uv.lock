@@ -589,6 +589,7 @@ source = { virtual = "." }
 dev = [
     { name = "commitizen" },
     { name = "cookiecutter" },
+    { name = "jinja2" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cookies" },
@@ -606,6 +607,7 @@ docs = [
 dev = [
     { name = "commitizen", specifier = "==4.18.0" },
     { name = "cookiecutter", specifier = ">=2.6,<3" },
+    { name = "jinja2", specifier = ">=3.1" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cookies", specifier = ">=0.7" },

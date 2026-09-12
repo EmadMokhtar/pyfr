@@ -1,0 +1,22 @@
+---
+# Grafana scans the directory below on start and on an interval, so
+# editing a dashboard JSON on the host shows up without restarting the
+# container.
+#
+# Like the dashboards, this file is copied verbatim into a generated
+# project (cookiecutter.json, _copy_without_render): nothing in it is a
+# prompt value, and the dashboards contain Grafana's own
+# {{ }} legend syntax, which Jinja would eat (spec 3.4).
+apiVersion: 1
+
+providers:
+  - name: "pyfr"
+    orgId: 1
+    folder: "PyFr"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /otel-lgtm/pyfr-dashboards
+      foldersFromFilesStructure: false

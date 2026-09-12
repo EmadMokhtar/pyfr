@@ -1,0 +1,583 @@
+set dotenv-load := true
+
+default:
+    @just --list
+
+install:
+    uv sync
+
+dev:
+    uv run uvicorn reference_service.main:create_app --factory --reload --port ${APP_HTTP_PORT:-8000} --no-access-log
+
+lint:
+    uv run ruff check .
+    uv run ruff format --check .
+
+fmt:
+    uv run ruff check --fix .
+    uv run ruff format .
+
+typecheck:
+    uv run mypy
+
+test:
+    uv run pytest
+
+# Re-record the outbound cassettes against the local payment stub.
+# Commit the result, and READ it first: a cassette is a committed copy of
+# somebody else's response, so anything secret in it becomes public with
+# the repository. vcr_config's filter_headers strips the credential
+# headers we know about; a new upstream means a new entry there.
+#
+# A `#!`-shebang recipe, not three plain lines: a plain-line recipe stops
+# at the first failing line, so if pytest below failed, `docker compose
+# stop payment-stub` was never reached and the stub stayed running. `set
+# -euo pipefail` keeps that same "stop on failure" behaviour for genuine
+# script errors, and `trap ... EXIT` is what makes the stub stop
+# regardless — on a pytest failure, on success, or on Ctrl-C. `--wait`
+# added to `up -d` makes this wait for the healthcheck in compose.yaml
+# instead of racing WireMock's boot with the first recorded request.
+test-record:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The trap goes in BEFORE the container is started, not after: with
+    # `set -e`, a healthcheck timeout in `--wait` exits the recipe on the
+    # spot, and a trap installed on the next line would never have been
+    # armed — leaving the stub running, which is the one thing the trap
+    # exists to prevent. Stopping a container that was never started is a
+    # harmless no-op, so arming it early costs nothing.
+    trap 'docker compose stop payment-stub' EXIT
+    docker compose up -d --wait payment-stub
+    uv run pytest tests/recorded --record-mode=once
+
+# The container-backed tier. Needs a running Docker daemon; `just test` does not.
+test-integration:
+    uv run pytest -m integration
+
+# The contract tier. Separate from `just test` because Schemathesis's ASGI
+# transport leaks anyio streams under filterwarnings=error and takes the
+# blame out on unrelated tests — see the `contract` marker's comment in
+# pyproject.toml.
+test-contract:
+    uv run pytest -m contract
+
+# Mutation testing over domain/ and services/. Slow relative to `just
+# test`, so it is NOT part of `just check`: run it when you have changed
+# business logic, and read the survivors rather than the percentage.
+#
+# What it measures that coverage does not: coverage says a line RAN, this
+# says a test would have NOTICED if the line were wrong.
+mutants:
+    uv run mutmut run
+    uv run mutmut results
+
+# The same, restricted to files changed against main — what a pull
+# request actually needs.
+#
+# `git diff --name-only` prints paths relative to the repository ROOT,
+# not to this justfile's directory, even though the pathspec below is
+# matched relative to here — `--relative` is what converts the output
+# back to paths relative to this directory, which is what the glob
+# conversion below needs.
+#
+# `mutmut run`'s positional arguments are MUTANT NAMES (glob patterns
+# matched against the dotted identifier `mutmut results` prints, e.g.
+# "reference_service.domain.order.x_total_of__mutmut_2"), not file
+# paths — mutmut always mutates the whole `only_mutate` scope first and
+# only uses these arguments to pick which resulting mutants to run
+# tests for. Passing a bare path like "src/reference_service/domain/
+# order.py" matches nothing and mutmut exits with "Filtered for
+# specific mutants, but nothing matches". Each changed path is
+# therefore turned into the matching glob: drop the "src/" prefix and
+# the ".py" suffix, turn "/" into ".", and append ".*".
+mutants-changed:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    changed=$(git diff --name-only --relative origin/main...HEAD \
+        -- 'src/reference_service/domain/*' 'src/reference_service/services/*')
+    if [ -z "$changed" ]; then
+        echo "No domain or services files changed; nothing to mutate."
+        exit 0
+    fi
+    echo "Mutating: $changed"
+    patterns=()
+    for f in $changed; do
+        module="${f#src/}"
+        module="${module%.py}"
+        patterns+=("${module//\//.}.*")
+    done
+    uv run mutmut run "${patterns[@]}"
+    uv run mutmut results
+
+# Fail if the mutation score falls below the recorded floor. Separate
+# from `mutants` so a developer can look at survivors without the run
+# failing on them.
+mutants-gate: mutants
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv run mutmut export-cicd-stats
+    uv run python -c "
+    import json, tomllib
+    from pathlib import Path
+    stats = json.loads(Path('mutants/mutmut-cicd-stats.json').read_text())
+    floor = tomllib.loads(Path('pyproject.toml').read_text())['tool']['mutmut'][
+        'mutation_threshold_percent'
+    ]
+    score = 100 * stats['killed'] / stats['total'] if stats['total'] else 100
+    print(f\"mutation score {score:.1f}% ({stats['killed']}/{stats['total']} killed), floor {floor}%\")
+    raise SystemExit(0 if score >= floor else 1)
+    "
+
+# Everything: unit, api, integration and contract.
+test-all:
+    uv run pytest -m ''
+
+# Schemathesis conformance (`pytest -m contract`, no Docker) plus the
+# breaking-change gate against the committed baseline (needs Docker, for
+# the oasdiff image). The drift gate needs neither and does NOT run here:
+# it lives in the default `just test` / `just check` tier instead — see
+# tests/unit/test_contract_drift.py for why.
+contract-gates:
+    uv run pytest -m contract
+    uv run python scripts/check_contract_compatibility.py
+
+# Promote the current contract to the baseline. `.github/workflows/release.yml`
+# runs this inside every release's bump commit, so nobody runs it by hand
+# -- and never to make `contract-gates` stop complaining: silencing it that
+# way is precisely the silent breaking change the gate exists to catch
+# (spec 10.2).
+contract-release:
+    cp openapi.json openapi.baseline.json
+
+# Regenerate the committed contract from the code, then commit the result.
+# Read the diff before you do: it is your API change, in full.
+openapi:
+    uv run python -c "from tests.unit.test_contract_drift import CONTRACT_PATH, render_openapi; CONTRACT_PATH.write_text(render_openapi(), encoding='utf-8')"
+
+# Regenerate .env.example and the published configuration table from the
+# settings model, then commit the result. Read the diff first: it is your
+# configuration change, in full.
+config-docs:
+    uv run python scripts/generate_config_docs.py
+
+# Fail if either generated file has drifted from the model.
+config-docs-check:
+    uv run python scripts/generate_config_docs.py --check
+
+# Print the resolved configuration with secrets masked, or exit 78 with
+# the same message the service prints when it refuses to start. Reads
+# .env like the service does. The same module runs inside the image:
+# `docker compose run --rm app python -m reference_service.config_check`.
+config-check:
+    uv run python -m reference_service.config_check
+
+# Run this after changing any migration, and commit the result — the snapshot
+# is reviewed like any other source file.
+#
+# Reuses the gate's own dump-and-normalise code rather than repeating it in
+# shell: a second implementation here would be one more thing to keep in step
+# with the pg_dump flags the gate uses.
+#
+# Regenerate the committed schema.sql from the migrations.
+schema-snapshot:
+    UPDATE_SCHEMA_SNAPSHOT=1 uv run pytest -m integration \
+        -k test_gate_1_the_committed_schema_matches_the_migrations
+
+# Version collisions and the migration manifest come from the unit tier; the
+# snapshot, reversibility and model-drift gates need a database. The
+# configuration drift check needs neither, and it is not gates-only: its
+# test, `tests/unit/test_config_docs.py::test_committed_outputs_are_current`,
+# carries no marker, so it already runs in the default `just test` / `just
+# check` tier too. It is called again here, explicitly, so `just gates` run
+# on its own -- without the rest of the unit tier alongside it -- still
+# catches it, in the same generated-artifact shape as the other five schema
+# gates.
+#
+# Run all five schema gates, plus the configuration reference drift check.
+gates:
+    uv run pytest tests/unit/test_migration_files.py
+    uv run pytest -m integration -k "schema_gates or schema_drift"
+    just config-docs-check
+
+imports:
+    uv run lint-imports
+
+# Uses the migrate service's entrypoint, so the database URL lives in exactly
+# one place — compose.yaml.
+#
+# Apply every outstanding migration.
+migrate:
+    docker compose run --rm migrate up
+
+# -seq gives sequential numbering, which is what turns two branches adding a
+# migration into a git conflict instead of a silently skipped file (spec 6.4).
+# --no-deps because creating files needs no database, and --entrypoint skips
+# the -database flag `create` has no use for. --user "$(id -u):$(id -g)"
+# because the migrate/migrate image runs as root by default (confirmed:
+# `docker run --rm --entrypoint sh <the migrate/migrate image> -c id`
+# reports uid=0) and this command writes through a bind mount (compose.yaml mounts
+# ./migrations over the image's own copy) — on a native Linux Docker host,
+# a bind mount keeps the writing process's real uid, so the two new files
+# come out root-owned and need sudo to edit or delete. No-op on macOS:
+# Docker Desktop's file sharing maps ownership back to the host user
+# regardless of the container's uid, which is why this was never visible
+# running it here.
+#
+# Write a new .up.sql / .down.sql pair.
+migrate-new name:
+    docker compose run --rm --no-deps --user "$(id -u):$(id -g)" --entrypoint migrate migrate \
+        create -ext sql -dir /migrations -seq {{name}}
+
+# Run this after `migrate-new` adds a pair, and commit the result —
+# `just gates` (tests/unit/test_migration_files.py) checks every file the
+# manifest already records against its recorded hash, and fails if one
+# disagrees. Do NOT run this to make that check pass again after editing an
+# ALREADY-COMMITTED migration: that edit is exactly what the check exists to
+# catch, and regenerating the manifest to silence it defeats the entire
+# point — add a new migration instead (spec 6.4).
+#
+# Rebuild migrations/manifest.sha256 from the files in migrations/.
+migrate-manifest:
+    uv run python -c "from tests.unit.test_migration_files import write_manifest; write_manifest()"
+
+# Defaults to one, because `down` with no argument means "all the way to
+# empty" and that is not a default anyone wants to type twice.
+#
+# Roll back N steps.
+migrate-down steps="1":
+    docker compose run --rm migrate down {{steps}}
+
+# Current version, and whether the database is dirty.
+migrate-version:
+    docker compose run --rm migrate version
+
+# `migrate force` does NOT run or undo any SQL. It only overwrites the version
+# recorded in schema_migrations and clears the dirty flag.
+#
+# A migration that fails partway leaves the database dirty, and golang-migrate
+# then refuses every further command — correctly, because it cannot know how
+# much of the failed file actually applied. Recovering means a human looking at
+# the real schema, finishing or reversing the partial change BY HAND, and only
+# then running `just migrate-force <the version that is genuinely applied>`.
+# Running it first, to make the error go away, tells the tool a lie it will
+# believe for the rest of the database's life.
+#
+# Clear a dirty flag by declaring the true version. Read the warning below before using this.
+migrate-force version:
+    docker compose run --rm migrate force {{version}}
+
+# Run the documentation's marked `curl` examples against a real service.
+docs-examples:
+    #!/usr/bin/env bash
+    # A `#!`-shebang recipe with a trap, for the same reason `test-record` is
+    # one: the stack must come down whether the examples pass, fail, or the
+    # run is interrupted. The trap is armed BEFORE `up`, so a healthcheck
+    # timeout in `--wait` cannot leave the stack running.
+    #
+    # Its own Compose project, `-p`, and never the default one: `down -v`
+    # removes the project's volumes, and in the default project those are
+    # `postgres-data` and `minio-data` -- the database and receipts of a
+    # `just up` stack a developer may have running. With its own project
+    # the volumes are its own, and `down -v` deletes nothing anyone keeps.
+    # The host ports are still the same, so this cannot run WHILE `just
+    # up` is running -- `up --wait` fails on the port clash, the trap
+    # tears down only this project, and nothing of the other is touched.
+    #
+    # `up --wait app redis`, naming the services: `up --wait` with no name
+    # also starts the `seed` one-shot, and compose counts a container that
+    # has EXITED -- even with status 0 -- as a failed wait unless some
+    # started service depends on it with service_completed_successfully.
+    # `app` depends on `migrate` and `minio-bootstrap` that way, which is
+    # why they never tripped this; nothing depends on `seed`. Naming `app`
+    # starts exactly its dependency graph, which is the stack the
+    # documented examples need -- none of them relies on seeded data, and
+    # the plan forbids one from doing so, because seeded ids differ per
+    # machine. `redis` is named too: `app` deliberately does not depend on
+    # it (the cache is optional, fail-open), so naming `app` alone would
+    # start the stack without a cache and the examples would exercise the
+    # fail-open path rather than the cached one `just up` runs.
+    set -euo pipefail
+    project=reference-service-docs-examples
+    trap 'docker compose -p "$project" down -v' EXIT
+    docker compose -p "$project" up -d --wait app redis
+    python3 ../../scripts/check_doc_examples.py ../../docs
+
+# An interactive psql session against the running compose database.
+psql:
+    docker compose exec postgres psql -U app -d app
+
+# An interactive redis-cli session against the running compose cache.
+redis-cli:
+    docker compose exec redis redis-cli
+
+# The MinIO web console, for looking at what the receipt store actually
+# holds. Log in with minioadmin / minioadmin — local-only credentials from
+# compose.yaml.
+minio-console:
+    @echo "http://localhost:9001 — minioadmin / minioadmin"
+    @open http://localhost:9001 2>/dev/null || true
+
+# The project's own git hooks over its own tracked files.
+#
+# pre-commit runs from the root of the enclosing git repository and resolves
+# hook commands there. When this project is generated into a subdirectory of
+# an existing repository — PyFr's own examples/reference-service/ is one —
+# that repository's root configuration owns the hooks and this one cannot
+# run; say so and exit clean rather than fail on paths that do not resolve.
+precommit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git rev-parse --show-prefix)" ]; then
+        echo "precommit: nested inside another repository; its root pre-commit configuration covers this tree."
+        exit 0
+    fi
+    uv run pre-commit run --files $(git ls-files)
+
+# Everything CI checks, failing loudly if a hook modified the tree.
+check: lint typecheck imports test precommit
+    # Two pre-commit hooks mutate files (end-of-file-fixer and
+    # trailing-whitespace; the ruff and uv-lock hooks run with `--check`
+    # and only report), so `precommit` above can
+    # modify the tree and still exit 0 — a `check` that only runs it would
+    # pass on a second run without anyone noticing the tree changed.
+    # `git diff --exit-code` after it turns any such mutation into a loud
+    # failure instead of a silent one. Keep the hooks running here
+    # regardless: that is how we know the config itself still works, not
+    # just that the tree was already clean.
+    git diff --exit-code
+
+# What running every gate locally, in one command, looks like. CI does not
+# call this recipe itself — `ci.yml` runs `check`, `test-integration`,
+# `gates`, `o11y-gates` and `contract-gates` as five separate jobs, in
+# parallel, so one failure names the gate that broke instead of an opaque
+# `check-all` exit code. This recipe is for a developer who wants the same
+# coverage before opening the pull request, without waiting on CI to say so.
+# Separate from `check` so the fast loop stays fast and usable without
+# Docker.
+#
+# Everything `check` does, plus the container tier and all five gates.
+check-all: check test-integration gates o11y-gates contract-gates
+
+# Audit every pinned dependency in uv.lock against the PyPI advisory
+# database. `uv export` writes the lock as a fully hashed requirements
+# file and pip-audit reads it with `--disable-pip --require-hashes`, so
+# NOTHING is resolved or installed: pip appears in the tool's name and
+# nowhere else (ADR 0003, spec 10.4). `--all-groups` because a vulnerable
+# test dependency still runs on every laptop and every CI runner.
+# `--strict` fails the run if any requirement could not be audited rather
+# than skipping it silently.
+#
+# Findings change without a commit -- advisories are published against
+# versions already locked -- which is why this is its own CI job and a
+# nightly one, and not part of `just check`. To silence a specific
+# advisory add `--ignore-vuln <ID>` here WITH a comment saying why and
+# until when; there is no other allow-list.
+#
+# The pip-audit version is the one tool pin Dependabot cannot see (it
+# lives in this file, not in uv.lock -- ADR 0014). Its vulnerability data
+# is fetched live, so a stale pin still reports new advisories.
+#
+# A `#!`-shebang recipe with `pipefail`, not a plain line: the gate must
+# be red when the producer fails, and without `pipefail` a failing
+# `uv export` leaves pip-audit reading an empty stdin, which passes
+# (verified: an empty stdin prints "No known vulnerabilities found" and
+# exits 0).
+audit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv export --frozen --all-groups --format requirements.txt --no-emit-project \
+        | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
+
+# Scan both images for known vulnerabilities and embedded secrets, failing
+# on any HIGH or CRITICAL finding that has a fix. Trivy runs from the
+# `trivy` compose service -- see compose.yaml for why.
+#
+# --ignore-unfixed: a finding with no fix is nothing a pull request can
+# act on; it is still visible without the flag. .trivyignore.yaml is the
+# only exemption path, and every entry there expires (ADR 0016). BOTH
+# images, always: v4.19.0 of the migrate base carried a CRITICAL in pgx
+# that a clean application image would have hidden.
+#
+# Takes image references so release.yml can scan what it just built and
+# nightly.yml can scan what was last published.
+scan app="reference-service:ci" migrations="reference-service-migrations:ci":
+    docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
+        --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+        --scanners vuln,secret --no-progress {{app}}
+    docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
+        --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+        --scanners vuln,secret --no-progress {{migrations}}
+
+# Write a CycloneDX software bill of materials per image into sbom/
+# (ignored by git). CI uploads them as a workflow artifact; the release
+# attaches them to the GitHub Release. Generated from the built image, so
+# they list the Debian packages as well as the Python ones.
+sbom app="reference-service:ci" migrations="reference-service-migrations:ci":
+    mkdir -p sbom
+    docker compose run --rm trivy image --format cyclonedx --no-progress \
+        --output /sbom/reference-service.cdx.json {{app}}
+    docker compose run --rm trivy image --format cyclonedx --no-progress \
+        --output /sbom/reference-service-migrations.cdx.json {{migrations}}
+
+# Everything the CI `security` job runs, in the order it runs it. Needs
+# Docker. Separate from `check-all` because its result changes with the
+# advisory databases, not with the code.
+security: build-images audit scan sbom
+
+# Build both container images, exactly as CI does.
+build-images:
+    # Two separate `docker build` calls rather than `docker compose build`:
+    # the migrations image (Dockerfile.migrations) is `FROM
+    # migrate/migrate`, sharing no base and no build stage with the
+    # application image's own Dockerfile, so there is no cache or layer to
+    # gain by chaining them, and a failing build stays easy to tell apart
+    # from the other. No `-f Dockerfile` on the first: that is docker's own
+    # default, and the second build needs `-f` only because it is not.
+    # `--load` is a no-op on the default `docker` driver and is what keeps
+    # this image in the daemon if a developer has made a
+    # `docker-container` builder current (`docker buildx create --use`) --
+    # `scan` and `sbom` read the daemon over the socket.
+    docker build --load -t reference-service:ci .
+    docker build --load -f Dockerfile.migrations -t reference-service-migrations:ci .
+
+# A buildx builder that can build two platforms at once. The default
+# builder on Docker Desktop uses the `docker` driver, which cannot
+# (verified: "Multi-platform build is not supported for the docker
+# driver"); a `docker-container` builder can, with `--push` or with no
+# output, but it cannot `--load` a two-platform image into the daemon --
+# which is why `build-images` above stays the single-architecture path
+# that `scan` and `sbom` consume. Created once, reused after.
+_buildx-builder name="pyfr":
+    docker buildx inspect {{name}} >/dev/null 2>&1 \
+        || docker buildx create --name {{name}} --driver docker-container
+
+# Build both images for linux/amd64 and linux/arm64 with no output: proof
+# that the arm64 side still builds, which is what CI's `build` job is for.
+# Apple Silicon laptops and cloud servers share one image (spec 12); this
+# is the recipe that keeps that true. Under emulation the whole thing took
+# 15 s on a cold builder (M6 plan, Verified Fact 8).
+build-multiarch: _buildx-builder
+    docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 .
+    docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 \
+        -f Dockerfile.migrations .
+
+# Build both platforms of both images and push them under the version
+# given -- and ONLY the version. `latest` is created afterwards by
+# `promote-latest`, once `scan-published` has passed on the pushed
+# digests, so `latest` never points at an image nobody scanned (ADR 0015).
+# The version is the REPOSITORY's -- the same string as the git tag and
+# the GitHub Release -- and the caller passes it: `just publish-images
+# v0.6.0`. Run by release.yml after `scan` has passed on the same commit's
+# local images; not something to run by hand against ghcr.io.
+#
+# `org.opencontainers.image.source` is a static LABEL in each Dockerfile;
+# version and revision are only known here. The registry namespace is a
+# literal until M7 makes it a template variable. `builder` exists so the
+# push path can be rehearsed against a local registry with a builder that
+# has host networking (Verified Fact 9): `docker run -d -p 5001:5000
+# registry:3`, a builder created with `--driver-opt network=host` and a
+# buildkitd.toml allowing plain HTTP to localhost:5001, then
+# `just publish-images 0.0.0-rehearsal localhost:5001 <that builder>`.
+publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-builder builder)
+    docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
+        --label "org.opencontainers.image.version={{version}}" \
+        --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+        -t "{{registry}}/reference-service:{{version}}" .
+    docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
+        --label "org.opencontainers.image.version={{version}}" \
+        --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+        -t "{{registry}}/reference-service-migrations:{{version}}" \
+        -f Dockerfile.migrations .
+
+# Scan the two images just pushed under `version`, for BOTH platforms.
+# `scan` above gates the push on the local single-architecture build;
+# this is what proves the artifact people will pull -- the exact pushed
+# digest, amd64 and arm64 alike -- carries no fixed HIGH or CRITICAL
+# finding, and it is what `latest` waits for. `--platform` makes Trivy
+# pick that manifest out of the pushed index; without it a remote image
+# is scanned for the host's own architecture only. A loop, unlike `scan`,
+# because two images times two platforms is four otherwise identical
+# commands.
+scan-published version registry="ghcr.io/emadmokhtar":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for image in reference-service reference-service-migrations; do
+        for platform in linux/amd64 linux/arm64; do
+            docker compose run --rm trivy image --platform "$platform" \
+                --ignorefile /.trivyignore.yaml \
+                --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+                --scanners vuln,secret --no-progress \
+                "{{registry}}/$image:{{version}}"
+        done
+    done
+
+# Point `latest` at the version just published, without rebuilding: the
+# tag is created from the pushed index, so it names exactly the digests
+# `scan-published` verified. Run by release.yml only after that scan.
+promote-latest version registry="ghcr.io/emadmokhtar":
+    docker buildx imagetools create \
+        -t "{{registry}}/reference-service:latest" \
+        "{{registry}}/reference-service:{{version}}"
+    docker buildx imagetools create \
+        -t "{{registry}}/reference-service-migrations:latest" \
+        "{{registry}}/reference-service-migrations:{{version}}"
+
+up:
+    docker compose up --build
+
+# Create the fixed set of orders in reference_service/seed.py against the
+# running stack, through the API. Idempotent: the ids it issued are kept in
+# .seed-state.json (ignored by git), and only an order that has gone
+# missing is re-created. `just up` already runs the same module from a
+# compose one-shot; this is for `just dev`, or for re-seeding by hand.
+seed:
+    uv run python -m reference_service.seed --base-url http://localhost:${APP_HTTP_PORT:-8000}
+
+# Everything `up` starts, plus Grafana, Prometheus, Tempo and Loki with the
+# dashboards and SLO rules from ops/ mounted in. Grafana is on
+# http://localhost:3000 with anonymous admin access — no login.
+#
+# The two variables are set here rather than in compose.yaml so that one
+# compose file serves both this and plain `up`.
+#
+# Start the stack with the local Grafana observability profile.
+o11y:
+    APP_OTEL__ENABLED=true APP_OTEL__LOGS_ENABLED=true docker compose --profile o11y up --build
+
+# Deletes the database volume too, exactly as `down` does.
+#
+# Stop the observability stack and remove its volumes.
+o11y-down:
+    docker compose --profile o11y down -v
+
+# Validate the SLO rules with promtool, which ships inside the pinned
+# grafana/otel-lgtm image — so this needs no separate Prometheus install
+# and can never drift from the version that actually evaluates the rules.
+#
+# `check rules` is syntax. `test rules` is the one that matters: it feeds
+# synthetic series through the real rules and asserts the numbers that come
+# out, which is the only thing standing between a dropped health-endpoint
+# exclusion and an objective that reports 99.99% forever.
+#
+# The whole ops/prometheus directory is mounted, not just rules/, because
+# slo_test.yml sits above it and refers to rules/slo.yml relatively.
+#
+# The image comes from compose.yaml -- the one place it is pinned (ADR
+# 0014) -- through `docker compose config`, which resolves the file the
+# same way `just o11y` does. `--profile o11y` because a service under a
+# profile is otherwise omitted from the resolved output. Standard-library
+# python3 for the one JSON lookup, so this recipe still needs no `uv sync`
+# (ci.yml's o11y-gates job installs none).
+#
+# Check and unit-test the SLO rules with promtool.
+o11y-gates:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    image=$(docker compose --profile o11y config --format json \
+        | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["lgtm"]["image"])')
+    docker run --rm -v "$PWD/ops/prometheus:/p" \
+        --entrypoint sh "$image" \
+        -c 'cd /p && /otel-lgtm/prometheus/promtool check rules rules/slo.yml && /otel-lgtm/prometheus/promtool test rules slo_test.yml'
+
+down:
+    docker compose down -v

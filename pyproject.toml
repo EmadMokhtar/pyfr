@@ -78,6 +78,8 @@ dev = [
     # exist between the move and the first regeneration. A second ruff pin,
     # in a second lock, for a second project: the exception ADR 0014 lists.
     "ruff>=0.7",
+    # scripts/regen.py renders template paths with it directly (adopt)
+    "jinja2>=3.1",
 ]
 
 [tool.pytest.ini_options]

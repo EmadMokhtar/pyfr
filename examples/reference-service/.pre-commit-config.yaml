@@ -1,0 +1,51 @@
+# pre-commit only installs the git hook types it is told to; `pre-commit
+# install` with no arguments wires up the `pre-commit` stage.
+default_install_hook_types: [pre-commit]
+
+repos:
+  # ruff and uv run from the environment uv.lock pins -- the ONE place
+  # their versions live (ADR 0014). `language: system` runs the command
+  # as-is and the command resolves the tool through uv.
+  - repo: local
+    hooks:
+      # No --fix here. `just check`'s precommit recipe runs this hook, and
+      # "check" must never mutate the tree. `just lint` checks, `just fmt`
+      # fixes; this hook mirrors `just lint`.
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format --check
+        entry: uv run ruff format --check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: uv-lock
+        name: uv lock --check
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.3.0
+    hooks:
+      - id: sqlfluff-lint
+        files: ^migrations/.*\.sql$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict

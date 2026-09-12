@@ -1,0 +1,268 @@
+[project]
+name = "reference-service"
+version = "0.1.0"
+description = "The PyFr reference service."
+authors = [{ name = "Emad Mokhtar", email = "311636+EmadMokhtar@users.noreply.github.com" }]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # Read directly by scripts/generate_config_docs.py, to pull the `Ge`/
+    # `Gt`/`Le` constraint objects a `Field(ge=..., le=...)` puts in
+    # `FieldInfo.metadata` (Verified Fact 5). A hard dependency of pydantic
+    # itself at every version pydantic>=2.9 above resolves to, so this
+    # floor constrains nothing new -- it only makes that script's own
+    # import honest about what it uses rather than borrowing it
+    # transitively through pydantic.
+    "annotated-types>=0.4",
+    # Read directly by scripts/generate_config_docs.py, to recognise the
+    # `PydanticUndefined` sentinel a `default_factory` field reports as its
+    # `.default` (Verified Fact 2). Same story as annotated-types above:
+    # pydantic-core is pinned exactly per pydantic release, so 2.23.2 is
+    # what pydantic>=2.9 itself already requires at minimum -- not a new
+    # constraint, just an honest import.
+    "pydantic-core>=2.23.2",
+    "structlog>=24.4",
+    "orjson>=3.10",
+    "sqlalchemy[asyncio]>=2.0.52",
+    "asyncpg>=0.31",
+    # Traces, metrics and logs. The API/SDK/exporter line and the
+    # instrumentation line version SEPARATELY and always will: 1.44 for the
+    # first, 0.65b0 for the second. The `b` is upstream's, not a typo — the
+    # instrumentation packages are permanently beta-versioned.
+    "opentelemetry-sdk>=1.44,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.44,<2",
+    "opentelemetry-instrumentation-fastapi>=0.65b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+    # Garbage collection, memory and thread counts for the runtime dashboard.
+    # Its defaults emit both the current metric names and their deprecated
+    # `process.runtime.cpython.*` duplicates plus whole-host `system.*`
+    # series; observability/metrics.py passes an explicit config instead.
+    "opentelemetry-instrumentation-system-metrics>=0.65b0",
+    # Supplies the LoggingHandler that bridges the standard logging
+    # module to OTLP. The one in opentelemetry-sdk is deprecated as of
+    # 1.44.0 and warns on construction, which filterwarnings=["error"]
+    # turns into a test failure; the SDK's own message names this
+    # package as the replacement.
+    "opentelemetry-instrumentation-logging>=0.65b0",
+    # The shared outbound client (spec 12, item 5). A runtime dependency
+    # from M3 on, not a test helper: infrastructure/http/client.py is
+    # production code.
+    "httpx>=0.28",
+    # Bounded retries with exponential backoff and jitter. Chosen over
+    # writing one: stamina is asyncio-native, typed, and wraps tenacity,
+    # which has solved retry budgets and jitter properly for years. The
+    # circuit breaker beside it IS hand-written, because no maintained
+    # asyncio implementation exists — see the plan's Verified Fact 15.
+    "stamina>=26.1",
+    # Outbound spans for the payment call. Closes the first row of the M2
+    # plan's "deliberately does not include" table.
+    "opentelemetry-instrumentation-httpx>=0.65b0",
+    # The cache client. redis-py's own asyncio interface (redis.asyncio) —
+    # aioredis was merged into it years ago and is archived, so there is no
+    # separate async package to choose. Used ONLY by
+    # infrastructure/cache/, which is the one place allowed to import it.
+    "redis>=8.1",
+    # The S3-compatible object store client. aioboto3 wraps aiobotocore,
+    # which wraps botocore: one adapter serves MinIO, Amazon S3, Cloudflare
+    # R2, Ceph and Backblaze B2, distinguished only by endpoint_url (spec
+    # 9.1). boto3 itself is synchronous and would block the event loop on
+    # every call.
+    "aioboto3>=15.5",
+    # Spans for Redis commands. Same 0.65b0 line as every other
+    # opentelemetry-instrumentation-* dependency above; the `b` is
+    # upstream's permanent beta versioning, not a typo. Wired up in
+    # observability/otel.py's instrument_redis, called unconditionally
+    # from main.py's lifespan whenever telemetry is enabled.
+    "opentelemetry-instrumentation-redis>=0.65b0",
+    # NO opentelemetry-instrumentation-botocore dependency here, on
+    # purpose — it was tried and removed, not merely never added. Task 12
+    # measured, rather than assumed, whether that instrumentor sees
+    # aioboto3's async S3 calls at all: it patches
+    # `botocore.client.BaseClient._make_api_call`, but `aioboto3` runs on
+    # `aiobotocore`, whose `AioBaseClient` shadows that exact method with
+    # its own async override, so the instrumentor's patch is never on the
+    # call path. Instrumenting, then running ListBuckets, CreateBucket,
+    # PutObject and GetObject through a real `aioboto3.Session` against
+    # MinIO produced zero spans, even though `is_instrumented_by_opentelemetry`
+    # reported True and every call itself succeeded — see the Task 12
+    # report for the full transcript. Re-adding this dependency without
+    # re-verifying against a current aiobotocore release would silently
+    # reintroduce a store adapter whose spans never appear, which is worse
+    # than no instrumentation: a dashboard built against it would read as
+    # "S3 calls are always fast" rather than "S3 calls are not observed".
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "hypothesis>=6.112",
+    "mypy>=1.13",
+    "ruff>=0.7",
+    "import-linter>=2.1",
+    "pre-commit>=4.0",
+    # Alembic is NOT a migration tool in this project — golang-migrate owns the
+    # schema (spec D12), and there is deliberately no alembic/ directory and no
+    # alembic_version table. It is installed for exactly one job: its
+    # compare_metadata() function is the comparison engine behind the
+    # model/schema drift gate in tests/integration/test_schema_drift.py. Deleting
+    # this dependency silently removes that gate. See Task 9 of the M1 plan.
+    "alembic>=1.19",
+    "testcontainers[postgres,redis,minio]>=4.15",
+    # Imported at module scope by testcontainers.community.minio (its first
+    # line is `from minio import Minio`), so collection fails without it.
+    # The production adapter uses aioboto3 and never imports this — it is
+    # purely a test-container dependency.
+    "minio>=7.2",
+    # Reads ops/prometheus/rules/*.yml in the SLO gate (tests/unit/
+    # test_slo_rules.py), so the PromQL and the Python constants cannot
+    # drift. Available transitively through pre-commit today; depended on
+    # explicitly because a gate must not rest on someone else's transitive
+    # dependency.
+    "pyyaml>=6.0",
+    "types-pyyaml>=6.0",
+    "schemathesis>=4.26",
+    "pytest-recording>=0.13",
+    "mutmut>=3.7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reference_service"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --strict-config -m 'not integration and not contract'"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    # Anything needing a container. Excluded from the default run by the `-m`
+    # in addopts above, so `just test` stays a few seconds and needs no Docker.
+    # `just test-integration` selects them back in with `-m integration`.
+    "integration: requires a running Docker daemon",
+    # Schemathesis over ASGI. Deselected by default for the same reason
+    # `integration` is — it is slow — and for one worse reason that is
+    # specific to it: its ASGI transport leaves anyio memory object
+    # streams unclosed, and `filterwarnings = ["error"]` below turns the
+    # resulting ResourceWarning into a PytestUnraisableExceptionWarning.
+    # That warning fires whenever the garbage collector reaches the
+    # stream, so pytest blames whichever test happens to be running then.
+    # Verified: with tests/contract/ in the default selection, the whole
+    # suite failed on tests/api/test_errors.py — a test that passes on its
+    # own and has nothing to do with contracts. `just test-contract` runs
+    # this tier on its own, where the filter in tests/contract/conftest.py
+    # contains the damage.
+    "contract: schemathesis conformance against the committed contract",
+]
+filterwarnings = [
+    "error",
+    # starlette.testclient still imports httpx directly; nothing in our
+    # control until Starlette itself moves. Narrow and specific on
+    # purpose — a blanket `ignore::DeprecationWarning` would hide the next
+    # one instead of surfacing it. Note the category: StarletteDeprecationWarning
+    # subclasses UserWarning, not the builtin DeprecationWarning.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
+
+[tool.mutmut]
+# The whole package, then narrowed below. Pointing source_paths straight
+# at domain/ and services/ instead would leave the package unimportable
+# inside mutmut's copy, because api/ and main.py would be missing.
+source_paths = ["src/reference_service"]
+
+# Mutate business logic only. Mutating adapters produces a long tail of
+# survivors about error paths nobody asserts on, and a signal nobody
+# trusts is worse than no signal (spec 8.1).
+only_mutate = [
+    "src/reference_service/domain/*",
+    "src/reference_service/services/*",
+]
+
+# mutmut runs the suite inside a `mutants/` COPY of the project, and that
+# copy contains source_paths, tests/ and a fixed list of lock files —
+# nothing else. Without these two, M2's tests/unit/test_dashboards.py
+# fails with "mutants/ops/grafana/dashboards not found" and M1's
+# test_migration_files.py cannot find the files it hashes.
+also_copy = ["ops", "migrations"]
+
+# Behaviour tests only, and this list is the important line in this file.
+#
+# It excludes the file-shape gates ON PURPOSE, and not merely because they
+# are slow: mutmut injects `from mutmut import ...` into every module it
+# mutates, so M0's tests/unit/test_layer_purity.py — which asserts that
+# domain/ imports nothing but pydantic and the standard library — FAILS
+# inside the copy, reporting mutmut itself as a third-party import. The
+# alternative, adding mutmut to that gate's allow-list, would weaken a
+# real M0 gate in ordinary runs to satisfy a tool. A gate that checks the
+# SHAPE of the tree can never kill a mutant in the first place, so
+# excluding it costs nothing.
+pytest_add_cli_args_test_selection = [
+    "tests/unit/test_order.py",
+    "tests/unit/test_order_service.py",
+    "tests/unit/test_domain_errors.py",
+    "tests/unit/test_memory_repository.py",
+    "tests/api/test_orders.py",
+    # M4: render_receipt (domain/receipt_render.py) and GetReceipt
+    # (services/receipt.py), added alongside the two files above and left
+    # out of this list by the same mistake this comment is now here to
+    # prevent repeating — without them mutmut reports every mutant in
+    # both files as "no tests", which is not a mutation SCORE, it is the
+    # mutation gate never running against a financial document's renderer
+    # at all. tests/api/test_receipts.py is the receipt-endpoint analogue
+    # of tests/api/test_orders.py above.
+    "tests/unit/test_receipt_render.py",
+    "tests/unit/test_get_receipt.py",
+    "tests/api/test_receipts.py",
+]
+
+# The floor, as a percentage of mutants killed. Measured 85.3% (64/75 killed)
+# in M3 Task 14 (2026-09-09), after the payments code (domain/payments.py,
+# PlaceOrder's authorise-then-save call) pushed the score up from the plan's
+# original baseline of 87.9% (51/58 killed), which predated that code and
+# was stale by then.
+#
+# Recomputed again in M4 (2026-09-10), as this comment's own instruction
+# below requires whenever a milestone adds substantial domain or services
+# code -- M4 added three such files (domain/receipt_render.py,
+# services/receipt.py, plus the test-selection entries above). The rerun
+# gave 87.3% (48/55 killed), which is what is now current.
+#
+# The floor stays at 80, deliberately below the current 87.3%, by roughly
+# the cushion the current gap gives: about four survivors -- 48/55 killed
+# can drop to 44/55 = 80% before the gate fails. That cushion exists so the
+# next message-only survivor (raise ValueError("...") -> raise
+# ValueError(None)) does not fail the build and pressure whoever hits it
+# into asserting on prose. Raise this floor when the score improves for a
+# real reason; never lower it to make a build pass. Recompute both the
+# measured score and this floor whenever a milestone adds a substantial
+# amount of domain or services code -- that is exactly what made the 87.9
+# baseline stale enough to need the M3 update, and the 85.3 measurement
+# stale enough to need this one.
+mutation_threshold_percent = 80
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src", "tests"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+# Strict where the business logic lives. Lenient in infrastructure and api,
+# where third-party type stubs are imperfect and strictness only produces
+# `# type: ignore` comments rather than safety.
+[[tool.mypy.overrides]]
+module = ["reference_service.domain.*", "reference_service.services.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_any_generics = true
+check_untyped_defs = true
+no_implicit_reexport = true
+warn_return_any = true

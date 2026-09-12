@@ -1,0 +1,41 @@
+line-length = 88
+target-version = "py313"
+src = ["src", "tests"]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # flake8-bugbear
+    "S",        # bandit security
+    "UP",       # pyupgrade
+    "ASYNC",    # flake8-async
+    "RUF",      # ruff-specific
+]
+
+# The en dash (U+2013) is visually confusable with a hyphen-minus, so
+# RUF001/RUF002 flag it by default. generate_config_docs.py renders it on
+# purpose -- "integer, 1–65535" is the same character the hand-written
+# configuration table it replaces used, and a plain hyphen there reads as a
+# minus sign in a table of numeric thresholds. Allowing it here trades a
+# narrow slice of RUF001/RUF002's protection (an en dash used to disguise a
+# real hyphen) for not stripping typography this generator's output and
+# its pinning tests use deliberately.
+allowed-confusables = ["–"]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101", "B017"]  # assert is how tests assert; B017 is deliberately broad exception
+# Throwaway Testcontainers credentials. The container lives for one test
+# session, is reachable from nothing outside it, and is destroyed afterwards.
+# Scoped to this directory rather than all of tests/ so a real credential
+# appearing anywhere else is still caught.
+"tests/integration/*" = ["S101", "B017", "S105"]
+# S603/S607: the whole point of this script is to shell out to `docker`,
+# resolved via PATH rather than an absolute path so it works on any
+# contributor's machine; the argument list is a fixed literal, not
+# untrusted input.
+"scripts/*" = ["S603", "S607"]
+
+[lint.isort]
+known-first-party = ["reference_service", "scripts"]
