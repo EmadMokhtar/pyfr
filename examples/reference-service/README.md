@@ -23,7 +23,7 @@ the service starts and serves correctly with none of them configured.
 
 ```bash
 uv sync                    # or: just install
-uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
+uv run pre-commit install  # one-time: wires up the lint hooks
 just dev                   # http://localhost:8000/docs — in-memory repository
 ```
 
@@ -124,8 +124,7 @@ stopped, `/readyz` itself still returned 200.
 
 ## Contract governance
 
-`openapi.json` is committed at this service's own root (not the repository
-root — `examples/reference-service/openapi.json`), generated from the code
+`openapi.json` is committed at the project root, generated from the code
 and never hand-edited. Three gates keep it honest: a byte-for-byte drift
 check against the code, generated conformance testing against the running
 app (Schemathesis, over ASGI — no server, no socket), and a breaking-change

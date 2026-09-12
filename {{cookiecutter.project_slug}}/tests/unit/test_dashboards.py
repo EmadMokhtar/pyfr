@@ -69,7 +69,9 @@ def test_no_panel_hard_codes_the_service_name(path: Path) -> None:
     name, dashboard = path.name, _load(path)
     for panel in dashboard["panels"]:
         for target in panel["targets"]:
-            assert "{{ cookiecutter.project_slug }}" not in target["expr"], (
+            # The whole label match, not the bare slug: a slug that is also a
+            # PromQL word (`rate`, `sum`, `job`) would fail on every query.
+            assert 'job="{{ cookiecutter.project_slug }}"' not in target["expr"], (
                 f"{name}: panel {panel['title']!r} hard-codes the service name"
             )
 

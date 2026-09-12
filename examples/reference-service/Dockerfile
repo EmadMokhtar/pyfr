@@ -56,7 +56,7 @@ RUN /usr/local/bin/python -m pip uninstall -y pip
 # What links a pushed image to this repository on GHCR, so the package
 # inherits the repository's visibility and README. Version and revision
 # are stamped at publish time (`just publish-images`); they are not known
-# here. Becomes a template variable in M7.
+# here. The organisation and project are template variables (M7).
 LABEL org.opencontainers.image.source="https://github.com/EmadMokhtar/reference-service"
 
 WORKDIR /app

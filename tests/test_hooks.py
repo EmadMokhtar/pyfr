@@ -43,6 +43,8 @@ def test_default_answers_render(cookies) -> None:
         ({"http_port": "0"}, "http_port"),
         ({"http_port": "70000"}, "http_port"),
         ({"http_port": "eighty"}, "http_port"),
+        # int() accepts a leading zero; the render would not (`default=08000`).
+        ({"http_port": "08000"}, "http_port"),
     ],
 )
 def test_bad_answers_are_rejected_before_anything_is_written(

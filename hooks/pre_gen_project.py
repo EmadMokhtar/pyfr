@@ -16,6 +16,7 @@ PACKAGE_NAME = "{{ cookiecutter.package_name }}"
 HTTP_PORT = "{{ cookiecutter.http_port }}"
 
 SLUG_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
+PORT_PATTERN = re.compile(r"[1-9][0-9]*")
 
 # The package name is spelled out in import lines, module paths and test
 # identifiers throughout the render. Every render up to this length is
@@ -49,13 +50,17 @@ def problems() -> list[str]:
             f"{MAX_PACKAGE_NAME_LENGTH} characters; longer names push "
             "generated lines past the 88-column limit."
         )
-    try:
-        port = int(HTTP_PORT)
-    except ValueError:
-        found.append(f"http_port {HTTP_PORT!r} is not an integer.")
-    else:
-        if not 1 <= port <= 65535:
-            found.append(f"http_port {port} is outside 1-65535.")
+    # Stricter than int(): the answer is pasted into the render as-is, so
+    # "08000" would render `default=08000` (a SyntaxError in settings.py)
+    # and " 8000" would break compose.yaml's port mapping, even though
+    # int() accepts both.
+    if not PORT_PATTERN.fullmatch(HTTP_PORT):
+        found.append(
+            f"http_port {HTTP_PORT!r} must be a plain decimal integer: "
+            "digits only, no leading zero, no spaces."
+        )
+    elif not 1 <= int(HTTP_PORT) <= 65535:
+        found.append(f"http_port {HTTP_PORT} is outside 1-65535.")
     return found
 
 
