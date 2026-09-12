@@ -92,4 +92,4 @@ jobs:
         # The two `ghcr.io/emadmokhtar/...` references are literals until
         # M7 makes the registry namespace a template variable, exactly
         # like the `registry` default in the justfile's `publish-images`.
-        run: just scan ghcr.io/emadmokhtar/pyfr-reference-service:latest ghcr.io/emadmokhtar/pyfr-reference-service-migrations:latest
+        run: just scan ghcr.io/emadmokhtar/reference-service:latest ghcr.io/emadmokhtar/reference-service-migrations:latest

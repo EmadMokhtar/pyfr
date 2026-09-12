@@ -336,8 +336,8 @@ jobs:
         # the same lockfile and Debian package versions.
         run: >-
           just sbom
-          "ghcr.io/emadmokhtar/pyfr-reference-service:$VERSION"
-          "ghcr.io/emadmokhtar/pyfr-reference-service-migrations:$VERSION"
+          "ghcr.io/emadmokhtar/reference-service:$VERSION"
+          "ghcr.io/emadmokhtar/reference-service-migrations:$VERSION"
       - name: Point latest at the scanned version
         run: just promote-latest "$VERSION"
       - name: Attach the SBOMs to the release

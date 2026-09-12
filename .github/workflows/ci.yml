@@ -45,6 +45,63 @@ jobs:
       - name: Run every fast gate
         run: just check
 
+  golden:
+    # The template is the source of truth and examples/reference-service/ is
+    # rendered from it (M7 spec, M7-1). This job fails when the two disagree,
+    # with the list of files and a diff of the first -- see
+    # docs/contributing.md, "Edit the template, then just regen".
+    #
+    # Dependabot edits the rendered example, not the template: it cannot
+    # parse Jinja. On its pull requests -- and on the push that merges one --
+    # adopt its pin changes into the template first (M7-10). adopt.yml then
+    # commits the same result to main.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install the toolchain
+        run: uv sync --group dev
+
+      - name: Adopt Dependabot's pins into the template
+        if: github.actor == 'dependabot[bot]' || github.event.head_commit.author.name == 'dependabot[bot]'
+        run: just adopt
+
+      - name: Render and compare
+        run: just regen-check
+
+  precommit:
+    # The repository's own hooks over every tracked file, from the root
+    # configuration. The `check` job's `just check` inside the example runs
+    # the example's precommit recipe, which skips itself when nested; this
+    # is the job that covers that tree, and the root's own files.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install the toolchain
+        # ruff runs from the root's environment; `uv lock --check --project`
+        # needs no environment; the remote hooks bring their own.
+        run: uv sync --group dev
+
+      - name: Run every hook
+        run: just precommit
+
   integration:
     # testcontainers starts PostgreSQL, Redis and MinIO itself. Deliberately
     # NOT a `services:` block: the containers are pinned in the test code,
