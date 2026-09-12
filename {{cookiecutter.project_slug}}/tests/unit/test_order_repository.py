@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
@@ -22,12 +22,12 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.infrastructure.db.mappers import line_values, order_values
-from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
-from reference_service.infrastructure.db.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.db.mappers import line_values, order_values
+from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
+from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
-from reference_service.infrastructure.errors import CorruptPersistedDataError
+from {{ cookiecutter.package_name }}.infrastructure.errors import CorruptPersistedDataError
 
 
 class _FakeScalarResult:

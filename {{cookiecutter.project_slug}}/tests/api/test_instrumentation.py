@@ -15,14 +15,14 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from reference_service.main import create_app
-from reference_service.observability.otel import (
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.observability.otel import (
     OtelRuntime,
     build_providers,
     instrument_fastapi,
 )
-from reference_service.observability.slo import SLO_LATENCY_THRESHOLD_SECONDS
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.observability.slo import SLO_LATENCY_THRESHOLD_SECONDS
+from {{ cookiecutter.package_name }}.settings import Settings
 
 
 @pytest.fixture
@@ -182,7 +182,7 @@ def test_create_app_instruments_and_shuts_down_when_otel_is_on(
 ) -> None:
     """`configure_otel` is substituted so no OTLP exporter is constructed."""
     monkeypatch.setattr(
-        "reference_service.main.configure_otel",
+        "{{ cookiecutter.package_name }}.main.configure_otel",
         lambda _settings, _version: runtime,
     )
 

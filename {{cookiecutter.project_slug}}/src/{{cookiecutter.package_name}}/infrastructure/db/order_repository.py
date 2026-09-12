@@ -13,14 +13,14 @@ from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from reference_service.domain.order import Order, OrderId
-from reference_service.infrastructure.db.mappers import (
+from {{ cookiecutter.package_name }}.domain.order import Order, OrderId
+from {{ cookiecutter.package_name }}.infrastructure.db.mappers import (
     line_values,
     order_values,
     to_domain,
 )
-from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
-from reference_service.infrastructure.errors import (
+from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
+from {{ cookiecutter.package_name }}.infrastructure.errors import (
     CorruptPersistedDataError,
     StorageConstraintViolatedError,
 )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from reference_service.domain.order import Order, OrderId
+from {{ cookiecutter.package_name }}.domain.order import Order, OrderId
 
 
 @runtime_checkable

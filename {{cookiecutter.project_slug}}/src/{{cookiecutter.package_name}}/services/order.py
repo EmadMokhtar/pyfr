@@ -24,8 +24,8 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.domain.errors import OrderNotFoundError
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.errors import OrderNotFoundError
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
@@ -33,9 +33,9 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.domain.payments import PaymentGateway
-from reference_service.domain.repositories import OrderRepository
-from reference_service.services.errors import ServiceDefectError
+from {{ cookiecutter.package_name }}.domain.payments import PaymentGateway
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.services.errors import ServiceDefectError
 
 # NUMERIC(14, 2) in migrations/000001, mirroring api/v1/schemas.py's
 # MAX_MONEY. The service layer must not import from api, so the constant

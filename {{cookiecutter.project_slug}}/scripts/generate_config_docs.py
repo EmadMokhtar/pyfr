@@ -29,7 +29,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.settings import Settings
 
 ENV_PREFIX = "APP_"
 NESTED_DELIMITER = "__"
@@ -294,7 +294,7 @@ _ENV_HEADER = """\
 # Copy to .env for local development. Never commit .env itself.
 #
 # GENERATED FILE -- do not edit. Every line below comes from
-# src/reference_service/settings.py. Change a description there and run
+# src/{{ cookiecutter.package_name }}/settings.py. Change a description there and run
 # `just config-docs`; `just gates` fails if this file has drifted.
 """
 

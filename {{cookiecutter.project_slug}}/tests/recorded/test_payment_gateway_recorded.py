@@ -12,12 +12,12 @@ from uuid import UUID
 
 import pytest
 
-from reference_service.domain.errors import PaymentDeclinedError
-from reference_service.domain.order import Money, OrderId
-from reference_service.infrastructure.http.breaker import CircuitBreaker
-from reference_service.infrastructure.http.client import build_http_client
-from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
-from reference_service.settings import HttpClientSettings
+from {{ cookiecutter.package_name }}.domain.errors import PaymentDeclinedError
+from {{ cookiecutter.package_name }}.domain.order import Money, OrderId
+from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
+from {{ cookiecutter.package_name }}.infrastructure.http.client import build_http_client
+from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import HttpPaymentGateway
+from {{ cookiecutter.package_name }}.settings import HttpClientSettings
 from tests.recorded.conftest import PAYMENT_STUB_URL
 
 # Fixed, not random: the cassette is matched on the request body, and the

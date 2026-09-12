@@ -6,11 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import HttpUrl
 
-from reference_service.api.deps import get_payments
-from reference_service.api.v1.schemas import OrderResponse
-from reference_service.domain.order import Order
-from reference_service.main import create_app
-from reference_service.settings import PaymentSettings, Settings
+from {{ cookiecutter.package_name }}.api.deps import get_payments
+from {{ cookiecutter.package_name }}.api.v1.schemas import OrderResponse
+from {{ cookiecutter.package_name }}.domain.order import Order
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.settings import PaymentSettings, Settings
 from tests.fakes import DecliningPaymentGateway, UnavailablePaymentGateway
 
 

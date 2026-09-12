@@ -19,38 +19,38 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from reference_service.domain.payments import PaymentGateway
-from reference_service.domain.receipts import ReceiptStore
-from reference_service.domain.repositories import OrderRepository
-from reference_service.infrastructure.cache.client import build_redis_client
-from reference_service.infrastructure.cache.order_repository import (
+from {{ cookiecutter.package_name }}.domain.payments import PaymentGateway
+from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_redis_client
+from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
-from reference_service.infrastructure.db.engine import (
+from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
-from reference_service.infrastructure.db.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
-from reference_service.infrastructure.http.breaker import CircuitBreaker
-from reference_service.infrastructure.http.client import build_http_client
-from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
-from reference_service.infrastructure.memory.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
+from {{ cookiecutter.package_name }}.infrastructure.http.client import build_http_client
+from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import HttpPaymentGateway
+from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
-from reference_service.infrastructure.memory.payment_gateway import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.payment_gateway import (
     InMemoryPaymentGateway,
 )
-from reference_service.infrastructure.memory.receipt_store import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
-from reference_service.infrastructure.storage.client import (
+from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
 )
-from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import S3ReceiptStore
+from {{ cookiecutter.package_name }}.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]
 

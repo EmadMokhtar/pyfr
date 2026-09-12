@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from reference_service.infrastructure.http.breaker import (
+from {{ cookiecutter.package_name }}.infrastructure.http.breaker import (
     BreakerState,
     CircuitBreaker,
     CircuitOpenError,

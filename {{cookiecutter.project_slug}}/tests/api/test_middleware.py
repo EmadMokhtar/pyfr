@@ -9,13 +9,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.types import Message, Receive, Scope, Send
 
-from reference_service.api.middleware import (
+from {{ cookiecutter.package_name }}.api.middleware import (
     CORRELATION_HEADER,
     AccessLogMiddleware,
     CorrelationIdMiddleware,
     _route_template,
 )
-from reference_service.observability.logging import configure_logging
+from {{ cookiecutter.package_name }}.observability.logging import configure_logging
 
 
 @pytest.fixture(autouse=True)

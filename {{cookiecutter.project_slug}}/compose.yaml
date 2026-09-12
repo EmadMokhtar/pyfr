@@ -140,9 +140,9 @@ services:
     # without a second `build:` block. `up --build` builds every buildable
     # service before creating any container, so the name exists by the time
     # `seed` needs it.
-    image: reference-service:compose
+    image: {{ cookiecutter.project_slug }}:compose
     ports:
-      - "8000:8000"
+      - "{{ cookiecutter.http_port }}:{{ cookiecutter.http_port }}"
     depends_on:
       # Not just "started": the API must not serve a request against a schema
       # that is not there yet. service_completed_successfully waits for the
@@ -210,12 +210,12 @@ services:
     # port both drifts and repeats the same instruction twice.
 
   # A one-shot, like `migrate` and `minio-bootstrap`: runs once `app` is
-  # healthy, creates the fixed orders in reference_service/seed.py through
+  # healthy, creates the fixed orders in {{ cookiecutter.package_name }}/seed.py through
   # the API, and exits 0. `just up` therefore yields a service with data in
   # it, and `GET /api/v1/orders/<id>` works before anyone has typed a POST.
   # Idempotent: re-running `up` without `down` creates nothing new.
   seed:
-    image: reference-service:compose
+    image: {{ cookiecutter.project_slug }}:compose
     depends_on:
       # service_healthy, not service_started: the image's HEALTHCHECK is
       # what says the API is answering.
@@ -231,9 +231,9 @@ services:
     command:
       - python
       - -m
-      - reference_service.seed
+      - {{ cookiecutter.package_name }}.seed
       - --base-url
-      - http://app:8000
+      - http://app:{{ cookiecutter.http_port }}
       - --state
       - /state/seed.json
     volumes:

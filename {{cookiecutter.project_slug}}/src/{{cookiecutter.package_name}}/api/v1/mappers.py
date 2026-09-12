@@ -7,14 +7,14 @@ create.
 
 from __future__ import annotations
 
-from reference_service.api.v1.schemas import (
+from {{ cookiecutter.package_name }}.api.v1.schemas import (
     MoneyOut,
     OrderLineOut,
     OrderResponse,
     PlaceOrderRequest,
 )
-from reference_service.domain.order import Money, Order
-from reference_service.services.order import PlaceOrderCommand, PlaceOrderLine
+from {{ cookiecutter.package_name }}.domain.order import Money, Order
+from {{ cookiecutter.package_name }}.services.order import PlaceOrderCommand, PlaceOrderLine
 
 
 def to_command(request: PlaceOrderRequest) -> PlaceOrderCommand:

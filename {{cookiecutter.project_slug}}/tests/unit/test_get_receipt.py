@@ -7,23 +7,23 @@ from uuid import uuid4
 
 import pytest
 
-from reference_service.domain.errors import OrderNotFoundError
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.errors import OrderNotFoundError
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
     OrderId,
     OrderLine,
 )
-from reference_service.domain.receipt_render import render_receipt
-from reference_service.domain.receipts import ReceiptStore
-from reference_service.infrastructure.memory.order_repository import (
+from {{ cookiecutter.package_name }}.domain.receipt_render import render_receipt
+from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
+from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
-from reference_service.infrastructure.memory.receipt_store import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
-from reference_service.services.receipt import GetReceipt
+from {{ cookiecutter.package_name }}.services.receipt import GetReceipt
 
 pytestmark = pytest.mark.asyncio
 

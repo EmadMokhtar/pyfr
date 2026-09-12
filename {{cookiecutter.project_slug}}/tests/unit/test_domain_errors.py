@@ -1,13 +1,13 @@
 from uuid import uuid4
 
-from reference_service.domain.errors import (
+from {{ cookiecutter.package_name }}.domain.errors import (
     DomainError,
     OrderNotFoundError,
     PaymentDeclinedError,
 )
-from reference_service.domain.order import OrderId
-from reference_service.domain.repositories import OrderRepository
-from reference_service.infrastructure.errors import PaymentUnavailableError
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
 
 
 def test_order_not_found_carries_the_id_and_a_stable_code() -> None:

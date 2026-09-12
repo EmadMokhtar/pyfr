@@ -14,9 +14,9 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 )
 from sqlalchemy import text
 
-from reference_service.infrastructure.db.engine import build_engine
-from reference_service.observability.otel import build_providers, instrument_database
-from reference_service.settings import DatabaseSettings, OtelSettings, Settings
+from {{ cookiecutter.package_name }}.infrastructure.db.engine import build_engine
+from {{ cookiecutter.package_name }}.observability.otel import build_providers, instrument_database
+from {{ cookiecutter.package_name }}.settings import DatabaseSettings, OtelSettings, Settings
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio(loop_scope="session")]
 

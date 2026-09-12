@@ -15,18 +15,18 @@ from uuid import uuid4
 import pytest
 from redis.asyncio import Redis
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
     OrderId,
     OrderLine,
 )
-from reference_service.infrastructure.cache.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CACHE_KEY_PREFIX,
     CachedOrderRepository,
 )
-from reference_service.infrastructure.memory.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
 from tests.fakes import FakeRedis

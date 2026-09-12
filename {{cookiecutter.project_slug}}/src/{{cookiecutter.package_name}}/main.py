@@ -7,24 +7,24 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from reference_service import __version__
-from reference_service.api import health
-from reference_service.api.errors import (
+from {{ cookiecutter.package_name }} import __version__
+from {{ cookiecutter.package_name }}.api import health
+from {{ cookiecutter.package_name }}.api.errors import (
     DEFAULT_PROBLEM_RESPONSES,
     register_error_handlers,
 )
-from reference_service.api.middleware import (
+from {{ cookiecutter.package_name }}.api.middleware import (
     AccessLogMiddleware,
     CorrelationIdMiddleware,
 )
-from reference_service.api.v1.router import router as v1_router
-from reference_service.container import build_container, close_container
-from reference_service.observability.logging import configure_logging
-from reference_service.observability.metrics import (
+from {{ cookiecutter.package_name }}.api.v1.router import router as v1_router
+from {{ cookiecutter.package_name }}.container import build_container, close_container
+from {{ cookiecutter.package_name }}.observability.logging import configure_logging
+from {{ cookiecutter.package_name }}.observability.metrics import (
     RuntimeMetrics,
     register_runtime_metrics,
 )
-from reference_service.observability.otel import (
+from {{ cookiecutter.package_name }}.observability.otel import (
     OtelRuntime,
     configure_otel,
     instrument_database,
@@ -32,7 +32,7 @@ from reference_service.observability.otel import (
     instrument_http_client,
     instrument_redis,
 )
-from reference_service.settings import Settings, load_settings
+from {{ cookiecutter.package_name }}.settings import Settings, load_settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

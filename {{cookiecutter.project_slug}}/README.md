@@ -1,7 +1,7 @@
-# Reference Service
+# {{ cookiecutter.project_name }}
 
-The PyFr reference service: the walking skeleton every generated project
-starts from. It persists orders to a real PostgreSQL database with the
+{{ cookiecutter.description }} Generated from
+[PyFr](https://github.com/EmadMokhtar/pyfr). It persists orders to a real PostgreSQL database with the
 schema under migration control, authorises payment over a retrying,
 circuit-breaking HTTP client, caches order reads in Redis behind a fail-open
 decorator, and renders and stores one receipt per order in S3-compatible
@@ -24,7 +24,7 @@ the service starts and serves correctly with none of them configured.
 ```bash
 uv sync                    # or: just install
 uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
-just dev                   # http://localhost:8000/docs — in-memory repository
+just dev                   # http://localhost:{{ cookiecutter.http_port }}/docs — in-memory repository
 ```
 
 `just up` is the containerized alternative: one command starts PostgreSQL,
@@ -42,7 +42,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | Command | What it does |
 |---|---|
 | `just install` | Sync dependencies from the lock file |
-| `just dev` | Run with auto-reload on port 8000 |
+| `just dev` | Run with auto-reload on port {{ cookiecutter.http_port }} |
 | `just test` | Run the unit and api tiers — no containers, no Docker needed |
 | `just test-integration` | Run the container-backed integration tier (needs Docker) |
 | `just test-all` | Run every tier: unit, api and integration |
@@ -125,7 +125,7 @@ stopped, `/readyz` itself still returned 200.
 ## Contract governance
 
 `openapi.json` is committed at this service's own root (not the repository
-root — `examples/reference-service/openapi.json`), generated from the code
+root — `examples/{{ cookiecutter.project_slug }}/openapi.json`), generated from the code
 and never hand-edited. Three gates keep it honest: a byte-for-byte drift
 check against the code, generated conformance testing against the running
 app (Schemathesis, over ASGI — no server, no socket), and a breaking-change
@@ -151,7 +151,7 @@ of them contrived.
 ## Layout
 
 ```
-src/reference_service/
+src/{{ cookiecutter.package_name }}/
   domain/          entities and repository ports; imports only pydantic
   services/        application services; one file per aggregate
   infrastructure/  adapters; the only code that knows a storage technology
@@ -299,7 +299,7 @@ real MinIO container and produced zero spans for any `aioboto3` call — traced
 `ListBuckets`, `PutObject` and `GetObject` all succeeded and all produced
 nothing, because `aiobotocore`'s async client replaces the exact method the
 instrumentor patches. The dependency was removed rather than shipped doing
-nothing; see `instrument_redis` in `src/reference_service/observability/otel.py`
+nothing; see `instrument_redis` in `src/{{ cookiecutter.package_name }}/observability/otel.py`
 for the full measurement. Redis commands, by contrast, are traced normally.
 
 ## Observability
@@ -354,8 +354,8 @@ instead of falling back to the in-memory repository.
 | Variable | Default | Meaning |
 |---|---|---|
 | `APP_ENVIRONMENT` | `local` | `local` gives colourised console logs; anything else gives JSON |
-| `APP_SERVICE_NAME` | `reference-service` | Used as the OpenAPI title and the `service.name` log field |
-| `APP_HTTP_PORT` | `8000` | Port to serve on — read by `just dev` and the container's `CMD` |
+| `APP_SERVICE_NAME` | `{{ cookiecutter.project_slug }}` | Used as the OpenAPI title and the `service.name` log field |
+| `APP_HTTP_PORT` | `{{ cookiecutter.http_port }}` | Port to serve on — read by `just dev` and the container's `CMD` |
 | `APP_LOG__LEVEL` | `info` | Root log level |
 | `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
 | `APP_LOG__REDACT_FIELDS` | the fifteen names in `.env.example` (`password`, `token`, `authorization`, `card_number`, …) | Field names whose values are replaced by `[REDACTED]` before a record is rendered, as a JSON array — matched by name at any depth, ignoring case and treating `-` and `_` alike. Setting it **replaces** the default list. Keys only: a secret interpolated into the message string is not seen, so put secrets in fields, never in the event string |
@@ -375,7 +375,7 @@ instead of falling back to the in-memory repository.
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later. `just config-check`
 — or, inside the image, `docker compose run --rm app python -m
-reference_service.config_check` — loads settings the same way and either
+{{ cookiecutter.package_name }}.config_check` — loads settings the same way and either
 exits 78 with that message or prints the configuration the service would
 start with, as JSON, with every `SecretStr` and every URL password masked.
 
@@ -398,8 +398,8 @@ and drop them.
 
 On release, the repository's workflow builds and scans the
 single-architecture images first, then builds both images for both
-architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
-`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` under the
+architectures and pushes `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}` and
+`ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations` under the
 repository's version, scans the pushed digests for both platforms, generates
 the SBOMs from those same references (so their subject is the image people
 pull), and only then points `latest` at that version; the SBOMs are attached

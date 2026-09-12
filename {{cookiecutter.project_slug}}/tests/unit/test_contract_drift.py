@@ -15,8 +15,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reference_service.main import create_app
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.settings import Settings
 from tests.conftest import no_app_env_vars
 
 CONTRACT_PATH = Path(__file__).resolve().parents[2] / "openapi.json"

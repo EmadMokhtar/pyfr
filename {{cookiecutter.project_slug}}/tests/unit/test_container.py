@@ -6,21 +6,21 @@ import pytest
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from reference_service.container import build_container, close_container
-from reference_service.infrastructure.cache.order_repository import (
+from {{ cookiecutter.package_name }}.container import build_container, close_container
+from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
-from reference_service.infrastructure.db.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
-from reference_service.infrastructure.memory.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
-from reference_service.infrastructure.memory.receipt_store import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
-from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import S3ReceiptStore
+from {{ cookiecutter.package_name }}.settings import Settings
 
 DSN = "postgresql://app:secret@localhost:5432/app"
 

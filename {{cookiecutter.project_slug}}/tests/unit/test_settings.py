@@ -3,16 +3,16 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
-from reference_service.settings import EXIT_CONFIG_ERROR, Settings, load_settings
+from {{ cookiecutter.package_name }}.observability.redaction import DEFAULT_REDACT_FIELDS
+from {{ cookiecutter.package_name }}.settings import EXIT_CONFIG_ERROR, Settings, load_settings
 
 
 def test_defaults_are_usable_with_no_environment() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert settings.environment == "local"
-    assert settings.service_name == "reference-service"
-    assert settings.http_port == 8000
+    assert settings.service_name == "{{ cookiecutter.project_slug }}"
+    assert settings.http_port == {{ cookiecutter.http_port }}
     assert settings.log.level == "info"
     assert settings.log.levels == {}
     assert settings.otel.logs_enabled is False

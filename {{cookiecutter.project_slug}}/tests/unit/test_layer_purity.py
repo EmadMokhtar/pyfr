@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-import reference_service.domain
-import reference_service.services
+import {{ cookiecutter.package_name }}.domain
+import {{ cookiecutter.package_name }}.services
 
 ALLOWED_THIRD_PARTY = frozenset({"pydantic"})
 
@@ -34,7 +34,7 @@ def _top_level_imports(source: Path) -> set[str]:
 
 @pytest.mark.parametrize(
     "package",
-    [reference_service.domain, reference_service.services],
+    [{{ cookiecutter.package_name }}.domain, {{ cookiecutter.package_name }}.services],
     ids=["domain", "services"],
 )
 def test_layer_imports_only_pydantic_and_the_standard_library(
@@ -56,7 +56,7 @@ def test_layer_imports_only_pydantic_and_the_standard_library(
             for name in _top_level_imports(module)
             if name not in sys.stdlib_module_names
             and name not in ALLOWED_THIRD_PARTY
-            and name != "reference_service"
+            and name != "{{ cookiecutter.package_name }}"
         }
         if unexpected:
             offenders[module.name] = unexpected

@@ -23,7 +23,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 from opentelemetry.sdk.trace.sampling import ParentBased
 from opentelemetry.trace import SpanKind
 
-from reference_service.observability.otel import (
+from {{ cookiecutter.package_name }}.observability.otel import (
     _STABLE_SEMCONV_ENV_VAR,
     build_providers,
     build_resource,
@@ -33,11 +33,11 @@ from reference_service.observability.otel import (
     instrument_http_client,
     instrument_redis,
 )
-from reference_service.observability.slo import (
+from {{ cookiecutter.package_name }}.observability.slo import (
     HTTP_DURATION_BUCKET_BOUNDARIES,
     SLO_LATENCY_THRESHOLD_SECONDS,
 )
-from reference_service.settings import OtelSettings, Settings
+from {{ cookiecutter.package_name }}.settings import OtelSettings, Settings
 
 
 def _enabled_settings() -> Settings:
@@ -51,7 +51,7 @@ def _enabled_settings() -> Settings:
 def test_resource_carries_the_three_attributes_the_log_contract_names() -> None:
     resource = build_resource(_enabled_settings(), "1.2.3")
 
-    assert resource.attributes["service.name"] == "reference-service"
+    assert resource.attributes["service.name"] == "{{ cookiecutter.project_slug }}"
     assert resource.attributes["service.version"] == "1.2.3"
     assert resource.attributes["deployment.environment"] == "production"
 

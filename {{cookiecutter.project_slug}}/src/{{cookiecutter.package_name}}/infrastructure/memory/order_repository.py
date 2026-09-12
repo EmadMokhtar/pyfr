@@ -8,7 +8,7 @@ changes when it does.
 
 from __future__ import annotations
 
-from reference_service.domain.order import Order, OrderId
+from {{ cookiecutter.package_name }}.domain.order import Order, OrderId
 
 
 class InMemoryOrderRepository:

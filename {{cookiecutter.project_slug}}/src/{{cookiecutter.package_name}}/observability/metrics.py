@@ -22,11 +22,11 @@ from opentelemetry.metrics import CallbackOptions, Meter, Observation
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import QueuePool
 
-from reference_service.observability.otel import OtelRuntime
+from {{ cookiecutter.package_name }}.observability.otel import OtelRuntime
 
 _logger = structlog.get_logger(__name__)
 
-METER_NAME = "reference_service.runtime"
+METER_NAME = "{{ cookiecutter.package_name }}.runtime"
 
 # How often the event loop is probed. Every tick is one histogram
 # observation, so this trades resolution against series volume; two

@@ -2,7 +2,7 @@
 
 import pytest
 
-from reference_service.observability.slo import (
+from {{ cookiecutter.package_name }}.observability.slo import (
     ERROR_BUDGET,
     HTTP_DURATION_BUCKET_BOUNDARIES,
     SLI_EXCLUDED_ROUTES,

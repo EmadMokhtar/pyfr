@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from reference_service.container import ReadinessRegistry
+from {{ cookiecutter.package_name }}.container import ReadinessRegistry
 
 
 async def test_checks_run_concurrently_not_one_after_another() -> None:

@@ -6,16 +6,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Response, status
 
-from reference_service.api.deps import GetOrderDep, GetReceiptDep, PlaceOrderDep
-from reference_service.api.errors import problem_response
-from reference_service.api.v1.mappers import to_command, to_response
-from reference_service.api.v1.schemas import (
+from {{ cookiecutter.package_name }}.api.deps import GetOrderDep, GetReceiptDep, PlaceOrderDep
+from {{ cookiecutter.package_name }}.api.errors import problem_response
+from {{ cookiecutter.package_name }}.api.v1.mappers import to_command, to_response
+from {{ cookiecutter.package_name }}.api.v1.schemas import (
     OrderResponse,
     PlaceOrderRequest,
     ReceiptResponse,
 )
-from reference_service.domain.order import OrderId
-from reference_service.domain.receipt_render import RECEIPT_MEDIA_TYPE
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.domain.receipt_render import RECEIPT_MEDIA_TYPE
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 

@@ -21,11 +21,11 @@ out of the write path, at the cost of one slower first request per order.
 
 from __future__ import annotations
 
-from reference_service.domain.errors import OrderNotFoundError
-from reference_service.domain.order import OrderId
-from reference_service.domain.receipt_render import render_receipt
-from reference_service.domain.receipts import ReceiptStore
-from reference_service.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.domain.errors import OrderNotFoundError
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.domain.receipt_render import render_receipt
+from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
 
 
 class GetReceipt:

@@ -29,7 +29,7 @@ from typing import Annotated, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from reference_service.domain.order import AuthorisationId, Money, OrderId
+from {{ cookiecutter.package_name }}.domain.order import AuthorisationId, Money, OrderId
 
 
 class Authorisation(BaseModel):

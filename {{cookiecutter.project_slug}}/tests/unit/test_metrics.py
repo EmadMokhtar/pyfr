@@ -13,8 +13,8 @@ from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from reference_service.observability.metrics import register_runtime_metrics
-from reference_service.observability.otel import OtelRuntime, build_views
+from {{ cookiecutter.package_name }}.observability.metrics import register_runtime_metrics
+from {{ cookiecutter.package_name }}.observability.otel import OtelRuntime, build_views
 
 
 @pytest.fixture(autouse=True)

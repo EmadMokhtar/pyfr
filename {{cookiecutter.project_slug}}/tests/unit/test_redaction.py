@@ -16,8 +16,8 @@ import structlog
 from hypothesis import given
 from hypothesis import strategies as st
 
-from reference_service.observability.logging import configure_logging
-from reference_service.observability.redaction import (
+from {{ cookiecutter.package_name }}.observability.logging import configure_logging
+from {{ cookiecutter.package_name }}.observability.redaction import (
     DEFAULT_REDACT_FIELDS,
     REDACTED,
     make_redactor,

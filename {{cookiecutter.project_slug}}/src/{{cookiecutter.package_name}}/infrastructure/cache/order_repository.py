@@ -23,8 +23,8 @@ import structlog
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
-from reference_service.domain.order import Order, OrderId
-from reference_service.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.domain.order import Order, OrderId
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
 
 _logger = structlog.get_logger(__name__)
 

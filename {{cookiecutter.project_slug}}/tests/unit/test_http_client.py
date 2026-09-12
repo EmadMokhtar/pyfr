@@ -5,11 +5,11 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from reference_service.infrastructure.http.client import (
+from {{ cookiecutter.package_name }}.infrastructure.http.client import (
     build_http_client,
     is_retryable,
 )
-from reference_service.settings import HttpClientSettings
+from {{ cookiecutter.package_name }}.settings import HttpClientSettings
 
 
 async def test_every_timeout_phase_is_set() -> None:

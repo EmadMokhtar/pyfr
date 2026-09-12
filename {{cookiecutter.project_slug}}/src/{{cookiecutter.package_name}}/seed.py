@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Seed a running reference service with a fixed set of orders."
     )
-    parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--base-url", default="http://localhost:{{ cookiecutter.http_port }}")
     parser.add_argument("--state", type=Path, default=Path(".seed-state.json"))
     args = parser.parse_args(argv)
 

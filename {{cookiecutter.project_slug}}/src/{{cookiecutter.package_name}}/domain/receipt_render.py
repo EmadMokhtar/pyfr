@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from reference_service.domain.order import Order
+from {{ cookiecutter.package_name }}.domain.order import Order
 
 RECEIPT_MEDIA_TYPE = "application/json"
 

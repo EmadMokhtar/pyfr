@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
@@ -18,11 +18,11 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.infrastructure.db.order_repository import (
+from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     READ_ISOLATION_LEVEL,
     PostgresOrderRepository,
 )
-from reference_service.infrastructure.errors import (
+from {{ cookiecutter.package_name }}.infrastructure.errors import (
     StorageConstraintViolatedError,
 )
 
@@ -110,7 +110,7 @@ async def test_line_order_is_preserved(
     """
     from sqlalchemy import delete, insert
 
-    from reference_service.infrastructure.db.models import OrderLineRow
+    from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow
 
     repository = PostgresOrderRepository(sessionmaker)
     order = make_order()
@@ -221,7 +221,7 @@ async def test_each_test_starts_from_an_empty_database(
     """
     from sqlalchemy import func, select
 
-    from reference_service.infrastructure.db.models import OrderRow
+    from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderRow
 
     async with sessionmaker() as session:
         count = await session.scalar(select(func.count()).select_from(OrderRow))

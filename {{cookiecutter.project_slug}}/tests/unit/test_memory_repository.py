@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import uuid4
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
@@ -9,8 +9,8 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.domain.repositories import OrderRepository
-from reference_service.infrastructure.memory.order_repository import (
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
 

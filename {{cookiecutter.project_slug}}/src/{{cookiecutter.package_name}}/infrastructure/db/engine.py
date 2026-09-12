@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from reference_service.settings import DatabaseSettings
+from {{ cookiecutter.package_name }}.settings import DatabaseSettings
 
 # Parameters libpq accepts and asyncpg does not. golang-migrate's own
 # hardcoded URL in compose.yaml wants `?sslmode=disable` against a local

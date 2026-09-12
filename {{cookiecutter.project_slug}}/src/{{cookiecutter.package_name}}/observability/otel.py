@@ -47,8 +47,8 @@ from opentelemetry.sdk.trace.export import (
 from opentelemetry.sdk.trace.sampling import ParentBased, Sampler, TraceIdRatioBased
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from reference_service.observability.slo import HTTP_DURATION_BUCKET_BOUNDARIES
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.observability.slo import HTTP_DURATION_BUCKET_BOUNDARIES
+from {{ cookiecutter.package_name }}.settings import Settings
 
 # Selects the STABLE HTTP semantic conventions. Without it the FastAPI
 # instrumentation emits the legacy set — `http.server.duration` in

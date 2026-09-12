@@ -6,7 +6,7 @@ in the unit tier with no container.
 
 from __future__ import annotations
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     AuthorisationId,
     CustomerId,
     Money,
@@ -14,7 +14,7 @@ from reference_service.domain.order import (
     OrderId,
     OrderLine,
 )
-from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
+from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
 
 
 def order_values(order: Order) -> dict[str, object]:

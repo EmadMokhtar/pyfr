@@ -10,13 +10,13 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
-from reference_service.config_check import (
+from {{ cookiecutter.package_name }}.config_check import (
     MASK,
     main,
     mask_url_credentials,
     resolved_configuration,
 )
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.settings import Settings
 
 _SAFE = string.ascii_letters + string.digits
 
@@ -80,7 +80,7 @@ def test_main_prints_one_json_object_and_returns_zero(
     assert main(env_file=None) == 0
 
     printed = json.loads(capsys.readouterr().out)
-    assert printed["service_name"] == "reference-service"
+    assert printed["service_name"] == "{{ cookiecutter.project_slug }}"
     assert printed["log"]["level"] == "info"
 
 

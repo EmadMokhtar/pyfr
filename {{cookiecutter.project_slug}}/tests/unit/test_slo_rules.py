@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 import yaml
 
-from reference_service.observability.slo import (
+from {{ cookiecutter.package_name }}.observability.slo import (
     ERROR_BUDGET,
     SLO_LATENCY_THRESHOLD_SECONDS,
     excluded_routes_pattern,

@@ -23,9 +23,9 @@ import structlog
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from reference_service.domain.order import OrderId
-from reference_service.infrastructure.errors import StorageUnavailableError
-from reference_service.settings import StorageSettings
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.infrastructure.errors import StorageUnavailableError
+from {{ cookiecutter.package_name }}.settings import StorageSettings
 
 _logger = structlog.get_logger(__name__)
 

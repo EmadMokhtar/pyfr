@@ -1,9 +1,9 @@
-"""PyFr reference service."""
+"""{{ cookiecutter.description }}"""
 
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("reference-service")
+    __version__ = version("{{ cookiecutter.project_slug }}")
 except PackageNotFoundError:  # pragma: no cover - only when not installed
     __version__ = "0.0.0"
 

@@ -57,7 +57,7 @@ RUN /usr/local/bin/python -m pip uninstall -y pip
 # inherits the repository's visibility and README. Version and revision
 # are stamped at publish time (`just publish-images`); they are not known
 # here. Becomes a template variable in M7.
-LABEL org.opencontainers.image.source="https://github.com/EmadMokhtar/pyfr"
+LABEL org.opencontainers.image.source="https://github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"
 
 WORKDIR /app
 COPY --from=builder --chown=app:app /app/.venv /app/.venv
@@ -68,14 +68,14 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1
 
 USER app
-EXPOSE 8000
+EXPOSE {{ cookiecutter.http_port }}
 STOPSIGNAL SIGTERM
 
 # No curl in this image, so the health check uses the interpreter we have.
 # Reads APP_HTTP_PORT the same way the CMD below does, so the two cannot
 # drift out of sync if the port is overridden at runtime.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["python", "-c", "import os,urllib.request,sys; port = os.environ.get('APP_HTTP_PORT', '8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz', timeout=2).status == 200 else 1)"]
+    CMD ["python", "-c", "import os,urllib.request,sys; port = os.environ.get('APP_HTTP_PORT', '{{ cookiecutter.http_port }}'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/healthz', timeout=2).status == 200 else 1)"]
 
 # Shell form with an explicit `exec`, not exec-form CMD with a literal
 # --port: APP_HTTP_PORT is a runtime setting (see settings.py), so it is
@@ -86,4 +86,4 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
 #
 # --no-access-log: our own middleware emits the structured access record.
 # --timeout-graceful-shutdown: finish in-flight requests on SIGTERM, then stop.
-CMD ["sh", "-c", "exec uvicorn reference_service.main:create_app --factory --host 0.0.0.0 --port \"${APP_HTTP_PORT:-8000}\" --no-access-log --timeout-graceful-shutdown 30"]
+CMD ["sh", "-c", "exec uvicorn {{ cookiecutter.package_name }}.main:create_app --factory --host 0.0.0.0 --port \"${APP_HTTP_PORT:-{{ cookiecutter.http_port }}}\" --no-access-log --timeout-graceful-shutdown 30"]

@@ -69,7 +69,7 @@ def test_no_panel_hard_codes_the_service_name(path: Path) -> None:
     name, dashboard = path.name, _load(path)
     for panel in dashboard["panels"]:
         for target in panel["targets"]:
-            assert "reference-service" not in target["expr"], (
+            assert "{{ cookiecutter.project_slug }}" not in target["expr"], (
                 f"{name}: panel {panel['title']!r} hard-codes the service name"
             )
 

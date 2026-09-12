@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from reference_service.container import ReadinessRegistry
+from {{ cookiecutter.package_name }}.container import ReadinessRegistry
 
 pytestmark = pytest.mark.asyncio
 

@@ -19,8 +19,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Response, status
 from pydantic import BaseModel, Field
 
-from reference_service import __version__
-from reference_service.api.deps import ContainerDep
+from {{ cookiecutter.package_name }} import __version__
+from {{ cookiecutter.package_name }}.api.deps import ContainerDep
 
 
 class LivenessResponse(BaseModel):

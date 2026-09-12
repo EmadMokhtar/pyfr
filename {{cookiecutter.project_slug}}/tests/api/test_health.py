@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from reference_service import __version__
-from reference_service.main import create_app
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }} import __version__
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.settings import Settings
 
 
 def test_healthz_reports_alive_with_the_running_version(client: TestClient) -> None:

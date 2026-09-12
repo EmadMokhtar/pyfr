@@ -10,13 +10,13 @@ from uuid import uuid4
 
 import pytest
 
-from reference_service.domain.order import OrderId
-from reference_service.infrastructure.errors import StorageUnavailableError
-from reference_service.infrastructure.storage.receipt_store import (
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.infrastructure.errors import StorageUnavailableError
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
     S3ReceiptStore,
     receipt_key,
 )
-from reference_service.settings import StorageSettings
+from {{ cookiecutter.package_name }}.settings import StorageSettings
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -94,7 +94,7 @@ async def test_a_missing_bucket_is_an_error_not_an_empty_result(
     """NoSuchBucket must NOT be swallowed as None. If it were, every request
     would re-render and re-attempt a write that cannot succeed, and the
     service would look healthy while storing nothing."""
-    from reference_service.infrastructure.storage.client import (
+    from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
         build_client_config,
         build_s3_session,
     )
@@ -112,7 +112,7 @@ async def test_an_unreachable_endpoint_raises_storage_unavailable(
     """Port 1 is reserved and never has a listener, so this exercises the
     BotoCoreError branch — connection failures, which share no base class
     with ClientError and would otherwise escape as a 500."""
-    from reference_service.infrastructure.storage.client import (
+    from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
         build_client_config,
         build_s3_session,
     )

@@ -7,7 +7,7 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     AuthorisationId,
     CustomerId,
     Money,
@@ -16,7 +16,7 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.domain.payments import Authorisation, PaymentGateway
+from {{ cookiecutter.package_name }}.domain.payments import Authorisation, PaymentGateway
 
 
 def money(amount: str, currency: str = "EUR") -> Money:

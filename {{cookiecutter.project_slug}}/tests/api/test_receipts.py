@@ -19,25 +19,25 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from reference_service.api.deps import get_orders, get_receipts
-from reference_service.api.v1.schemas import ReceiptResponse
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.api.deps import get_orders, get_receipts
+from {{ cookiecutter.package_name }}.api.v1.schemas import ReceiptResponse
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
     OrderId,
     OrderLine,
 )
-from reference_service.domain.receipt_render import render_receipt
-from reference_service.infrastructure.errors import StorageUnavailableError
-from reference_service.infrastructure.memory.order_repository import (
+from {{ cookiecutter.package_name }}.domain.receipt_render import render_receipt
+from {{ cookiecutter.package_name }}.infrastructure.errors import StorageUnavailableError
+from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
-from reference_service.infrastructure.memory.receipt_store import (
+from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
-from reference_service.main import create_app
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.settings import Settings
 
 
 def a_payload() -> dict[str, object]:

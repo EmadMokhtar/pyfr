@@ -5,7 +5,7 @@ from collections.abc import Iterator
 import pytest
 import structlog
 
-from reference_service.observability.logging import configure_logging
+from {{ cookiecutter.package_name }}.observability.logging import configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -42,14 +42,14 @@ def test_records_carry_the_three_static_resource_attributes(
         environment="production",
         level="info",
         levels={},
-        service_name="reference-service",
+        service_name="{{ cookiecutter.project_slug }}",
         service_version="1.2.3",
     )
 
     structlog.get_logger().info("order.placed")
 
     payload = json.loads(capsys.readouterr().out.strip())
-    assert payload["service.name"] == "reference-service"
+    assert payload["service.name"] == "{{ cookiecutter.project_slug }}"
     assert payload["service.version"] == "1.2.3"
     assert payload["deployment.environment"] == "production"
 
@@ -66,14 +66,14 @@ def test_a_standard_library_record_also_carries_resource_attributes(
         environment="production",
         level="info",
         levels={},
-        service_name="reference-service",
+        service_name="{{ cookiecutter.project_slug }}",
         service_version="1.2.3",
     )
 
     logging.getLogger("some.library").warning("connection retried")
 
     payload = json.loads(capsys.readouterr().out.strip())
-    assert payload["service.name"] == "reference-service"
+    assert payload["service.name"] == "{{ cookiecutter.project_slug }}"
     assert payload["service.version"] == "1.2.3"
     assert payload["deployment.environment"] == "production"
 
@@ -144,7 +144,7 @@ def test_a_uvicorn_record_gets_the_same_shape_as_everything_else(
     assert payload["event"] == "application shutdown complete"
     assert payload["level"] == "warning"
     assert payload["logger"] == "uvicorn.error"
-    assert payload["service.name"] == "reference-service"
+    assert payload["service.name"] == "{{ cookiecutter.project_slug }}"
     assert "timestamp" in payload
 
 

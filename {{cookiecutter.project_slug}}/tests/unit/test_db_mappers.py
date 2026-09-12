@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     CustomerId,
     Money,
     Order,
@@ -16,12 +16,12 @@ from reference_service.domain.order import (
     OrderLine,
     total_of,
 )
-from reference_service.infrastructure.db.mappers import (
+from {{ cookiecutter.package_name }}.infrastructure.db.mappers import (
     line_values,
     order_values,
     to_domain,
 )
-from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
+from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
 
 
 def make_order(internal_note: str | None = None) -> Order:

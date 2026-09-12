@@ -5,10 +5,10 @@ import pytest
 from pydantic import ValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.domain.errors import OrderNotFoundError, PaymentDeclinedError
-from reference_service.domain.order import OrderId
-from reference_service.infrastructure.errors import PaymentUnavailableError
-from reference_service.services.order import (
+from {{ cookiecutter.package_name }}.domain.errors import OrderNotFoundError, PaymentDeclinedError
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
+from {{ cookiecutter.package_name }}.services.order import (
     GetOrder,
     PlaceOrder,
     PlaceOrderCommand,
@@ -253,9 +253,9 @@ async def test_a_use_case_defect_is_not_reported_as_client_error(
     """
     from decimal import Decimal
 
-    from reference_service.domain.order import Money
-    from reference_service.services import order as order_module
-    from reference_service.services.errors import ServiceDefectError
+    from {{ cookiecutter.package_name }}.domain.order import Money
+    from {{ cookiecutter.package_name }}.services import order as order_module
+    from {{ cookiecutter.package_name }}.services.errors import ServiceDefectError
 
     monkeypatch.setattr(
         order_module,
@@ -286,9 +286,9 @@ async def test_a_use_case_defect_does_not_reach_the_repository(
     """Nothing is written when the aggregate could not be built."""
     from decimal import Decimal
 
-    from reference_service.domain.order import Money
-    from reference_service.services import order as order_module
-    from reference_service.services.errors import ServiceDefectError
+    from {{ cookiecutter.package_name }}.domain.order import Money
+    from {{ cookiecutter.package_name }}.services import order as order_module
+    from {{ cookiecutter.package_name }}.services.errors import ServiceDefectError
 
     monkeypatch.setattr(
         order_module,

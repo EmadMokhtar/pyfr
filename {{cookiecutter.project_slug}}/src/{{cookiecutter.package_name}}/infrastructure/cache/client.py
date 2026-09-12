@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from redis.asyncio import ConnectionPool, Redis
 
-from reference_service.settings import CacheSettings
+from {{ cookiecutter.package_name }}.settings import CacheSettings
 
 
 def build_redis_client(settings: CacheSettings) -> Redis:

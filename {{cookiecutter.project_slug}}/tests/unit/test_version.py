@@ -1,6 +1,6 @@
-import reference_service
+import {{ cookiecutter.package_name }}
 
 
 def test_package_exposes_a_version() -> None:
-    assert isinstance(reference_service.__version__, str)
-    assert reference_service.__version__ != ""
+    assert isinstance({{ cookiecutter.package_name }}.__version__, str)
+    assert {{ cookiecutter.package_name }}.__version__ != ""

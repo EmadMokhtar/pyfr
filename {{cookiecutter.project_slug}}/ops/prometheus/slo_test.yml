@@ -19,17 +19,17 @@ tests:
   - interval: 1m
     name: health probe traffic does not dilute the error ratio
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="200"}'
         values: "0+9x20"
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="500"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="500"}'
         values: "0+1x20"
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/readyz",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/readyz",http_response_status_code="200"}'
         values: "0+1000x20"
     promql_expr_test:
       - expr: job:slo_availability_errors:ratio_rate5m
         eval_time: 20m
         exp_samples:
-          - labels: 'job:slo_availability_errors:ratio_rate5m{job="reference-service"}'
+          - labels: 'job:slo_availability_errors:ratio_rate5m{job="{{ cookiecutter.project_slug }}"}'
             value: 0.1
 
   # A service with no 5xx at all must report 0, not nothing. Without the
@@ -40,13 +40,13 @@ tests:
   - interval: 1m
     name: a service with no errors reports zero, not nothing
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="200"}'
         values: "0+10x20"
     promql_expr_test:
       - expr: job:slo_availability_errors:ratio_rate5m
         eval_time: 20m
         exp_samples:
-          - labels: 'job:slo_availability_errors:ratio_rate5m{job="reference-service"}'
+          - labels: 'job:slo_availability_errors:ratio_rate5m{job="{{ cookiecutter.project_slug }}"}'
             value: 0
 
   # Every request slower than the threshold: the latency indicator must
@@ -54,31 +54,31 @@ tests:
   - interval: 1m
     name: requests above the threshold are latency errors
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="200"}'
         values: "0+10x20"
       # Nothing landed in the 0.3 bucket, so every request was slower.
-      - series: 'http_server_request_duration_seconds_bucket{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200",le="0.3"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="200",le="0.3"}'
         values: "0+0x20"
     promql_expr_test:
       - expr: job:slo_latency_errors:ratio_rate5m
         eval_time: 20m
         exp_samples:
-          - labels: 'job:slo_latency_errors:ratio_rate5m{job="reference-service"}'
+          - labels: 'job:slo_latency_errors:ratio_rate5m{job="{{ cookiecutter.project_slug }}"}'
             value: 1
 
   # And the healthy direction: everything inside the threshold is 0 bad.
   - interval: 1m
     name: requests below the threshold are not latency errors
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="200"}'
         values: "0+10x20"
-      - series: 'http_server_request_duration_seconds_bucket{job="reference-service",http_route="/api/v1/orders",http_response_status_code="200",le="0.3"}'
+      - series: 'http_server_request_duration_seconds_bucket{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="200",le="0.3"}'
         values: "0+10x20"
     promql_expr_test:
       - expr: job:slo_latency_errors:ratio_rate5m
         eval_time: 20m
         exp_samples:
-          - labels: 'job:slo_latency_errors:ratio_rate5m{job="reference-service"}'
+          - labels: 'job:slo_latency_errors:ratio_rate5m{job="{{ cookiecutter.project_slug }}"}'
             value: 0
 
   # A sustained 100% error rate must page, and must page on the FAST rule
@@ -86,7 +86,7 @@ tests:
   - interval: 1m
     name: a total outage triggers the fast burn page
     input_series:
-      - series: 'http_server_request_duration_seconds_count{job="reference-service",http_route="/api/v1/orders",http_response_status_code="500"}'
+      - series: 'http_server_request_duration_seconds_count{job="{{ cookiecutter.project_slug }}",http_route="/api/v1/orders",http_response_status_code="500"}'
         values: "0+10x120"
     alert_rule_test:
       - eval_time: 90m
@@ -95,9 +95,9 @@ tests:
           - exp_labels:
               severity: page
               slo: availability
-              job: reference-service
+              job: {{ cookiecutter.project_slug }}
             exp_annotations:
-              summary: "reference-service is burning its availability budget 14.4x too fast"
+              summary: "{{ cookiecutter.project_slug }} is burning its availability budget 14.4x too fast"
               description: >-
                 At this rate the entire 30-day error budget is gone in about
                 two days. Something is broken now, not drifting.

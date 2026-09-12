@@ -8,13 +8,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
-from reference_service.api.errors import register_error_handlers, status_for
-from reference_service.api.middleware import CORRELATION_HEADER, CorrelationIdMiddleware
-from reference_service.domain.errors import DomainError, OrderNotFoundError
-from reference_service.domain.order import OrderId
-from reference_service.main import create_app
-from reference_service.observability.logging import configure_logging
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.api.errors import register_error_handlers, status_for
+from {{ cookiecutter.package_name }}.api.middleware import CORRELATION_HEADER, CorrelationIdMiddleware
+from {{ cookiecutter.package_name }}.domain.errors import DomainError, OrderNotFoundError
+from {{ cookiecutter.package_name }}.domain.order import OrderId
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.observability.logging import configure_logging
+from {{ cookiecutter.package_name }}.settings import Settings
 
 
 @pytest.fixture(autouse=True)
@@ -242,8 +242,8 @@ def test_a_service_defect_is_a_500_not_a_422(settings: Settings) -> None:
     """
     from decimal import Decimal
 
-    from reference_service.domain.order import Money
-    from reference_service.services import order as order_module
+    from {{ cookiecutter.package_name }}.domain.order import Money
+    from {{ cookiecutter.package_name }}.services import order as order_module
 
     with TestClient(create_app(settings), raise_server_exceptions=False) as client:
         with pytest.MonkeyPatch.context() as patch:
@@ -352,17 +352,17 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
     """
     from decimal import Decimal
 
-    from reference_service.api.deps import get_orders
-    from reference_service.domain.order import (
+    from {{ cookiecutter.package_name }}.api.deps import get_orders
+    from {{ cookiecutter.package_name }}.domain.order import (
         CustomerId,
         Money,
         Order,
         OrderLine,
         total_of,
     )
-    from reference_service.infrastructure.db.mappers import line_values, order_values
-    from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
-    from reference_service.infrastructure.db.order_repository import (
+    from {{ cookiecutter.package_name }}.infrastructure.db.mappers import line_values, order_values
+    from {{ cookiecutter.package_name }}.infrastructure.db.models import OrderLineRow, OrderRow
+    from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
         PostgresOrderRepository,
     )
 

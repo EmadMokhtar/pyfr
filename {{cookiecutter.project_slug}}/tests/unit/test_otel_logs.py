@@ -14,7 +14,7 @@ from opentelemetry.sdk._logs.export import (
     SimpleLogRecordProcessor,
 )
 
-from reference_service.observability.logging import configure_logging
+from {{ cookiecutter.package_name }}.observability.logging import configure_logging
 
 
 @pytest.fixture(autouse=True)

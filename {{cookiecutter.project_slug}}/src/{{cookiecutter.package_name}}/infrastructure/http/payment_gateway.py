@@ -20,15 +20,15 @@ import httpx
 import stamina
 import structlog
 
-from reference_service.domain.errors import PaymentDeclinedError
-from reference_service.domain.order import AuthorisationId, Money, OrderId
-from reference_service.domain.payments import Authorisation
-from reference_service.infrastructure.errors import PaymentUnavailableError
-from reference_service.infrastructure.http.breaker import (
+from {{ cookiecutter.package_name }}.domain.errors import PaymentDeclinedError
+from {{ cookiecutter.package_name }}.domain.order import AuthorisationId, Money, OrderId
+from {{ cookiecutter.package_name }}.domain.payments import Authorisation
+from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
+from {{ cookiecutter.package_name }}.infrastructure.http.breaker import (
     CircuitBreaker,
     CircuitOpenError,
 )
-from reference_service.infrastructure.http.client import is_retryable
+from {{ cookiecutter.package_name }}.infrastructure.http.client import is_retryable
 
 # Statuses that are ANSWERS rather than failures: the gateway considered
 # the request and replied. Everything else is a failure the breaker and

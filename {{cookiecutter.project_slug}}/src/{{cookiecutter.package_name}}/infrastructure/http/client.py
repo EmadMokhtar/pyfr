@@ -12,7 +12,7 @@ from collections.abc import Mapping
 
 import httpx
 
-from reference_service.settings import HttpClientSettings
+from {{ cookiecutter.package_name }}.settings import HttpClientSettings
 
 # Statuses where retrying is safe AND might help.
 #

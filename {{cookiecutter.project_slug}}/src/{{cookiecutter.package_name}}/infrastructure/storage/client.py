@@ -14,7 +14,7 @@ from __future__ import annotations
 import aioboto3
 from botocore.config import Config
 
-from reference_service.settings import StorageSettings
+from {{ cookiecutter.package_name }}.settings import StorageSettings
 
 
 def build_s3_session(settings: StorageSettings) -> aioboto3.Session:

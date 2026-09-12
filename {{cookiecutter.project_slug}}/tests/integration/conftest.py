@@ -41,17 +41,17 @@ from testcontainers.community.redis import RedisContainer
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
-from reference_service.infrastructure.cache.client import build_redis_client
-from reference_service.infrastructure.db.engine import (
+from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_redis_client
+from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
-from reference_service.infrastructure.storage.client import (
+from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
 )
-from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
-from reference_service.settings import CacheSettings, DatabaseSettings, StorageSettings
+from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import S3ReceiptStore
+from {{ cookiecutter.package_name }}.settings import CacheSettings, DatabaseSettings, StorageSettings
 from tests.compose_images import compose_image, dockerfile_base_image
 
 # Read from compose.yaml and Dockerfile.migrations rather than pinned here

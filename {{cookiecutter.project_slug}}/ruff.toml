@@ -38,4 +38,4 @@ allowed-confusables = ["–"]
 "scripts/*" = ["S603", "S607"]
 
 [lint.isort]
-known-first-party = ["reference_service", "scripts"]
+known-first-party = ["{{ cookiecutter.package_name }}", "scripts"]

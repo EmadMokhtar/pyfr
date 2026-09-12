@@ -25,7 +25,7 @@ EXCLUDED_FROM_ACCESS_LOG = frozenset({"/healthz", "/readyz", "/startupz"})
 # at the fallback below for why this is not the raw path.
 UNMATCHED_ROUTE = "<unmatched>"
 
-_logger = structlog.get_logger("reference_service.access")
+_logger = structlog.get_logger("{{ cookiecutter.package_name }}.access")
 
 _PATH_PARAM = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)(?::[^}]+)?\}")
 

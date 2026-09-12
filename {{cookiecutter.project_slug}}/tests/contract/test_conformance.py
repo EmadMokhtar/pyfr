@@ -15,8 +15,8 @@ import warnings
 import schemathesis
 from schemathesis.python.asgi import shutdown_lifespans
 
-from reference_service.main import create_app
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.settings import Settings
 from tests.conftest import no_app_env_vars
 
 # `no_app_env_vars()` around an explicit, environment-free `Settings`,

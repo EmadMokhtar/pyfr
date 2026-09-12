@@ -2,7 +2,7 @@
 # Service level objectives for the reference service.
 #
 # EVERY NUMBER BELOW IS ALSO A PYTHON CONSTANT in
-# src/reference_service/observability/slo.py, and
+# src/{{ cookiecutter.package_name }}/observability/slo.py, and
 # tests/unit/test_slo_rules.py fails if the two disagree. Change one, change
 # the other, or the gate stops the commit.
 #

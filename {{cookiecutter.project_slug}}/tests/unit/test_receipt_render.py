@@ -13,7 +13,7 @@ import json
 from decimal import Decimal
 from uuid import UUID
 
-from reference_service.domain.order import (
+from {{ cookiecutter.package_name }}.domain.order import (
     AuthorisationId,
     CustomerId,
     Money,
@@ -21,7 +21,7 @@ from reference_service.domain.order import (
     OrderId,
     OrderLine,
 )
-from reference_service.domain.receipt_render import (
+from {{ cookiecutter.package_name }}.domain.receipt_render import (
     RECEIPT_SCHEMA_VERSION,
     render_receipt,
 )

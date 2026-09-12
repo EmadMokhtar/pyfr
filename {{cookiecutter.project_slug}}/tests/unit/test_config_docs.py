@@ -16,7 +16,7 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel, Field
 
-from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
+from {{ cookiecutter.package_name }}.observability.redaction import DEFAULT_REDACT_FIELDS
 
 # scripts/ is not an installed package; the generator is a build tool that
 # lives beside the code it reads.
@@ -383,7 +383,7 @@ def test_env_example_comments_out_variables_with_no_default() -> None:
 
 def test_env_example_sets_variables_that_have_defaults() -> None:
     rendered = render_env_example()
-    assert "\nAPP_HTTP_PORT=8000" in rendered
+    assert "\nAPP_HTTP_PORT={{ cookiecutter.http_port }}" in rendered
     assert "\nAPP_LOG__LEVEL=info" in rendered
 
 
@@ -442,7 +442,7 @@ def test_generated_env_example_starts_the_service_with_no_backends(
     tests only checked which lines were commented, never whether the file
     loaded.
     """
-    from reference_service.settings import Settings
+    from {{ cookiecutter.package_name }}.settings import Settings
 
     env_file = tmp_path / ".env"
     env_file.write_text(render_env_example(), encoding="utf-8")

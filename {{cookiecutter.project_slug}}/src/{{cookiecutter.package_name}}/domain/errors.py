@@ -7,7 +7,7 @@ transport protocol, and it lives in api/errors.py.
 
 from __future__ import annotations
 
-from reference_service.domain.order import OrderId
+from {{ cookiecutter.package_name }}.domain.order import OrderId
 
 
 class DomainError(Exception):

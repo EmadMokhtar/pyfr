@@ -5,8 +5,8 @@ from contextlib import contextmanager
 import pytest
 from fastapi.testclient import TestClient
 
-from reference_service.main import create_app
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.settings import Settings
 
 
 @contextmanager
@@ -31,7 +31,7 @@ def no_app_env_vars() -> Iterator[None]:
     `os.environ` unconditionally, regardless of that argument. Confirmed
     directly: with `APP_SERVICE_NAME=zzz` set, `Settings(_env_file=None)
     .service_name` is `"zzz"`, not the field's own default
-    `"reference-service"` — the exact leak this function exists to close.
+    `"{{ cookiecutter.project_slug }}"` — the exact leak this function exists to close.
     """
     removed = {
         key: os.environ.pop(key) for key in list(os.environ) if key.startswith("APP_")

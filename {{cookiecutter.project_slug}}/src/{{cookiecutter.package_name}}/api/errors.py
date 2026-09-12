@@ -19,13 +19,13 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from reference_service.api.middleware import CORRELATION_HEADER, _route_template
-from reference_service.domain.errors import (
+from {{ cookiecutter.package_name }}.api.middleware import CORRELATION_HEADER, _route_template
+from {{ cookiecutter.package_name }}.domain.errors import (
     DomainError,
     OrderNotFoundError,
     PaymentDeclinedError,
 )
-from reference_service.infrastructure.errors import (
+from {{ cookiecutter.package_name }}.infrastructure.errors import (
     PaymentUnavailableError,
     StorageUnavailableError,
 )

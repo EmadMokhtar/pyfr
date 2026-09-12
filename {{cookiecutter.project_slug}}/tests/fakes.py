@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from reference_service.domain.errors import PaymentDeclinedError
-from reference_service.domain.order import AuthorisationId, Money, Order, OrderId
-from reference_service.domain.payments import Authorisation
-from reference_service.infrastructure.errors import PaymentUnavailableError
+from {{ cookiecutter.package_name }}.domain.errors import PaymentDeclinedError
+from {{ cookiecutter.package_name }}.domain.order import AuthorisationId, Money, Order, OrderId
+from {{ cookiecutter.package_name }}.domain.payments import Authorisation
+from {{ cookiecutter.package_name }}.infrastructure.errors import PaymentUnavailableError
 
 
 class FakeOrderRepository:

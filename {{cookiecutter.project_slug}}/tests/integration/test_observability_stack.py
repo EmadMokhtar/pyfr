@@ -27,9 +27,9 @@ from testcontainers.core.container import DockerContainer
 # filterwarnings = ["error"] turns into a test error.
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from reference_service.main import create_app
-from reference_service.observability.otel import build_providers, instrument_fastapi
-from reference_service.settings import Settings
+from {{ cookiecutter.package_name }}.main import create_app
+from {{ cookiecutter.package_name }}.observability.otel import build_providers, instrument_fastapi
+from {{ cookiecutter.package_name }}.settings import Settings
 from tests.compose_images import compose_image
 
 pytestmark = pytest.mark.integration
@@ -174,7 +174,7 @@ def test_a_real_request_reaches_prometheus_with_the_stable_names(
         assert series, "no http.server.request.duration reached Prometheus"
 
         labels = series[0]["metric"]
-        assert labels["job"] == "reference-service"
+        assert labels["job"] == "{{ cookiecutter.project_slug }}"
         assert labels["service_version"] == "1.2.3"
         assert "http_route" in labels, "legacy semantic conventions leaked in"
         assert "http_target" not in labels

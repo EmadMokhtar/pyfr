@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import PostgresDsn, TypeAdapter
 
-from reference_service.infrastructure.db.engine import async_dsn
+from {{ cookiecutter.package_name }}.infrastructure.db.engine import async_dsn
 
 _dsn = TypeAdapter(PostgresDsn)
 
@@ -92,8 +92,8 @@ def test_the_postgres_adapter_satisfies_the_repository_port() -> None:
     follows only confirms, at runtime, that the named attributes exist;
     runtime_checkable does not check signatures at all.
     """
-    from reference_service.domain.repositories import OrderRepository
-    from reference_service.infrastructure.db.order_repository import (
+    from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+    from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
         PostgresOrderRepository,
     )
 

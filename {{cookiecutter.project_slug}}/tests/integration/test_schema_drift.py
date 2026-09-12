@@ -20,7 +20,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from reference_service.infrastructure.db.models import Base
+from {{ cookiecutter.package_name }}.infrastructure.db.models import Base
 
 
 def _include_name(name: str | None, type_: str, parent_names: dict[str, Any]) -> bool:

@@ -41,7 +41,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from reference_service.observability.redaction import DEFAULT_REDACT_FIELDS
+from {{ cookiecutter.package_name }}.observability.redaction import DEFAULT_REDACT_FIELDS
 
 # Exit code 78 is EX_CONFIG from sysexits.h: "configuration error".
 EXIT_CONFIG_ERROR = 78
@@ -560,14 +560,14 @@ class Settings(BaseSettings):
         ),
     )
     service_name: str = Field(
-        default="reference-service",
+        default="{{ cookiecutter.project_slug }}",
         description=(
             "The OpenAPI document's title, and the `service.name` field on "
             "every log record."
         ),
     )
     http_port: int = Field(
-        default=8000,
+        default={{ cookiecutter.http_port }},
         ge=1,
         le=65535,
         description=(

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from reference_service.domain.order import AuthorisationId, Money, OrderId
-from reference_service.domain.payments import Authorisation
+from {{ cookiecutter.package_name }}.domain.order import AuthorisationId, Money, OrderId
+from {{ cookiecutter.package_name }}.domain.payments import Authorisation
 
 
 class InMemoryPaymentGateway:

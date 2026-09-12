@@ -27,7 +27,7 @@ from opentelemetry.instrumentation.logging.handler import LoggingHandler
 from opentelemetry.sdk._logs import LoggerProvider
 from structlog.types import Processor
 
-from reference_service.observability.redaction import (
+from {{ cookiecutter.package_name }}.observability.redaction import (
     DEFAULT_REDACT_FIELDS,
     RedactingFilter,
     make_redactor,
@@ -139,7 +139,7 @@ def configure_logging(
     levels: Mapping[str, str],
     # Replaced wholesale by APP_LOG__REDACT_FIELDS; see redaction.py.
     redact_fields: Collection[str] = DEFAULT_REDACT_FIELDS,
-    service_name: str = "reference-service",
+    service_name: str = "{{ cookiecutter.project_slug }}",
     service_version: str = "0.0.0",
     logger_provider: LoggerProvider | None = None,
 ) -> None:

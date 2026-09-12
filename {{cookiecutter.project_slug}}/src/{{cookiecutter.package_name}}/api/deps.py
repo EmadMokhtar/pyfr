@@ -10,12 +10,12 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
-from reference_service.container import Container
-from reference_service.domain.payments import PaymentGateway
-from reference_service.domain.receipts import ReceiptStore
-from reference_service.domain.repositories import OrderRepository
-from reference_service.services.order import GetOrder, PlaceOrder
-from reference_service.services.receipt import GetReceipt
+from {{ cookiecutter.package_name }}.container import Container
+from {{ cookiecutter.package_name }}.domain.payments import PaymentGateway
+from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
+from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+from {{ cookiecutter.package_name }}.services.order import GetOrder, PlaceOrder
+from {{ cookiecutter.package_name }}.services.receipt import GetReceipt
 
 
 def get_container(request: Request) -> Container:

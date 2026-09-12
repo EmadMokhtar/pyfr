@@ -1,7 +1,7 @@
 """Print the resolved configuration with every secret masked.
 
     just config-check
-    docker compose run --rm app python -m reference_service.config_check
+    docker compose run --rm app python -m {{ cookiecutter.package_name }}.config_check
 
 Loads settings exactly as the service does at startup, so a malformed
 environment exits with the same readable message and the same exit code
@@ -25,7 +25,7 @@ import sys
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from reference_service.settings import Settings, load_settings
+from {{ cookiecutter.package_name }}.settings import Settings, load_settings
 
 # The same string pydantic prints for a SecretStr, so the output reads as
 # one convention rather than two.
