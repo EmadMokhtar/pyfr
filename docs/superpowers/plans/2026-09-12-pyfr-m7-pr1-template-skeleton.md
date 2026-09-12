@@ -208,8 +208,11 @@ line-length = 88
 target-version = "py313"
 src = ["scripts", "tests"]
 # The template body is Jinja, not Python; it is linted as its render, in
-# examples/reference-service/. The example lints itself with its own copy.
-extend-exclude = ["{{cookiecutter.project_slug}}", "examples"]
+# examples/reference-service/ -- which this file must NOT exclude: the
+# pre-commit hooks pass the example's files with --force-exclude, and an
+# excluded path would be silently skipped. ruff picks the example's own
+# ruff.toml for those files.
+extend-exclude = ["{{cookiecutter.project_slug}}"]
 
 [lint]
 select = [
@@ -242,7 +245,7 @@ known-first-party = [
 ]
 ```
 
-`extend-exclude` keeps `just lint` (below) out of the example and the template body; the pre-commit hooks pass explicit file names with `--force-exclude`, so the same exclusion holds there, and the example is linted by its own `just check`.
+`extend-exclude` keeps every root ruff invocation out of the template body. `just lint` (below) also walks the example — harmless duplication of the example's own `just lint`, and the price of the hooks being able to see it.
 
 - [ ] **Step 2: Write the root pre-commit configuration**
 
@@ -404,7 +407,7 @@ Expected: `0`.
 
 - [ ] **Step 2: Commit**
 
-The root `check-yaml`/`check-toml`/ruff hooks skip the template body (the `exclude` in Task 2); `end-of-file-fixer` and `trailing-whitespace` still run over it and change nothing.
+The root configuration's global `exclude` (Task 2) keeps every hook out of the template body; the rendered example is where those files get checked.
 
 ```bash
 git commit -m "refactor: move the reference service into the template body"
