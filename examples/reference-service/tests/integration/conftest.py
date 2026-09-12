@@ -339,7 +339,7 @@ def minio_container() -> Iterator[MinioContainer]:
     MinioContainer's constructor sets the LEGACY credential variables
     (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). This is now KNOWN, not hedged: a
     divergent-credentials probe against the pinned MINIO_IMAGE
-    (minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
+    (quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
     legacy pair with InvalidAccessKeyId and honours only MINIO_ROOT_USER /
     MINIO_ROOT_PASSWORD, which is why both are set below, to the same
     values, with `.with_env`.

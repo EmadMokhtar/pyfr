@@ -136,6 +136,7 @@ def seed(client: httpx.Client, state_path: Path) -> list[SeededOrder]:
         if order_id is not None:
             existing = client.get(f"{ORDERS_PATH}/{order_id}")
             if existing.status_code == 200:
+                _ensure_receipt(client, order_id)
                 total = _money(existing.json()["total"])
                 result.append(SeededOrder(key, order_id, total, created=False))
                 continue
@@ -153,19 +154,33 @@ def seed(client: httpx.Client, state_path: Path) -> list[SeededOrder]:
         body = created.json()
         order_id = str(body["id"])
 
-        # Once, so the receipt store holds an object per seeded order too.
-        receipt = client.get(f"{ORDERS_PATH}/{order_id}/receipt")
-        if receipt.status_code != 200:
-            raise SeedError(
-                f"GET {ORDERS_PATH}/{order_id}/receipt returned {receipt.status_code}"
-            )
-
-        # Saved after EACH order, not at the end: a failure on the fourth
-        # order must not lose the three ids already issued.
+        # Saved IMMEDIATELY after the POST, before anything else can fail:
+        # the order exists on the server from this moment, and an id that
+        # is not in the file is an order the next run cannot see and will
+        # create again. Per order rather than at the end, for the same
+        # reason -- a failure on the fourth order must not lose the three
+        # ids already issued.
         known[key] = order_id
         _save_state(state_path, known)
+
+        _ensure_receipt(client, order_id)
         result.append(SeededOrder(key, order_id, _money(body["total"]), created=True))
     return result
+
+
+def _ensure_receipt(client: httpx.Client, order_id: str) -> None:
+    """Ask for the order's receipt, so the receipt store holds one per order.
+
+    The endpoint renders and stores the receipt on the first request and
+    serves the stored bytes afterwards, so asking on every run is
+    idempotent -- and it is what lets a run that failed here last time
+    (the order recorded, the receipt never fetched) finish the job.
+    """
+    receipt = client.get(f"{ORDERS_PATH}/{order_id}/receipt")
+    if receipt.status_code != 200:
+        raise SeedError(
+            f"GET {ORDERS_PATH}/{order_id}/receipt returned {receipt.status_code}"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

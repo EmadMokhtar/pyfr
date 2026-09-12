@@ -82,7 +82,9 @@ this service reads. Hand-editing `.env.example` or the table in
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` (ignored by git). Needs Docker, and the same images. |
 | `just security` | `build-images`, then `audit`, `scan` and `sbom` — everything CI's `security` job runs, in the order it runs it. Needs Docker. Not part of `just check-all`, because its result changes with the advisory databases rather than with the code. |
 | `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` on a `docker-container` buildx builder, with no output — proof that both architectures still build, which is what CI's `build` job runs. Creates the builder (`pyfr`) on first use. |
-| `just publish-images VERSION` | Build both platforms of both images and push them to GHCR, tagged `VERSION` and `latest`. Run by `release.yml` after `scan` has passed on the same commit's images; not something to run by hand against `ghcr.io`. |
+| `just publish-images VERSION` | Build both platforms of both images and push them to GHCR under `VERSION` only. Run by `release.yml` after `scan` has passed on the same commit's images; not something to run by hand against `ghcr.io`. |
+| `just scan-published VERSION` | The scan again, over the two images just pushed under `VERSION`, for both platforms. Release only. |
+| `just promote-latest VERSION` | Point `latest` at the pushed `VERSION` index without rebuilding. Release only, after `scan-published`. |
 
 The repository root has its own `just audit`, over the documentation
 toolchain's lock — see [The documentation site](#the-documentation-site)

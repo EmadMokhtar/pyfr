@@ -4,14 +4,16 @@ in-memory adapters with no server and no Docker."""
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from reference_service.api.deps import get_payments
 from reference_service.main import create_app
-from reference_service.seed import SEED_ORDERS, SeedError, main, seed
+from reference_service.seed import ORDERS_PATH, SEED_ORDERS, SeedError, main, seed
 from reference_service.settings import Settings
 from tests.fakes import DecliningPaymentGateway
 
@@ -103,3 +105,33 @@ def test_main_returns_one_when_the_service_is_unreachable(
 
     assert status == 1
     assert "seed failed" in capsys.readouterr().err
+
+
+def test_a_receipt_failure_after_the_post_still_records_the_order(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """The order exists on the server the moment the POST returns, so its id
+    must be in the state file before the receipt is asked for -- otherwise a
+    transient receipt failure makes the next run create a duplicate."""
+    state = tmp_path / "state.json"
+    real_get = client.get
+
+    def get_without_receipts(url: str) -> httpx.Response:
+        if url.endswith("/receipt"):
+            return httpx.Response(503, request=httpx.Request("GET", url))
+        return real_get(url)
+
+    with patch.object(client, "get", side_effect=get_without_receipts):
+        with pytest.raises(SeedError, match="receipt"):
+            seed(client, state)
+
+    recorded = json.loads(state.read_text())["orders"]
+    first_key = next(iter(SEED_ORDERS))
+    assert first_key in recorded
+    assert client.get(f"{ORDERS_PATH}/{recorded[first_key]}").status_code == 200
+
+    # The next run, with receipts working again, creates no duplicate and
+    # finishes the job for the recorded order.
+    second = seed(client, state)
+    assert not any(order.created and order.key == first_key for order in second)
+    assert client.get(f"{ORDERS_PATH}/{recorded[first_key]}/receipt").status_code == 200

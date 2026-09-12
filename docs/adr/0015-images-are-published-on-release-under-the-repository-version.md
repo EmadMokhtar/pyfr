@@ -18,8 +18,12 @@ pushed on every merge, or pushed on release under the repository's tag.
 
 `release.yml` pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
 `ghcr.io/emadmokhtar/pyfr-reference-service-migrations`, for
-`linux/amd64` and `linux/arm64`, tagged with the release's `vX.Y.Z` and
-`latest`, after `scan` has passed on the same commit's images. Nothing is pushed from pull requests or from merges that
+`linux/amd64` and `linux/arm64`, tagged with the release's `vX.Y.Z` after
+`scan` has passed on the same commit's local images. `latest` is created
+afterwards from that pushed index, and only once `scan-published` has
+passed on the pushed digests for both platforms — the artifact people
+pull is what gets verified, and `latest` never names an unscanned image.
+Nothing is pushed from pull requests or from merges that
 do not release — the `publish-images` job runs only `needs: release`
 with `if: needs.release.outputs.released == 'true'`. The
 `org.opencontainers.image.source` label — a static `LABEL` in each

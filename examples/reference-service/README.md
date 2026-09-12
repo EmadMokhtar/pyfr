@@ -16,7 +16,7 @@ the service starts and serves correctly with none of them configured.
   for `just security`, which scans the built images
 - [just](https://github.com/casey/just) — the command runner
 - PostgreSQL 16, Redis 8 and MinIO — none installed locally; pulled as
-  `postgres:16-alpine`, `redis:8-alpine` and the pinned `minio/minio` image by
+  `postgres:16-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
   `just up` and by the integration tests
 
 ## Five-minute start
@@ -71,7 +71,9 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
 | `just security` | `build-images`, `audit`, `scan`, `sbom` — what CI's `security` job runs; not part of `check-all` because its result changes with the advisory databases, not the code |
 | `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` with no output — what CI's `build` job runs |
-| `just publish-images VERSION` | Push both platforms of both images to GHCR under `VERSION` and `latest` — run by the release workflow, not by hand |
+| `just publish-images VERSION` | Push both platforms of both images to GHCR under `VERSION` — run by the release workflow, not by hand |
+| `just scan-published VERSION` | Scan the pushed images for both platforms — release workflow only |
+| `just promote-latest VERSION` | Point `latest` at the scanned `VERSION` — release workflow only |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
 | `just test-contract` | The contract tier: Schemathesis conformance testing over ASGI. The drift check runs in `just test` / `just check` instead — see [Contract governance](#contract-governance) |
 | `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |
@@ -397,10 +399,11 @@ and drop them.
 On release, the repository's workflow builds and scans the
 single-architecture images first, then builds both images for both
 architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
-`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` tagged with the
-repository's version and `latest`. The SBOMs are generated after the push,
-from the published image references, so their subject is the image people
-pull; they are then attached to the GitHub Release. On a pull request the
+`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` under the
+repository's version, scans the pushed digests for both platforms, generates
+the SBOMs from those same references (so their subject is the image people
+pull), and only then points `latest` at that version; the SBOMs are attached
+to the GitHub Release. On a pull request the
 SBOMs come from the local build instead and are uploaded as the `sbom`
 workflow artifact. Nothing is pushed from a pull request. pip is removed from the
 runtime image — it was the only source of findings there — and the image is

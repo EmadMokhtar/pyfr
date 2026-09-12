@@ -24,9 +24,11 @@ where a sentence says otherwise.
 | --- | --- | --- |
 | `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. The same recipe exists at the repository root for the documentation toolchain's own lock. | Every pull request, in CI's `security` job (both locks); every night, in `nightly.yml`. |
 | `just scan` | [Trivy](https://trivy.dev/) over both images, for known vulnerabilities and embedded secrets. Fails on any HIGH or CRITICAL finding that has a fix. | Every pull request, on the freshly built images (`security`); on release, before the push (`release.yml`); every night, on the `latest` tag actually published. |
+| `just scan-published VERSION` | The same scan over the two images just pushed under `VERSION`, for **both** platforms — the exact digests people will pull. | Release only, after the push and before `latest` is created. |
 | `just sbom` | A [CycloneDX](https://cyclonedx.org/) software bill of materials per image, into `sbom/`. | Every pull request, from the local build, uploaded as the `sbom` workflow artifact; on release, from the published image reference after the push, attached to the GitHub Release. |
 | `just build-multiarch` | Both images for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
-| `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given and `latest`. | Release only, in `release.yml`'s `publish-images` job. |
+| `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given — and only the version. | Release only, in `release.yml`'s `publish-images` job. |
+| `just promote-latest VERSION` | Point `latest` at the version's already-pushed index, without rebuilding. | Release only, after `scan-published` has passed. |
 | `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. CI adds the repository root's `just audit` as one more step. Needs Docker. | Locally, by hand. |
 
 Two things follow from that table. `just security` is **not** part of
@@ -56,8 +58,13 @@ removes the `trivy-cache` volume with the others.
 
 Each carries two tags: `vX.Y.Z`, the **repository's** version — the same
 string as the git tag and the GitHub Release — and `latest`, which moves with
-every release. Nothing is pushed from a pull request or from a merge that does
-not release ([ADR 0015](../adr/0015-images-are-published-on-release-under-the-repository-version.md)).
+every release. The two are not written together: the version tag is pushed
+first, the pushed digests are scanned for both platforms, and only then is
+`latest` created from that same index — so `latest` never names an image
+nobody scanned, while a version tag that failed that scan stays in the
+registry as evidence, never promoted. Nothing is pushed from a pull request
+or from a merge that does not release
+([ADR 0015](../adr/0015-images-are-published-on-release-under-the-repository-version.md)).
 
 Each tag is an OCI image index (a manifest list: one tag that points at one
 image per platform) covering `linux/amd64` and `linux/arm64`, so an Apple
@@ -190,10 +197,11 @@ release it is generated **after** the push, from the published reference —
 counterpart — so the document's subject is the image people pull, not a
 local build that was never published (`just publish-images` rebuilds through
 the buildx builder, so the local `:ci` image is a different image ID from
-what reaches the registry). Trivy reads the manifest for the runner's own
-platform, `amd64`, out of the index. The `arm64` image is built from the same
-commit, the same `uv.lock`, the same Dockerfile and the same Debian package
-versions; it differs only in architecture, so its list of components is the
+what reaches the registry). For the SBOM Trivy reads the manifest for the
+runner's own platform, `amd64`, out of the index; the vulnerability scan that
+precedes it (`just scan-published`) reads both. The `arm64` image is built
+from the same commit, the same `uv.lock`, the same Dockerfile and the same
+Debian package versions; it differs only in architecture, so its list of components is the
 same list. One document per image is therefore enough.
 
 To list what is in one:

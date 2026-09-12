@@ -455,12 +455,14 @@ build-multiarch: _buildx-builder
     docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 \
         -f Dockerfile.migrations .
 
-# Build both platforms of both images and push them, tagged with the
-# version given AND `latest`. The version is the REPOSITORY's -- the same
-# string as the git tag and the GitHub Release (ADR 0015) -- and the
-# caller passes it: `just publish-images v0.6.0`. Run by release.yml after
-# `scan` has passed on the same commit's images; not something to run by
-# hand against ghcr.io.
+# Build both platforms of both images and push them under the version
+# given -- and ONLY the version. `latest` is created afterwards by
+# `promote-latest`, once `scan-published` has passed on the pushed
+# digests, so `latest` never points at an image nobody scanned (ADR 0015).
+# The version is the REPOSITORY's -- the same string as the git tag and
+# the GitHub Release -- and the caller passes it: `just publish-images
+# v0.6.0`. Run by release.yml after `scan` has passed on the same commit's
+# local images; not something to run by hand against ghcr.io.
 #
 # `org.opencontainers.image.source` is a static LABEL in each Dockerfile;
 # version and revision are only known here. The registry namespace is a
@@ -474,14 +476,45 @@ publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-b
     docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
         --label "org.opencontainers.image.version={{version}}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-        -t "{{registry}}/pyfr-reference-service:{{version}}" \
-        -t "{{registry}}/pyfr-reference-service:latest" .
+        -t "{{registry}}/pyfr-reference-service:{{version}}" .
     docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
         --label "org.opencontainers.image.version={{version}}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
         -t "{{registry}}/pyfr-reference-service-migrations:{{version}}" \
-        -t "{{registry}}/pyfr-reference-service-migrations:latest" \
         -f Dockerfile.migrations .
+
+# Scan the two images just pushed under `version`, for BOTH platforms.
+# `scan` above gates the push on the local single-architecture build;
+# this is what proves the artifact people will pull -- the exact pushed
+# digest, amd64 and arm64 alike -- carries no fixed HIGH or CRITICAL
+# finding, and it is what `latest` waits for. `--platform` makes Trivy
+# pick that manifest out of the pushed index; without it a remote image
+# is scanned for the host's own architecture only. A loop, unlike `scan`,
+# because two images times two platforms is four otherwise identical
+# commands.
+scan-published version registry="ghcr.io/emadmokhtar":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for image in pyfr-reference-service pyfr-reference-service-migrations; do
+        for platform in linux/amd64 linux/arm64; do
+            docker compose run --rm trivy image --platform "$platform" \
+                --ignorefile /.trivyignore.yaml \
+                --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+                --scanners vuln,secret --no-progress \
+                "{{registry}}/$image:{{version}}"
+        done
+    done
+
+# Point `latest` at the version just published, without rebuilding: the
+# tag is created from the pushed index, so it names exactly the digests
+# `scan-published` verified. Run by release.yml only after that scan.
+promote-latest version registry="ghcr.io/emadmokhtar":
+    docker buildx imagetools create \
+        -t "{{registry}}/pyfr-reference-service:latest" \
+        "{{registry}}/pyfr-reference-service:{{version}}"
+    docker buildx imagetools create \
+        -t "{{registry}}/pyfr-reference-service-migrations:latest" \
+        "{{registry}}/pyfr-reference-service-migrations:{{version}}"
 
 up:
     docker compose up --build
