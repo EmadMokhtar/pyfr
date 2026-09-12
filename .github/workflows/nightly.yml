@@ -27,11 +27,11 @@ jobs:
       run:
         working-directory: examples/reference-service
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - run: uv sync
       - run: just mutants-gate
 
@@ -49,7 +49,7 @@ jobs:
     # action is pointed at the same config file the recipe uses.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: lycheeverse/lychee-action@v2
         with:
           args: --config lychee.toml --no-progress 'docs/**/*.md' README.md '**/*.md'
@@ -78,11 +78,11 @@ jobs:
       TRIVY_USERNAME: ${{ github.actor }}
       TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-      - uses: extractions/setup-just@v2
+      - uses: extractions/setup-just@v4
       - name: Audit the reference service's lock
         run: just audit
       - name: Audit the documentation toolchain's lock
