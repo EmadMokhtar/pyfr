@@ -342,9 +342,8 @@ class PaymentSettings(BaseModel):
     base_url: HttpUrl = Field(
         description=(
             "The payment provider's base URL. **Leave it unset to run on "
-            "the in-memory gateway, which authorises everything** — the "
-            "same arrangement `APP_DATABASE__DSN` has with the in-memory "
-            "repository. `just up` points it at a local stub."
+            "the in-memory gateway, which authorises everything.** "
+            "`just up` points it at a local stub."
         ),
     )
     api_key: SecretStr | None = Field(
@@ -402,9 +401,8 @@ class CacheSettings(BaseModel):
     dsn: RedisDsn = Field(
         description=(
             "Where the order cache lives. **Leave it unset to run with no "
-            "cache at all** — the service reads and writes PostgreSQL "
-            "directly, the same supported arrangement `APP_DATABASE__DSN` "
-            "has with the in-memory repository. See "
+            "cache at all** — the service reads and writes the order "
+            "repository directly. See "
             "[`CachedOrderRepository`]"
             "(../explanation/layers.md#what-a-port-buys-the-caching-decorator)."
         ),
@@ -604,7 +602,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         # pydantic's default rendering embeds the VALUE that failed
         # validation for every field, and for database.dsn that value is
         # the connection string with its password in it — verified: a
-        # malformed `APP_DATABASE__DSN=mysql://app:sup3rs3cr3t@...` printed
+        # malformed database DSN `mysql://app:sup3rs3cr3t@...` printed
         # `input_value='mysql://app:sup3rs3cr3t@...'` to stderr here, in
         # direct contradiction of this module's own docstring ("a missing
         # or malformed variable stops the process ... with a readable

@@ -435,12 +435,12 @@ def test_generated_env_example_starts_the_service_with_no_backends(
     """The file's header promises a working starting point. Prove it.
 
     Every optional group must stay wholly commented out, defaults included.
-    A single active `APP_DATABASE__POOL_SIZE=10` is enough for
-    pydantic-settings to build DatabaseSettings and reject the missing DSN,
-    stopping the service with exit 78 -- which is exactly what the first
-    generated version of this file did, and no test noticed because the
-    tests only checked which lines were commented, never whether the file
-    loaded.
+    A single active variable with a default -- a pool size, say -- is
+    enough for pydantic-settings to build its group and reject the group's
+    missing required fields, stopping the service with exit 78 -- which is
+    exactly what the first generated version of this file did, and no test
+    noticed because the tests only checked which lines were commented,
+    never whether the file loaded.
     """
     from {{ cookiecutter.package_name }}.settings import Settings
 

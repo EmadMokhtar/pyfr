@@ -382,12 +382,12 @@ def render_env_example() -> str:
             section.extend(_wrap_comment(_plain_text(group.doc)))
         if group.optional:
             # The whole block stays commented out, defaults included. Any
-            # single APP_DATABASE__* variable being set -- even one with a
-            # harmless default like POOL_SIZE=10 -- makes pydantic-settings
-            # build DatabaseSettings, which then rejects the missing DSN
-            # and stops the service with exit 78. Absent means the whole
-            # group is absent; that is the supported configuration this
-            # file must start in.
+            # single variable of the group being set -- even one with a
+            # harmless default like a pool size -- makes pydantic-settings
+            # build the group's model, which then rejects its missing
+            # required fields and stops the service with exit 78. Absent
+            # means the whole group is absent; that is the supported
+            # configuration this file must start in.
             section.append(
                 "# Optional. Uncomment the whole block to enable it; leave it "
                 "all commented out to run without."
