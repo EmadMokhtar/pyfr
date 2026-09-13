@@ -104,6 +104,24 @@ def test_regen_mode_leaves_no_git_repository(cookies) -> None:
 
 
 @pytest.mark.parametrize(
+    "answers",
+    [{"database": "mysql"}, {"cache": "memcached"}, {"object_storage": "gcs"}],
+)
+def test_a_backend_answer_outside_its_choices_is_refused_before_any_hook(
+    cookies, answers: dict[str, str]
+) -> None:
+    # cookiecutter validates a choice variable when the override is applied,
+    # before pre_gen_project.py runs, so `database=mysql` can never reach the
+    # Jinja blocks (which would treat it as "not postgres") and the hook's
+    # pruning table (which would treat it as "not none") with two different
+    # meanings. This pins that guard: no project is written at all.
+    result = cookies.bake(extra_context=answers)
+    assert result.exit_code != 0
+    assert result.project_path is None or not result.project_path.exists()
+    assert "choice variable" in str(result.exception)
+
+
+@pytest.mark.parametrize(
     ("answers", "gone", "kept"),
     [
         (

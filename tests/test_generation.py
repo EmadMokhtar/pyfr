@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -480,6 +481,17 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
         assert any(directory.iterdir()), (
             f"empty directory {directory.relative_to(root)}"
         )
+    # The rendered justfile must parse: a recipe left calling a pruned recipe,
+    # or an unbalanced inline tag, shows up here and nowhere else. `just` is
+    # on PATH in CI (extractions/setup-just) and on every contributor machine
+    # this repository's own justfile assumes; skipped, not failed, elsewhere.
+    if shutil.which("just"):
+        listed = subprocess.run(
+            ["just", "--list", "--justfile", str(root / "justfile")],
+            capture_output=True,
+            text=True,
+        )
+        assert listed.returncode == 0, listed.stdout + listed.stderr
     check = ruff(root, "check")
     assert check.returncode == 0, check.stdout + check.stderr
     fmt = ruff(root, "format", "--check")

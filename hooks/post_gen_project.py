@@ -36,6 +36,9 @@ PACKAGE = "{{ cookiecutter.package_name }}"
 # inside mixed files; everything here is deleted outright when its answer is
 # "none". Directories end with "/". tests/test_generation.py carries the same
 # table and asserts that each path exists exactly when its backend is chosen.
+# Only the two declared values can arrive here: cookiecutter refuses an
+# override outside a choice list before any hook runs, so "not none" below
+# always means the backend's own value (tests/test_hooks.py pins that).
 PRUNED: dict[str, list[str]] = {
     "database": [
         "migrations/",

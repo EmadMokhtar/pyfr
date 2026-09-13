@@ -116,9 +116,14 @@ backend with other content — `pyproject.toml`, `compose.yaml`, `settings.py`,
 path belonging to one backend is always deleted by the hook, never emptied
 by Jinja.
 
-Every conditional uses cookiecutter's **left-strip** block tags —
-`{%- if %}`, `{%- elif %}`, `{%- else %}`, `{%- endif %}` — each on its own
-line, never the trim or right-strip forms. A `{%-` tag consumes the newline
+Every conditional in a Python, YAML or TOML file uses cookiecutter's
+**left-strip** block tags — `{%- if %}`, `{%- elif %}`, `{%- else %}`,
+`{%- endif %}` — each on its own line, never the trim or right-strip forms.
+The one exception is a single token inside one line of a shell recipe in
+the `justfile` — a recipe parameter default, an image name in a `for` loop —
+written inline as `{% if … %}…{% endif %}` with no dashes, because splitting
+that line would change the command; a whole recipe, or anything in a
+Python, YAML or TOML file, always takes the own-line form. A `{%-` tag consumes the newline
 and any whitespace before it, so a block's own leading blank line has to sit
 *inside* the block, never before the tag, or the "everything on" render
 loses a blank line the pruned render never had — and that render must stay
