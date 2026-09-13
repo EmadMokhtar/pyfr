@@ -292,12 +292,12 @@ docs-examples:
     # `seed` one-shot, and compose counts a container that has EXITED --
     # even with status 0 -- as a failed wait unless some started service
     # depends on it with service_completed_successfully. Every other
-    # one-shot in compose.yaml is one `app` depends on that way, which is
-    # why none of them ever tripped this; nothing depends on `seed`.
-    # Naming `app` starts exactly its dependency graph, which is the stack
-    # the documented examples need -- none of them relies on seeded data,
-    # and the plan forbids one from doing so, because seeded ids differ
-    # per machine.
+    # one-shot in compose.yaml is one that `app` depends on in that way,
+    # which is why none of them ever tripped this; nothing depends on
+    # `seed`. Naming `app` starts exactly its dependency graph, which is
+    # the stack the documented examples need -- none of them relies on
+    # seeded data, and the plan forbids one from doing so, because seeded
+    # ids differ per machine.
 {%- if cookiecutter.cache == "redis" %}
     # `redis` is named too: `app` deliberately does not depend on it (the
     # cache is optional, fail-open), so naming `app` alone would start the
