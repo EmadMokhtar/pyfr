@@ -349,10 +349,10 @@ minio-console:
 # The project's own git hooks over its own tracked files.
 #
 # pre-commit runs from the root of the enclosing git repository and resolves
-# hook commands there. When this project is generated into a subdirectory of
-# an existing repository — PyFr's own examples/reference-service/ is one —
-# that repository's root configuration owns the hooks and this one cannot
-# run; say so and exit clean rather than fail on paths that do not resolve.
+# hook commands there. When this project is vendored or nested inside
+# another repository, that repository's root configuration owns the hooks
+# and this one cannot run; say so and exit clean rather than fail on paths
+# that do not resolve.
 precommit:
     #!/usr/bin/env bash
     set -euo pipefail

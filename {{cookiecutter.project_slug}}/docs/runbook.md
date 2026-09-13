@@ -238,9 +238,9 @@ the step name says which one.
 
 | Step | What it means |
 | --- | --- |
-| Build both images | A plain build failure in one of the two Dockerfiles. Nothing to do with advisories. |
+| Build the images | A plain build failure in one of the two Dockerfiles. Nothing to do with advisories. |
 | Audit the lock | pip-audit found an advisory against a version pinned in `uv.lock`. |
-| Scan both images | Trivy found a HIGH or CRITICAL vulnerability with a fix available, or an embedded secret, in one of the two images. |
+| Scan the images | Trivy found a HIGH or CRITICAL vulnerability with a fix available, or an embedded secret, in one of the two images. |
 | Write the software bills of materials | Trivy could not write the SBOM — almost always a problem with the image or the Docker socket, not with a dependency. |
 
 Reproduce locally with `just security`, which runs the same recipes in the
@@ -248,8 +248,7 @@ same order and needs Docker.
 
 **Act.**
 
-- **`audit`:** in the project whose lock was named, bump the package and
-  re-run:
+- **`audit`:** bump the package and re-run:
 
     ```bash
     uv lock --upgrade-package <name>

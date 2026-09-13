@@ -23,10 +23,10 @@ We use Dependabot, and we remove every duplicated pin rather than
 policing it. Tool versions live in `uv.lock` alone: the ruff, uv-lock,
 and Commitizen pre-commit hooks are `repo: local` hooks that run the
 locked tools, instead of hooks carrying their own separately pinned
-`rev:`. Commitizen is a root dev dependency, called as
-`uv run --locked --group dev cz` from both the root `justfile` and
-`.github/workflows/release.yml` — one dependency declaration, read by
-every caller. Container image pins live in `compose.yaml` and the two
+`rev:`. Commitizen is a dev dependency, called as `uv run --locked cz`
+from the `justfile`, `.github/workflows/release.yml` and the
+commit-message hook — one dependency declaration, read by every caller.
+Container image pins live in `compose.yaml` and the two
 Dockerfiles only: the integration tests read image versions from there,
 and so does `just o11y-gates`.
 
@@ -49,7 +49,7 @@ data is fetched live, so a stale pinned binary still reports new
 findings — and the `oasdiff` image pinned in
 `scripts/check_contract_compatibility.py` as `tufin/oasdiff:v1.31.0`, a
 pin that predates M6. ruff is pinned in `uv.lock` alone, and
-Dependabot's `uv` entries keep it current. Those entries ignore
+Dependabot's `uv` entry keeps it current. That entry ignores
 `pydantic-core`: each pydantic release pins one exact pydantic-core, and
 pydantic-core publishes stable-numbered releases for pydantic betas too,
 so a lone pydantic-core bump resolves to a beta pydantic. The pydantic

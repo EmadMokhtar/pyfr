@@ -17,6 +17,15 @@ updates:
     groups:
       python:
         patterns: ["*"]
+    ignore:
+      # pydantic-core is a direct dependency (this project's config-docs
+      # script imports it), so Dependabot would bump it on its own. Every
+      # pydantic release pins one exact pydantic-core, and pydantic-core
+      # ships stable-numbered releases for pydantic betas too -- so a
+      # lone pydantic-core bump makes uv pick the beta pydantic that pins
+      # it. The pydantic bump carries pydantic-core; nothing else may
+      # move it.
+      - dependency-name: "pydantic-core"
     commit-message:
       prefix: "build(deps)"
     labels: ["dependencies"]
