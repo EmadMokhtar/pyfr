@@ -112,16 +112,18 @@ def test_superpowers_directory_is_excluded_by_path_parts_not_prefix(
     """The archive is skipped even when the root argument is relative.
 
     `just docs-examples` invokes this script as
-    `python3 ../../scripts/check_doc_examples.py ../../docs` -- a RELATIVE
-    root with leading `..` segments. A check written as
-    `path.as_posix().startswith("superpowers")` passes on an absolute
-    tmp_path fixture (where the string never starts with "superpowers"
-    anyway) but is exactly the bug this test is designed to catch in the
-    real invocation: with a leading `../docs/...` prefix, a string-prefix
-    test never matches "superpowers" at all, and the archive's stale
-    exec-marked blocks start running. Testing `"superpowers" in
-    path.parts` is what survives both the absolute fixture path and the
-    real relative invocation.
+    `python3 scripts/check_doc_examples.py docs` today, but the root
+    argument is just a path a caller supplies, and nothing stops a future
+    caller from passing a RELATIVE one with leading `..` segments -- the
+    way this same recipe did before the scripts moved into the template.
+    A check written as `path.as_posix().startswith("superpowers")` passes
+    on an absolute tmp_path fixture (where the string never starts with
+    "superpowers" anyway) but is exactly the bug that a leading `../docs/`
+    prefix would trigger: a string-prefix test never matches "superpowers"
+    at all there, and the archive's stale exec-marked blocks start
+    running. Testing `"superpowers" in path.parts` is what survives both
+    the absolute fixture path and a relative one with leading `..`
+    segments.
     """
     docs = tmp_path / "docs"
     (docs / "superpowers" / "plans").mkdir(parents=True)

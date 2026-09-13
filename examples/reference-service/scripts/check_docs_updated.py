@@ -17,8 +17,8 @@ import argparse
 import subprocess
 from collections.abc import Iterable, Sequence
 
-# A generated project's source lives at src/; PyFr's own root run names the
-# template body instead (--source 'reference-service/src/').
+# A generated project's source lives at src/. PyFr's own root run points
+# --source at the template body's src/ instead, and --docs at both sites.
 DEFAULT_SOURCE_PREFIXES = ("src/",)
 # What counts as having documented the change.
 DEFAULT_DOCS_PATHS = ("docs/", "README.md", "mkdocs.yml")
