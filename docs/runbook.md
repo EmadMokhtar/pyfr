@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-13
 covers:
   - examples/reference-service/ops/prometheus/rules/
   - examples/reference-service/justfile

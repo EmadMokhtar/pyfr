@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-13
 covers:
   - examples/reference-service/justfile
   - justfile
@@ -225,7 +225,7 @@ Run these from the repository root.
 | `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
 | `just docs` | Live preview on <http://127.0.0.1:8000>, rebuilding as you save. |
 | `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. |
-| `just test` | Run this repository's own script tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves. Needs no Docker. |
+| `just test` | Run this repository's own tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves, plus the generation-test matrix that renders all eight backend combinations and checks each one. Needs no Docker. |
 | `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |
 | `just regen` | Regenerate `examples/reference-service/` from the template with the answers in `tests/reference-answers.yaml`; run this after every change to `{{cookiecutter.project_slug}}/` and commit the result. |
 | `just regen-check` | The golden diff: render and compare, writing nothing. CI's `golden` job. |

@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-13
 covers:
   - scripts/check_docs_updated.py
   - scripts/check_docs_freshness.py
@@ -94,6 +94,77 @@ inserted lines (a new setting, a new endpoint), copy them into the template
 file by hand, re-inserting the substitutions the render resolved —
 `{{ cookiecutter.project_slug }}` for the contract's `title`, for
 instance. `just regen-check` then confirms the two agree.
+
+### Backends and pruning
+
+Three prompts choose which backing services a generated project gets:
+`database` (`postgres` or `none`), `cache` (`redis` or `none`) and
+`object_storage` (`s3` or `none`). Each list's first entry is cookiecutter's
+default, so a `--no-input` render is the "everything on" project — the same
+shape as `examples/reference-service/`. Whichever combination is chosen, an
+unchosen backend must leave no trace: no dependency, import, setting,
+compose service, recipe or file for it, and the render still passes `ruff
+check` and `ruff format --check`.
+
+Two mechanisms enforce that, at different granularities. `hooks/
+post_gen_project.py`'s `PRUNED` table deletes whole files and directories
+that belong entirely to one backend — `migrations/`, `src/<package>/
+infrastructure/db/`, and so on — after cookiecutter has rendered everything
+else. Jinja `{%- if %}` blocks remove lines *inside* files that mix a
+backend with other content — `pyproject.toml`, `compose.yaml`, `settings.py`,
+`container.py`, `justfile`, `.importlinter`, `.env.example` among others. A
+path belonging to one backend is always deleted by the hook, never emptied
+by Jinja.
+
+Every conditional uses cookiecutter's **left-strip** block tags —
+`{%- if %}`, `{%- elif %}`, `{%- else %}`, `{%- endif %}` — each on its own
+line, never the trim or right-strip forms. A `{%-` tag consumes the newline
+and any whitespace before it, so a block's own leading blank line has to sit
+*inside* the block, never before the tag, or the "everything on" render
+loses a blank line the pruned render never had — and that render must stay
+byte-identical to `examples/reference-service/`. For example:
+
+```
+import pytest
+{%- if cookiecutter.cache == "redis" %}
+
+from redis.asyncio import Redis
+{%- endif %}
+```
+
+Two rules follow from this: a conditional wraps a line that already exists
+in the everything-on render — it introduces no new logic — and it wraps
+only whole existing lines, moving no blank line before the tag it belongs
+after.
+
+`{%- else %}` is the exception, for the rare spot where the pruned render
+needs a *reduced* line rather than none at all: an import list that loses
+one name (`from tests.compose_images import compose_image,
+dockerfile_base_image` becomes `from tests.compose_images import
+compose_image`), or `container.py`'s `close_container`, whose nested
+`try`/`finally` cannot be dedented by Jinja, so the branches with the
+database or the cache off repeat the surrounding `try`/`finally` one level
+up instead — a four-way `{%- if %} … {%- elif %} … {%- elif %} … {%- else %}`
+block, not new control flow.
+
+To see what one combination renders, skip the hook's side effects with
+`PYFR_REGEN=1` and pass the answers that differ from the defaults:
+
+```bash
+PYFR_REGEN=1 uv run --group dev cookiecutter . --no-input -o /tmp/x database=none cache=none
+```
+
+`tests/test_generation.py` renders all eight combinations on every push
+(`test_a_render_carries_only_the_backends_it_chose`), running `ruff check`
+and `ruff format --check` on each, plus an AST-based resolver for
+first-party imports that catches a conditional pruning a `def` while a
+test still does `from … import` of it — ruff has no way to know the name
+stopped existing, so it stays quiet, and pytest would only discover the gap
+while collecting the test. After any template edit, `just regen` then
+`git diff --stat examples/reference-service` coming back empty is the proof
+that the everything-on render did not move; `just regen-check` alone
+compares the freshly regenerated example against itself and would not
+catch a lost byte.
 
 ### Dependabot and the template
 
