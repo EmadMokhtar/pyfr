@@ -1,0 +1,17 @@
+# Written by PyFr when this project was generated. M8's `just update` reads
+# it to re-render the template at a newer version and merge the result;
+# nothing else does. Keep it committed and unedited.
+_template: https://github.com/EmadMokhtar/pyfr
+_template_version: "{{ cookiecutter._template_version }}"
+project_name: "{{ cookiecutter.project_name }}"
+project_slug: "{{ cookiecutter.project_slug }}"
+package_name: "{{ cookiecutter.package_name }}"
+description: "{{ cookiecutter.description }}"
+author_name: "{{ cookiecutter.author_name }}"
+author_email: "{{ cookiecutter.author_email }}"
+github_org: "{{ cookiecutter.github_org }}"
+database: "{{ cookiecutter.database }}"
+cache: "{{ cookiecutter.cache }}"
+object_storage: "{{ cookiecutter.object_storage }}"
+http_port: "{{ cookiecutter.http_port }}"
+license: "{{ cookiecutter.license }}"

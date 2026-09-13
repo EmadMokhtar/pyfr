@@ -16,6 +16,31 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_ANSWERS = ROOT / "tests" / "reference-answers.yaml"
 
+BACKENDS = {
+    "database": ("postgres", "none"),
+    "cache": ("redis", "none"),
+    "object_storage": ("s3", "none"),
+}
+# The eight combinations, as the extra_context dicts pytest-cookies takes.
+COMBINATIONS = [
+    {"database": db, "cache": cache, "object_storage": storage}
+    for db in BACKENDS["database"]
+    for cache in BACKENDS["cache"]
+    for storage in BACKENDS["object_storage"]
+]
+EVERYTHING_ON = COMBINATIONS[0]
+
+
+def combination_id(answers: dict[str, str]) -> str:
+    return "-".join(answers[key] for key in ("database", "cache", "object_storage"))
+
+
+def render(cookies, **answers: str):
+    result = cookies.bake(extra_context=answers)
+    assert result.exit_code == 0, result.exception
+    return result.project_path
+
+
 # The longest package name hooks/pre_gen_project.py accepts. The reference
 # name is 17 characters; every line that spells the package out gets 8
 # columns longer here, and the render must still pass the formatter and the
@@ -65,12 +90,12 @@ def files_under(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file())
 
 
-def test_no_template_syntax_survives_the_default_render(cookies) -> None:
-    result = cookies.bake()
-    assert result.exit_code == 0, result.exception
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_no_template_syntax_survives_any_combination(cookies, answers) -> None:
+    root = render(cookies, **answers)
     offenders = []
-    for path in files_under(result.project_path):
-        relative = path.relative_to(result.project_path).as_posix()
+    for path in files_under(root):
+        relative = path.relative_to(root).as_posix()
         # Grafana's own {{ }} legend syntax, copied verbatim on purpose
         # (spec section 7); never rendered, so nothing here to check.
         if relative.startswith("ops/grafana/"):
@@ -84,6 +109,25 @@ def test_no_template_syntax_survives_the_default_render(cookies) -> None:
         if any(marker in content for marker in JINJA_MARKERS):
             offenders.append(relative)
     assert offenders == []
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_every_combination_renders_and_records_its_answers(cookies, answers) -> None:
+    root = render(cookies, **answers)
+    recorded = yaml.safe_load((root / ".pyfr-answers.yml").read_text())
+    assert recorded["_template_version"] == "0.6.0"
+    assert recorded["_template"] == "https://github.com/EmadMokhtar/pyfr"
+    for key, value in answers.items():
+        assert recorded[key] == value
+    assert recorded["package_name"] == "my_service"
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_the_contract_is_the_same_in_every_combination(cookies, answers) -> None:
+    root = render(cookies, **answers)
+    reference = render(cookies, **EVERYTHING_ON)
+    for name in ("openapi.json", "openapi.baseline.json"):
+        assert (root / name).read_bytes() == (reference / name).read_bytes()
 
 
 def test_the_reference_answers_render_the_reference_names(cookies) -> None:
