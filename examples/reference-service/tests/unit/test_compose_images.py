@@ -6,7 +6,14 @@ from tests.compose_images import compose_image, dockerfile_base_image
 
 
 def test_every_pinned_service_has_an_explicit_tag() -> None:
-    for service in ("postgres", "redis", "minio", "lgtm", "trivy", "payment-stub"):
+    for service in (
+        "postgres",
+        "redis",
+        "minio",
+        "lgtm",
+        "trivy",
+        "payment-stub",
+    ):
         image = compose_image(service)
         assert ":" in image, image
         assert not image.endswith(":latest"), image
