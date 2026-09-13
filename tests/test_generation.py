@@ -72,8 +72,9 @@ ALWAYS_FORBIDDEN_MARKERS = (
 # and is guarded with {% raw %} so Jinja leaves it alone: golang-migrate's
 # CLI placeholders and the buildx/trivy recipes' own {{name}} interpolation
 # (justfile), Prometheus's alert-label templating (slo.yml), sqlfluff's
-# comment naming its own template markers (.sqlfluff), and a raw PromQL
-# query string (test_observability_stack.py). None of these are cookiecutter
+# comment naming its own template markers (.sqlfluff), a raw PromQL query
+# string (test_observability_stack.py), and GitHub Actions' `${{ }}`
+# expressions (the three workflows). None of these are cookiecutter
 # collisions. They are still checked for ALWAYS_FORBIDDEN_MARKERS above --
 # only their own raw-guarded braces are excused, not real Jinja mistakes.
 RAW_GUARDED_FILES = frozenset(
@@ -82,6 +83,9 @@ RAW_GUARDED_FILES = frozenset(
         "ops/prometheus/rules/slo.yml",
         ".sqlfluff",
         "tests/integration/test_observability_stack.py",
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly.yml",
+        ".github/workflows/release.yml",
     }
 )
 
@@ -468,6 +472,81 @@ def assert_compose_is_self_consistent(root: Path, answers: dict[str, str]) -> No
             assert source in declared_volumes, (name, "volumes", source)
 
 
+# A word that must not survive in .github/ when its backend is off. Matched
+# case-insensitively over the whole file, comments included: a comment that
+# names a container the render does not have is the M7 PR 2 rule broken.
+# "schema" is not here because "schemathesis" carries it in every render.
+WORKFLOW_BACKEND_WORDS = {
+    "database": ("postgres", "migrat"),
+    "cache": ("redis",),
+    "object_storage": ("minio", "s3"),
+}
+JUST_CALL = re.compile(r"\bjust\s+([a-z][a-z0-9-]*)")
+DEPENDABOT_ECOSYSTEMS = [
+    "uv",
+    "github-actions",
+    "docker",
+    "docker-compose",
+    "pre-commit",
+]
+
+
+def workflow_files(root: Path) -> list[Path]:
+    return sorted((root / ".github").rglob("*.yml"))
+
+
+def run_scripts(document: dict) -> Iterator[str]:
+    """Every `run:` value in a parsed workflow, shell comment lines removed."""
+    for job in document.get("jobs", {}).values():
+        for step in job.get("steps", []):
+            script = step.get("run")
+            if script:
+                yield "\n".join(
+                    line
+                    for line in script.splitlines()
+                    if not line.lstrip().startswith("#")
+                )
+
+
+def assert_workflows_are_coherent(root: Path, answers: dict[str, str]) -> None:
+    # The rendered workflows never run in this repository (GitHub runs
+    # workflows from a repository's root only), so this is their only
+    # gate before a generated project pushes them: the YAML parses, a
+    # pruned backend leaves no word behind, every `just` recipe a step
+    # calls exists in this render's justfile, and Dependabot's schedule
+    # names the five ecosystems.
+    recipes = recipe_names(root)
+    for path in workflow_files(root):
+        relative = path.relative_to(root).as_posix()
+        text = path.read_text()
+        document = yaml.safe_load(text)
+        assert isinstance(document, dict), relative
+        for key, words in WORKFLOW_BACKEND_WORDS.items():
+            if answers[key] == "none":
+                for word in words:
+                    assert word not in text.lower(), (relative, word)
+        if relative == ".github/dependabot.yml":
+            updates = document["updates"]
+            assert [u["package-ecosystem"] for u in updates] == DEPENDABOT_ECOSYSTEMS
+            assert all(u["directory"] == "/" for u in updates), relative
+            continue
+        for script in run_scripts(document):
+            for recipe in JUST_CALL.findall(script):
+                assert recipe in recipes, (relative, recipe)
+    # Deliberately checked last: with only some of ci.yml/nightly.yml/
+    # release.yml/dependabot.yml present, the per-file checks above must
+    # still run against whatever files do exist before this assertion ends
+    # the test, so a broken word or a broken `just` call is caught even
+    # while the file set is incomplete.
+    present = {p.relative_to(root).as_posix() for p in workflow_files(root)}
+    assert present >= {
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly.yml",
+        ".github/workflows/release.yml",
+        ".github/dependabot.yml",
+    }, present
+
+
 def assert_invariant(root: Path, answers: dict[str, str]) -> None:
     services = compose_services(root)
     dependencies = dependency_names(root)
@@ -498,6 +577,7 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
             ), (key, path.relative_to(root))
             assert spec["env_prefix"] not in text, (key, path.relative_to(root))
     assert_compose_is_self_consistent(root, answers)
+    assert_workflows_are_coherent(root, answers)
     # Cross-cutting: nothing empty, nothing unformatted, nothing unused.
     for directory in (p for p in root.rglob("*") if p.is_dir()):
         assert any(directory.iterdir()), (

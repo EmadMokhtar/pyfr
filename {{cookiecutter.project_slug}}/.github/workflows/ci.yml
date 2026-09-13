@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One run per branch. Cancelling in-flight runs is safe here in a way it
+# is not for release.yml: nothing is published, so a cancelled run leaves
+# nothing half-done.
+concurrency:
+{%- raw %}
+  group: ci-${{ github.ref }}
+{%- endraw %}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # `just check` is lint, typecheck, imports, unit tests and pre-commit,
+    # then `git diff --exit-code` to catch a hook that mutated the tree.
+    # One job rather than five: they share an install, they all finish in
+    # a couple of minutes, and splitting them would mean five copies of
+    # the setup for a failure message that already names which gate broke.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install the project
+        run: uv sync
+
+      - name: Run every fast gate
+        run: just check
+
+  integration:
+    # testcontainers starts every container the integration tests need,
+    # from the pins in the test code and compose.yaml. Deliberately NOT a
+    # `services:` block: the versions CI runs against are the versions a
+    # developer runs against, and there is one place to change them.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - run: uv sync
+      - run: just test-integration
+
+  gates:
+{%- if cookiecutter.database == "postgres" %}
+    # Migration files, the schema snapshot, model/schema drift, and the
+    # generated configuration reference. Needs Docker for the schema
+    # gates, which run against a real PostgreSQL.
+{%- else %}
+    # The generated configuration reference: `.env.example` and the
+    # configuration page must still match settings.py.
+{%- endif %}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - run: uv sync
+      - run: just gates
+
+  contract:
+    # `just contract-gates`: schemathesis conformance against the committed
+    # contract, plus the oasdiff breaking-change check cross-referenced
+    # against the commit's own `!` marker. OpenAPI drift -- whether the
+    # committed openapi.json still matches the code -- is NOT one of them:
+    # that gate (tests/unit/test_contract_drift.py) carries no contract
+    # marker, so it runs in the default `just test` tier instead, covered
+    # by the `check` job above. `fetch-depth: 0` because the commit-marker
+    # half reads the commit range -- with a shallow clone `git log
+    # base..head` is empty, which reads as "nobody marked it breaking" and
+    # fails every legitimate breaking change.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - run: uv sync
+      - run: just contract-gates
+
+  o11y-gates:
+    # promtool over the SLO rules, out of the pinned otel-lgtm image. No
+    # uv sync: it runs no Python at all.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
+      - run: just o11y-gates
+
+  build:
+    # Every image for linux/amd64 AND linux/arm64, with no output: proves
+    # each Dockerfile still builds for both, which is what "Apple Silicon
+    # laptops and cloud servers share one image" rests on. QEMU supplies
+    # the emulated architecture; the `pyfr` builder is created by the
+    # recipe itself (`_buildx-builder`) and is never made the current
+    # builder, so plain `docker build` elsewhere in the same job still
+    # loads into the daemon. No `docker/setup-buildx-action`: it makes its
+    # own `docker-container` builder the CURRENT one, and on Docker >= 23
+    # `docker build` then runs on that builder and `--load`s nothing (the
+    # default `docker` driver cannot target two platforms at once).
+    # `docker buildx` itself is preinstalled on ubuntu-latest. Pushing is
+    # release.yml's job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@v4
+      - uses: extractions/setup-just@v4
+      - name: Build every image for both architectures
+        run: just build-multiarch
+
+  security:
+    # pip-audit over the lock, Trivy over the images, and a software bill
+    # of materials per image. `build-images` first because `scan` and
+    # `sbom` read the locally built single-architecture images over the
+    # Docker socket. One step per recipe, so a red job names which one.
+    # No `uv sync`: `just audit` reads the lock with `uv export` and runs
+    # pip-audit through `uvx`.
+    #
+    # This job's result can change with no commit -- an advisory is
+    # published against a version already locked -- which is also why
+    # nightly.yml runs the same recipes every night.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - name: Build the images
+        run: just build-images
+      - name: Audit the lock
+        run: just audit
+      - name: Scan the images
+        run: just scan
+      - name: Write the software bills of materials
+        run: just sbom
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom/*.cdx.json
+          if-no-files-found: error
