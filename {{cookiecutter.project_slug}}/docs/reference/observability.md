@@ -41,7 +41,7 @@ anyway would be worse than not shipping it: a trace search or a dashboard
 built against it would read as "S3 calls are always fast" instead of "S3
 calls are not observed", and the first of those is actively misleading. The
 dependency was removed rather than left in place doing nothing; see
-`instrument_redis` in `src/reference_service/observability/otel.py` for the
+`instrument_redis` in `src/{{ cookiecutter.package_name }}/observability/otel.py` for the
 full reasoning kept beside the code it explains.
 
 ## Turning it on
@@ -186,7 +186,7 @@ Both indicators get all three.
 
 ## Changing the objectives
 
-Every number lives in `src/reference_service/observability/slo.py`.
+Every number lives in `src/{{ cookiecutter.package_name }}/observability/slo.py`.
 
 Changing the latency threshold means changing it in **two** places that must
 agree: the histogram bucket boundary in that module, and the `le=` matcher in

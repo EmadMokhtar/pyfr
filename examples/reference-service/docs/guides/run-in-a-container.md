@@ -18,7 +18,7 @@ creates five orders through it, so there is something to `GET` before you
 have placed anything — see [Getting started](../getting-started.md#start-with-data-in-it).
 Stop it with `just down`, which also removes the volumes.
 
-Run these from `examples/reference-service/`.
+Run these from the project root.
 
 ## What the image is
 

@@ -11,7 +11,7 @@ fragments of output, or commands that would modify the reader's machine,
 so "run everything" would mean a wall of exclusions -- and an exclusion
 list is a place for a broken example to hide.
 
-Stdlib only: it runs inside the reference service's environment via
+Stdlib only: it runs inside the service's environment via
 `just docs-examples`, and adding a dependency to that project for a
 documentation check would be the wrong trade.
 """
@@ -48,8 +48,9 @@ def find_examples(root: Path) -> list[Example]:
     examples: list[Example] = []
     for path in sorted(root.rglob("*.md")):
         # `superpowers` in parts, not a path prefix: `just docs-examples`
-        # passes a RELATIVE root (`../../docs`) from the service directory,
-        # so a prefix test would silently stop excluding the archive.
+        # passes `docs`, but a caller can still pass a relative root with
+        # `..` segments, so a prefix test would silently stop excluding
+        # the archive.
         if "superpowers" in path.parts:
             continue
         text = path.read_text(encoding="utf-8")

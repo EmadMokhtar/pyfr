@@ -37,7 +37,7 @@ Match on `type`, never on `title` or `detail`. `title` is prose and may be
 reworded; `detail` varies per occurrence.
 
 `type` is a URL by convention, not a promise that anything is served there.
-The reference service uses `https://errors.example.com/<code>`, which is a
+The service uses `https://errors.example.com/<code>`, which is a
 placeholder — a real service should point it at documentation it actually
 publishes.
 

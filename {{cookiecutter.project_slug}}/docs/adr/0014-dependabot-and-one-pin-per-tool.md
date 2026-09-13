@@ -44,32 +44,21 @@ and so does `just o11y-gates`.
 ## Consequences
 
 Two version literals remain outside Dependabot's reach, accepted
-knowingly: `pip-audit==2.10.1`, pinned identically in both the root and
-the reference-service justfiles — its advisory data is fetched live, so a
-stale pinned binary still reports new findings — and the `oasdiff` image
-pinned in `examples/reference-service/scripts/check_contract_compatibility.py`
-as `tufin/oasdiff:v1.31.0`, a pin that predates M6. ruff is pinned in
-both locks — the root's, for `hooks/`, `scripts/` and `tests/`, and the
-reference service's, which is the template's. Two projects, two locks,
-and Dependabot's `uv` entries move both. Those entries ignore
+knowingly: `pip-audit==2.10.1`, pinned in the justfile — its advisory
+data is fetched live, so a stale pinned binary still reports new
+findings — and the `oasdiff` image pinned in
+`scripts/check_contract_compatibility.py` as `tufin/oasdiff:v1.31.0`, a
+pin that predates M6. ruff is pinned in `uv.lock` alone, and
+Dependabot's `uv` entries keep it current. Those entries ignore
 `pydantic-core`: each pydantic release pins one exact pydantic-core, and
 pydantic-core publishes stable-numbered releases for pydantic betas too,
 so a lone pydantic-core bump resolves to a beta pydantic. The pydantic
-bump carries pydantic-core. Behind that, both `pyproject.toml`s set
+bump carries pydantic-core. Behind that, `pyproject.toml` sets
 `tool.uv.prerelease = "explicit"`: uv resolves to a pre-release only
 where a first-party requirement names one, so Dependabot's `uv lock`
 fails outright rather than opening a pull request that installs a beta.
 The permanently beta-versioned OpenTelemetry instrumentation packages
 are named -- the direct ones by their own `0.65b0` floors, the transitive
-ones by `constraint-dependencies` beside the setting. Every Dependabot
-pull request
-carries the `no-docs-needed` label, because a version bump is exactly
-the internal-only change `ci.yml`'s docs-freshness job has that label
-for.
-
-- A generated project (M7) pins its own Commitizen in its own
-  `pyproject.toml`, exactly as this root does, and its own Dependabot keeps
-  that pin current: one pin per tool holds per repository, not across the
-  template and what it generates.
+ones by `constraint-dependencies` beside the setting.
 
 Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

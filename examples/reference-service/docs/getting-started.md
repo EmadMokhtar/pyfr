@@ -7,12 +7,10 @@ covers:
 
 # Getting started
 
-This walks you through running the reference service and placing an order
+This walks you through running the service and placing an order
 through it. It takes about five minutes.
 
-The reference service is a complete, running microservice. It is what the
-PyFr template will generate once the template exists — see the
-[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/). Today you run it, read it, and copy from it.
+The service is a complete, running microservice.
 
 ## What you need
 
@@ -28,11 +26,7 @@ You do **not** need to install Python separately. `uv` reads
 ## Run it
 
 ```bash
-git clone https://github.com/EmadMokhtar/pyfr.git
-```
-
-```bash
-cd pyfr/examples/reference-service && uv sync
+uv sync
 ```
 
 `uv sync` installs exactly the versions recorded in `uv.lock`, so you get the

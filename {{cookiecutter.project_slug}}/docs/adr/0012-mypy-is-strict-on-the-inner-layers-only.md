@@ -20,8 +20,8 @@ We check `domain/` and `services/` strictly, and everything else
 leniently. `pyproject.toml`'s `[tool.mypy]` table sets a lenient baseline
 across the whole tree — `ignore_missing_imports = true`, plus the usual
 unused-ignore and redundant-cast warnings — and one `[[tool.mypy.overrides]]`
-block layers the strict checks on top for `reference_service.domain.*` and
-`reference_service.services.*` only: `disallow_untyped_defs`,
+block layers the strict checks on top for `{{ cookiecutter.package_name }}.domain.*` and
+`{{ cookiecutter.package_name }}.services.*` only: `disallow_untyped_defs`,
 `disallow_incomplete_defs`, `disallow_untyped_calls`,
 `disallow_any_generics`, `check_untyped_defs`, `no_implicit_reexport` and
 `warn_return_any`. `api/` and `infrastructure/` run under the lenient
@@ -56,7 +56,7 @@ contributor, since "strict here, lenient there" is not the kind of rule
 that reads as obviously correct on first encounter — hence the comment
 directly above the override block in `pyproject.toml`. It is also a
 boundary that has to be maintained deliberately as the tree grows: a new
-top-level package under `src/reference_service/` gets the lenient
+top-level package under `src/{{ cookiecutter.package_name }}/` gets the lenient
 baseline by default unless someone remembers to add it to the override's
 module list, so the strict boundary can silently fail to expand to code
 that actually belongs inside it.

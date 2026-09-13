@@ -6,7 +6,7 @@ covers:
 
 # Outbound HTTP calls
 
-The reference service calls one outbound dependency: a payment provider,
+The service calls one outbound dependency: a payment provider,
 authorising a card before an order is accepted. This guide describes the
 pattern that call is built on — a shared client, a narrow retry rule, and a
 hand-written circuit breaker — so that a second outbound integration (a

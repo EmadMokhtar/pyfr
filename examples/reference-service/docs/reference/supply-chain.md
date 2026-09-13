@@ -15,21 +15,21 @@ What ships is audited, scanned, inventoried and published — and every
 dependency it was built from is updated by a machine, not by memory. This page
 says what each check looks at, where it runs, and what to do when one is red.
 
-Every `just` command below runs from `examples/reference-service/`, except
+Every `just` command below runs from the project root, except
 where a sentence says otherwise.
 
 ## What is checked, where
 
 | Command | What it does | Where it runs |
 | --- | --- | --- |
-| `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. The same recipe exists at the repository root for the documentation toolchain's own lock. | Every pull request, in CI's `security` job (both locks); every night, in `nightly.yml`. |
+| `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. | Every pull request, in CI's `security` job; every night, in `nightly.yml`. |
 | `just scan` | [Trivy](https://trivy.dev/) over both images, for known vulnerabilities and embedded secrets. Fails on any HIGH or CRITICAL finding that has a fix. | Every pull request, on the freshly built images (`security`); on release, before the push (`release.yml`); every night, on the `latest` tag actually published. |
 | `just scan-published VERSION` | The same scan over the two images just pushed under `VERSION`, for **both** platforms — the exact digests people will pull. | Release only, after the push and before `latest` is created. |
 | `just sbom` | A [CycloneDX](https://cyclonedx.org/) software bill of materials per image, into `sbom/`. | Every pull request, from the local build, uploaded as the `sbom` workflow artifact; on release, from the published image reference after the push, attached to the GitHub Release. |
 | `just build-multiarch` | Both images for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
 | `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given — and only the version. | Release only, in `release.yml`'s `publish-images` job. |
 | `just promote-latest VERSION` | Point `latest` at the version's already-pushed index, without rebuilding. | Release only, after `scan-published` has passed. |
-| `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. CI adds the repository root's `just audit` as one more step. Needs Docker. | Locally, by hand. |
+| `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. Needs Docker. | Locally, by hand. |
 
 Two things follow from that table. `just security` is **not** part of
 `just check-all`, because its result changes without a commit: an advisory is
@@ -55,9 +55,6 @@ removes the `trivy-cache` volume with the others.
 | --- | --- |
 | `ghcr.io/emadmokhtar/reference-service` | The service — the two-stage build in `Dockerfile`. |
 | `ghcr.io/emadmokhtar/reference-service-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
-
-The image name is the generated project's `project_slug`; the reference
-answers name it `reference-service`.
 
 Each carries two tags: `vX.Y.Z`, the **repository's** version — the same
 string as the git tag and the GitHub Release — and `latest`, which moves with
@@ -130,7 +127,7 @@ secret finding prints a different table, naming the file inside the image and
 the rule that matched. The only fix is to take the secret out of the image;
 nothing below applies to it.
 
-**Fix by bumping.** For a Python package, in `examples/reference-service/`:
+**Fix by bumping.** For a Python package, in the project root:
 
 ```bash
 uv lock --upgrade-package <name>
@@ -227,35 +224,29 @@ five ecosystems this repository has:
 
 | Ecosystem | What it updates |
 | --- | --- |
-| `uv` | Both lockfiles — the repository root's and the reference service's. |
+| `uv` | `uv.lock` and the pins in `pyproject.toml`. |
 | `github-actions` | The `uses:` versions in every workflow. |
 | `docker` | The `FROM` lines in `Dockerfile` and `Dockerfile.migrations`. |
 | `docker-compose` | Every `image:` in `compose.yaml` — PostgreSQL, Redis, MinIO, `mc`, WireMock, `otel-lgtm` and Trivy. |
-| `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. Watched at both the repository root and in `examples/reference-service/`, which is the template's own configuration. |
+| `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
-Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions). Each
-carries the `no-docs-needed` label, because a version bump is exactly the
-internal-only change CI's documentation gate has that label for.
+Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions).
 
 Dependabot has no way to update a version literal inside a `justfile`, a
 workflow step or a test. So the rule is **one pin per tool, in the file
 Dependabot updates**, and the duplicates were removed rather than policed. Tool
 versions live in `uv.lock` alone: the ruff, uv-lock and Commitizen pre-commit
-hooks are local hooks that run the locked tools, and Commitizen is a root dev
-dependency that the root `justfile`, `release.yml` and the commit-message hook
-all call through `uv run --locked --group dev cz`. Container image pins live in
+hooks are local hooks that run the locked tools, and Commitizen is a dev
+dependency that the `justfile`, `release.yml` and the commit-message hook
+all call through `uv run --locked cz`. Container image pins live in
 `compose.yaml` and the two Dockerfiles alone: the integration tests and
 `just o11y-gates` read their image names from there.
 
-A generated project repeats the arrangement inside its own tree: its
-`pyproject.toml` pins Commitizen, and its `justfile`, `release.yml` and
-commit-message hook all call `uv run --locked cz`.
-
 Two literals remain outside Dependabot's reach, knowingly: `pip-audit==2.10.1`
-in both justfiles — its advisory data is fetched live, so a stale binary still
+in the justfile — its advisory data is fetched live, so a stale binary still
 reports new findings — and the `tufin/oasdiff:v1.31.0` image in
-`scripts/check_contract_compatibility.py`, a pin that predates this milestone.
+`scripts/check_contract_compatibility.py`, a pin that predates M6.
 See [ADR 0014](../adr/0014-dependabot-and-one-pin-per-tool.md).
 
 ## The hardened image

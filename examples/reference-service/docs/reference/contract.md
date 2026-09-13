@@ -7,7 +7,7 @@ covers:
 
 # The API contract
 
-`openapi.json` is committed at the root of the reference service, generated
+`openapi.json` is committed at the root of the service, generated
 from the code, never hand-edited. It is the contract: the thing a client, a
 generated SDK, or another team's test suite is entitled to rely on.
 

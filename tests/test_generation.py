@@ -651,3 +651,27 @@ def test_the_two_extreme_renders_build_their_sites(cookies, answers) -> None:
     built = build_site(root)
     assert built.returncode == 0, built.stdout + built.stderr
     assert (root / "site" / "index.html").is_file()
+
+
+# The reference service's identity must never leak into a project with a
+# different one. PyFr's own URLs are the exception: a generated project
+# links back to the template it came from.
+IDENTITY_LEAKS = ("reference-service", "reference_service", "Reference Service")
+PYFR_URLS = ("github.com/EmadMokhtar/pyfr", "emadmokhtar.github.io/pyfr/")
+
+
+def test_the_docs_carry_the_answers_not_the_reference_identity(cookies) -> None:
+    root = render(cookies)  # default answers: my-service, my_service, your-org
+    offenders = []
+    for path in sorted((root / "docs").rglob("*.md")):
+        text = path.read_text()
+        for line in text.splitlines():
+            stripped = line
+            for url in PYFR_URLS:
+                stripped = stripped.replace(url, "")
+            if (
+                any(leak in stripped for leak in IDENTITY_LEAKS)
+                or "emadmokhtar" in stripped.lower()
+            ):
+                offenders.append(f"{path.relative_to(root)}: {line.strip()[:80]}")
+    assert offenders == []

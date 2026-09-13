@@ -23,7 +23,7 @@ cp .env.example .env
 
 This table is generated from the settings model. To change a description,
 edit `Field(description=...)` in
-`examples/reference-service/src/reference_service/settings.py` and run
+`src/{{ cookiecutter.package_name }}/settings.py` and run
 `just config-docs`.
 
 <!-- generated: config-table. Run `just config-docs`. -->
@@ -31,7 +31,7 @@ edit `Field(description=...)` in
 | Variable | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `APP_ENVIRONMENT` | `local` \| `staging` \| `production` | `local` | `local` prints colourised, human-readable logs. Anything else prints one JSON object per line. |
-| `APP_SERVICE_NAME` | string | `reference-service` | The OpenAPI document's title, and the `service.name` field on every log record. |
+| `APP_SERVICE_NAME` | string | `{{ cookiecutter.project_slug }}` | The OpenAPI document's title, and the `service.name` field on every log record. |
 | `APP_HTTP_PORT` | integer, 1–65535 | `8000` | The port to serve on. Read by `just dev`, by the container's start command, and by the image's health check. |
 | `APP_LOG__LEVEL` | `debug` \| `info` \| `warning` \| `error` \| `critical` | `info` | The root log level. |
 | `APP_LOG__LEVELS` | JSON object | `{}` | Per-logger overrides, as JSON. Silencing a chatty library is configuration, not a code change. |

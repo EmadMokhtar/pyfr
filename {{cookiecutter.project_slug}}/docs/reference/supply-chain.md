@@ -15,21 +15,21 @@ What ships is audited, scanned, inventoried and published — and every
 dependency it was built from is updated by a machine, not by memory. This page
 says what each check looks at, where it runs, and what to do when one is red.
 
-Every `just` command below runs from `examples/reference-service/`, except
+Every `just` command below runs from the project root, except
 where a sentence says otherwise.
 
 ## What is checked, where
 
 | Command | What it does | Where it runs |
 | --- | --- | --- |
-| `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. The same recipe exists at the repository root for the documentation toolchain's own lock. | Every pull request, in CI's `security` job (both locks); every night, in `nightly.yml`. |
+| `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. | Every pull request, in CI's `security` job; every night, in `nightly.yml`. |
 | `just scan` | [Trivy](https://trivy.dev/) over both images, for known vulnerabilities and embedded secrets. Fails on any HIGH or CRITICAL finding that has a fix. | Every pull request, on the freshly built images (`security`); on release, before the push (`release.yml`); every night, on the `latest` tag actually published. |
 | `just scan-published VERSION` | The same scan over the two images just pushed under `VERSION`, for **both** platforms — the exact digests people will pull. | Release only, after the push and before `latest` is created. |
 | `just sbom` | A [CycloneDX](https://cyclonedx.org/) software bill of materials per image, into `sbom/`. | Every pull request, from the local build, uploaded as the `sbom` workflow artifact; on release, from the published image reference after the push, attached to the GitHub Release. |
 | `just build-multiarch` | Both images for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
 | `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given — and only the version. | Release only, in `release.yml`'s `publish-images` job. |
 | `just promote-latest VERSION` | Point `latest` at the version's already-pushed index, without rebuilding. | Release only, after `scan-published` has passed. |
-| `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. CI adds the repository root's `just audit` as one more step. Needs Docker. | Locally, by hand. |
+| `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. Needs Docker. | Locally, by hand. |
 
 Two things follow from that table. `just security` is **not** part of
 `just check-all`, because its result changes without a commit: an advisory is
@@ -53,11 +53,8 @@ removes the `trivy-cache` volume with the others.
 
 | Image | What it is |
 | --- | --- |
-| `ghcr.io/emadmokhtar/reference-service` | The service — the two-stage build in `Dockerfile`. |
-| `ghcr.io/emadmokhtar/reference-service-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
-
-The image name is the generated project's `project_slug`; the reference
-answers name it `reference-service`.
+| `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}` | The service — the two-stage build in `Dockerfile`. |
+| `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
 
 Each carries two tags: `vX.Y.Z`, the **repository's** version — the same
 string as the git tag and the GitHub Release — and `latest`, which moves with
@@ -75,7 +72,7 @@ Silicon laptop and an `amd64` server pull the same tag and each gets its own
 architecture.
 
 ```bash
-docker pull ghcr.io/emadmokhtar/reference-service:latest
+docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:latest
 ```
 
 Each image carries three OCI labels. `org.opencontainers.image.source` is a
@@ -114,7 +111,7 @@ Total: 1 (HIGH: 1, CRITICAL: 0)
 ```
 
 The heading above the table names the target: the operating-system layer
-(`reference-service:ci (debian 13.6)`), a Python package set, or a single
+(`{{ cookiecutter.project_slug }}:ci (debian 13.6)`), a Python package set, or a single
 binary such as `usr/local/bin/migrate`. `Status` is always `fixed` in a
 failing scan, and that is by construction. The recipe runs with
 `--ignore-unfixed`: a finding for which no fixed version exists yet is left out
@@ -130,7 +127,7 @@ secret finding prints a different table, naming the file inside the image and
 the rule that matched. The only fix is to take the secret out of the image;
 nothing below applies to it.
 
-**Fix by bumping.** For a Python package, in `examples/reference-service/`:
+**Fix by bumping.** For a Python package, in the project root:
 
 ```bash
 uv lock --upgrade-package <name>
@@ -170,7 +167,7 @@ To see what the file is currently hiding — a `Suppressed Vulnerabilities`
 table after the findings, one row per entry with its statement:
 
 ```bash
-docker compose run --rm trivy image --ignorefile /.trivyignore.yaml --show-suppressed reference-service-migrations:ci
+docker compose run --rm trivy image --ignorefile /.trivyignore.yaml --show-suppressed {{ cookiecutter.project_slug }}-migrations:ci
 ```
 
 The five entries in the file today all belong to the `migrate/migrate` Go
@@ -185,7 +182,7 @@ CycloneDX format:
 
 | Where | What |
 | --- | --- |
-| `sbom/reference-service.cdx.json` and `sbom/reference-service-migrations.cdx.json` | Locally, after `just sbom` or `just security`. The directory is ignored by git. |
+| `sbom/{{ cookiecutter.project_slug }}.cdx.json` and `sbom/{{ cookiecutter.project_slug }}-migrations.cdx.json` | Locally, after `just sbom` or `just security`. The directory is ignored by git. |
 | The `sbom` workflow artifact | On every pull request, from the `security` job, generated from the local build. |
 | The release assets | On every release, attached to the GitHub Release by `release.yml`, generated from the published image reference after the push. |
 
@@ -196,7 +193,7 @@ image, `libc6` and `openssl` beside `fastapi` and `pydantic`.
 Which image depends on where it runs. On a pull request it is the
 single-architecture `:ci` image that `just build-images` produces. On a
 release it is generated **after** the push, from the published reference —
-`ghcr.io/emadmokhtar/reference-service:vX.Y.Z` and its migrations
+`ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z` and its migrations
 counterpart — so the document's subject is the image people pull, not a
 local build that was never published (`just publish-images` rebuilds through
 the buildx builder, so the local `:ci` image is a different image ID from
@@ -210,13 +207,13 @@ same list. One document per image is therefore enough.
 To list what is in one:
 
 ```bash
-jq -r '.components[].name' sbom/reference-service.cdx.json
+jq -r '.components[].name' sbom/{{ cookiecutter.project_slug }}.cdx.json
 ```
 
 or, with nothing but Python:
 
 ```bash
-python3 -c "import json; print('\n'.join(c['name'] for c in json.load(open('sbom/reference-service.cdx.json'))['components']))"
+python3 -c "import json; print('\n'.join(c['name'] for c in json.load(open('sbom/{{ cookiecutter.project_slug }}.cdx.json'))['components']))"
 ```
 
 ## Dependency updates
@@ -227,35 +224,29 @@ five ecosystems this repository has:
 
 | Ecosystem | What it updates |
 | --- | --- |
-| `uv` | Both lockfiles — the repository root's and the reference service's. |
+| `uv` | `uv.lock` and the pins in `pyproject.toml`. |
 | `github-actions` | The `uses:` versions in every workflow. |
 | `docker` | The `FROM` lines in `Dockerfile` and `Dockerfile.migrations`. |
 | `docker-compose` | Every `image:` in `compose.yaml` — PostgreSQL, Redis, MinIO, `mc`, WireMock, `otel-lgtm` and Trivy. |
-| `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. Watched at both the repository root and in `examples/reference-service/`, which is the template's own configuration. |
+| `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
-Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions). Each
-carries the `no-docs-needed` label, because a version bump is exactly the
-internal-only change CI's documentation gate has that label for.
+Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions).
 
 Dependabot has no way to update a version literal inside a `justfile`, a
 workflow step or a test. So the rule is **one pin per tool, in the file
 Dependabot updates**, and the duplicates were removed rather than policed. Tool
 versions live in `uv.lock` alone: the ruff, uv-lock and Commitizen pre-commit
-hooks are local hooks that run the locked tools, and Commitizen is a root dev
-dependency that the root `justfile`, `release.yml` and the commit-message hook
-all call through `uv run --locked --group dev cz`. Container image pins live in
+hooks are local hooks that run the locked tools, and Commitizen is a dev
+dependency that the `justfile`, `release.yml` and the commit-message hook
+all call through `uv run --locked cz`. Container image pins live in
 `compose.yaml` and the two Dockerfiles alone: the integration tests and
 `just o11y-gates` read their image names from there.
 
-A generated project repeats the arrangement inside its own tree: its
-`pyproject.toml` pins Commitizen, and its `justfile`, `release.yml` and
-commit-message hook all call `uv run --locked cz`.
-
 Two literals remain outside Dependabot's reach, knowingly: `pip-audit==2.10.1`
-in both justfiles — its advisory data is fetched live, so a stale binary still
+in the justfile — its advisory data is fetched live, so a stale binary still
 reports new findings — and the `tufin/oasdiff:v1.31.0` image in
-`scripts/check_contract_compatibility.py`, a pin that predates this milestone.
+`scripts/check_contract_compatibility.py`, a pin that predates M6.
 See [ADR 0014](../adr/0014-dependabot-and-one-pin-per-tool.md).
 
 ## The hardened image

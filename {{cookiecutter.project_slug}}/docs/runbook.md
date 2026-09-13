@@ -20,7 +20,7 @@ identifiers are different things](reference/logging.md#correlation-identifiers),
 and having both is what turns "the API is slow" into one traceable
 request instead of a guess.
 
-All `just` commands below run from `examples/reference-service/`.
+All `just` commands below run from the project root.
 
 ## The service will not start
 
@@ -39,7 +39,7 @@ Inside the image, where the environment is whatever the container was
 given:
 
 ```bash
-docker compose run --rm app python -m reference_service.config_check
+docker compose run --rm app python -m {{ cookiecutter.package_name }}.config_check
 ```
 
 Both load settings exactly as the service does at startup, so they fail in
@@ -239,12 +239,12 @@ the step name says which one.
 | Step | What it means |
 | --- | --- |
 | Build both images | A plain build failure in one of the two Dockerfiles. Nothing to do with advisories. |
-| Audit … lock | pip-audit found an advisory against a version pinned in `uv.lock` — the reference service's, or the documentation toolchain's at the repository root; there is one step for each. |
+| Audit the lock | pip-audit found an advisory against a version pinned in `uv.lock`. |
 | Scan both images | Trivy found a HIGH or CRITICAL vulnerability with a fix available, or an embedded secret, in one of the two images. |
 | Write the software bills of materials | Trivy could not write the SBOM — almost always a problem with the image or the Docker socket, not with a dependency. |
 
 Reproduce locally with `just security`, which runs the same recipes in the
-same order (the root's `just audit` aside) and needs Docker.
+same order and needs Docker.
 
 **Act.**
 

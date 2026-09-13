@@ -21,13 +21,13 @@ telemetry has started. A platform log agent reads it and forwards it.
 `local` gives colourised, aligned, human-readable lines:
 
 ```
-2026-09-01T14:00:52.697Z [info     ] Application startup complete. [uvicorn.error] service.name=reference-service service.version=0.1.0 deployment.environment=local
+2026-09-01T14:00:52.697Z [info     ] Application startup complete. [uvicorn.error] service.name={{ cookiecutter.project_slug }} service.version=0.1.0 deployment.environment=local
 ```
 
 Anything else gives one JSON object per line:
 
 ```json
-{"http.request.method":"POST","http.route":"/api/v1/orders","http.response.status_code":201,"duration_ms":2.787,"event":"http.access","correlation_id":"9f05f3abb60643b886eaa4b1f867a252","service.name":"reference-service","service.version":"0.1.0","deployment.environment":"production","logger":"reference_service.access","level":"info","timestamp":"2026-09-01T13:59:33.614725Z"}
+{"http.request.method":"POST","http.route":"/api/v1/orders","http.response.status_code":201,"duration_ms":2.787,"event":"http.access","correlation_id":"9f05f3abb60643b886eaa4b1f867a252","service.name":"{{ cookiecutter.project_slug }}","service.version":"0.1.0","deployment.environment":"production","logger":"{{ cookiecutter.package_name }}.access","level":"info","timestamp":"2026-09-01T13:59:33.614725Z"}
 ```
 
 ## Fields on every record

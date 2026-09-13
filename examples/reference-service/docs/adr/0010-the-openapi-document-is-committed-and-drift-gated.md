@@ -9,7 +9,7 @@ last_reviewed: 2026-09-11
 
 ## Context
 
-M3 deepens the contract testing around the reference service's API.
+M3 deepens the contract testing around the service's API.
 FastAPI can generate an OpenAPI document from the code at any time, on
 request, which means a change to the API can happen without the
 document ever being looked at by a reviewer — the document is always

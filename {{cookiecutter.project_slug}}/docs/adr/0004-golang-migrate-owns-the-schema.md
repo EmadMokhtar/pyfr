@@ -19,7 +19,7 @@ that should not need the whole application to run.
 We use golang-migrate, with plain `.up.sql` / `.down.sql` file pairs as
 the only migration format. There is no `alembic/` directory and no
 `alembic_version` table anywhere in the project — confirmed directly:
-the only `alembic` on disk lives inside the reference service's `.venv`,
+the only `alembic` on disk lives inside the service's `.venv`,
 installed as a library, not as a migration tool with its own directory.
 
 ## Alternatives considered

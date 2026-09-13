@@ -10,7 +10,7 @@ This guide adds one feature through all four layers, so you see where each
 piece of code goes and why. It follows the shipped orders slice, which is the
 worked example you copy from.
 
-Work from `examples/reference-service/`. Read
+Work from the project root. Read
 [Layers and the dependency rule](../explanation/layers.md) first if you have
 not.
 
@@ -200,7 +200,7 @@ a subclass inherits its parent's status.
   the status, the body, and — for anything that must not be published — its
   *absence*.
 
-Write the failing test first; that is how the reference service was built.
+Write the failing test first; that is how the service was built.
 
 ## 10. Check it
 

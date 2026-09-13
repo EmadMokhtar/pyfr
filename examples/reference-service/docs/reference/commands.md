@@ -15,9 +15,9 @@ one definition of what "lint" means.
 
 Run `just` with no arguments to list the recipes.
 
-## The reference service
+## The service
 
-Run these from `examples/reference-service/`.
+Run these from the project root.
 
 | Command | What it does |
 | --- | --- |
@@ -28,7 +28,7 @@ Run these from `examples/reference-service/`.
 | `just fmt` | `ruff check --fix` and `ruff format`. Fixes what it can. |
 | `just typecheck` | mypy. Strict on `domain/` and `services/`, lenient elsewhere. |
 | `just imports` | import-linter: verify the [dependency rule](../explanation/layers.md). |
-| `just precommit` | Run the pre-commit hooks over the project's tracked files. Inside this repository it skips itself and says so; the root's `just precommit` covers the tree. |
+| `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
 | `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
 | `just up` | Build the image and start the container stack. Once the API is healthy, a one-shot `seed` container creates five fixed orders through it — see [Getting started](../getting-started.md#start-with-data-in-it). |
@@ -87,9 +87,7 @@ this service reads. Hand-editing `.env.example` or the table in
 | `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag. Read-only. |
 | `just next-version` | Preview the version the next release would choose. Read-only — the release itself runs in the project's `release.yml`. |
 
-The repository root has its own `just audit`, over the documentation
-toolchain's lock — see [The documentation site](#the-documentation-site)
-below. [Supply chain](supply-chain.md) says where each of these runs in CI and
+[Supply chain](supply-chain.md) says where each of these runs in CI and
 what to do when one is red.
 
 ## Outbound HTTP and mutation testing
@@ -187,26 +185,21 @@ push again.
 
 The recipe runs `git rev-parse --show-prefix` before anything else. A
 non-empty result means this project's root is not the top of its git
-repository — exactly the situation here, where the service lives under
-`examples/reference-service/` inside PyFr's own repository — and the
-recipe prints a message and exits clean instead of running at all.
-Running the hooks anyway, with `pre-commit run --all-files`, would walk up
-to the *enclosing* repository's root and reformat files outside the
-service, including Python snippets inside this site's own Markdown.
+repository — for example, if it were vendored or nested inside another
+one — and the recipe prints a message and exits clean instead of running
+at all, rather than walking up to the *enclosing* repository's root with
+`pre-commit run --all-files` and reformatting files outside the project.
 
-In a standalone generated project — its own repository, with nothing
+In the normal case — this project as its own repository, with nothing
 enclosing it — `git rev-parse --show-prefix` is empty from the project
 root, the guard does not fire, and the recipe runs
 `pre-commit run --files $(git ls-files)`, scoped to the project's own
 tracked files rather than `--all-files`, which would be equivalent here
 but is not what the recipe calls.
 
-Inside this repository, the root's own `just precommit` is what actually
-runs the hooks over `examples/reference-service/`.
-
 ## The documented examples
 
-Run this from `examples/reference-service/`.
+Run this from the project root.
 
 | Command | What it does |
 | --- | --- |
@@ -216,34 +209,3 @@ This is an executable check on the documentation's own prose, not on the
 code: breaking one of the documented examples, or the endpoint it calls,
 fails the recipe. It is not part of `just check-all` — it runs as its own
 `docs-examples` job in CI, against a stack that job starts itself.
-
-## The documentation site
-
-Run these from the repository root.
-
-| Command | What it does |
-| --- | --- |
-| `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
-| `just docs` | Live preview on <http://127.0.0.1:8000>, rebuilding as you save. |
-| `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. |
-| `just test` | Run this repository's own tests (`tests/`) — the tests for `scripts/check_docs_freshness.py` and `scripts/check_doc_examples.py` themselves, plus the generation-test matrix that renders all eight backend combinations and checks each one. Needs no Docker. |
-| `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |
-| `just regen` | Regenerate `examples/reference-service/` from the template with the answers in `tests/reference-answers.yaml`; run this after every change to `reference-service/` and commit the result. |
-| `just regen-check` | The golden diff: render and compare, writing nothing. CI's `golden` job. |
-| `just adopt` | Copy Dependabot's edits to the rendered example back into the template, then check; only for line-for-line replacements — anything else fails with the file name and is made in the template by hand. Also copies the root workflows' action pins into the template's workflows and regenerates the example — Dependabot's `github-actions` updates land in `/.github/workflows` only. |
-| `just audit` | pip-audit over the root `uv.lock` — the documentation and release toolchain — with the same flags as the reference service's own `audit`. CI's `security` job runs both. |
-| `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee). Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml`. |
-| `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails. **This is not CI's `docs-freshness` job** — see [Documentation ships with the change](https://emadmokhtar.github.io/pyfr/contributing/#documentation-ships-with-the-change) for which script each one runs. |
-| `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |
-| `just next-version` | Preview the version number the next release would choose. Read-only — the release itself runs in CI (`.github/workflows/release.yml`). |
-| `just check` | `docs-build`, `test` and `regen-check`. Run before pushing a documentation or repository-tooling change. Same name as the reference service's own `just check` above, run from a different directory and checking different things — they are not interchangeable. |
-
-`--strict` turns a warning into a failure. A link to a page that no longer
-exists, a heading anchor that was renamed, an include that cannot be
-resolved: each fails the build instead of printing a warning nobody reads.
-Run `just docs-build` before pushing a documentation change.
-
-!!! warning "Two different servers, one port"
-
-    `just docs` and the service's `just dev` both default to port 8000. Stop
-    one before starting the other, or set `APP_HTTP_PORT` to something else.

@@ -10,7 +10,7 @@ This guide adds one feature through all four layers, so you see where each
 piece of code goes and why. It follows the shipped orders slice, which is the
 worked example you copy from.
 
-Work from `examples/reference-service/`. Read
+Work from the project root. Read
 [Layers and the dependency rule](../explanation/layers.md) first if you have
 not.
 
@@ -19,7 +19,7 @@ before the next one exists.
 
 ## 1. The domain model
 
-`src/reference_service/domain/`. This layer imports Pydantic and the standard
+`src/{{ cookiecutter.package_name }}/domain/`. This layer imports Pydantic and the standard
 library. Nothing else.
 
 Put the rules that are true regardless of how the data arrived here:
@@ -68,7 +68,7 @@ Describe it in domain terms. `get` and `save`, not `select_one` and `upsert`.
 
 ## 3. The application service
 
-`src/reference_service/services/`. One file per aggregate, one callable class
+`src/{{ cookiecutter.package_name }}/services/`. One file per aggregate, one callable class
 per operation.
 
 A service takes a command, builds domain objects, lets them enforce their own
@@ -98,7 +98,7 @@ times](../explanation/layers.md#why-the-same-constraint-appears-three-times).
 
 ## 4. The adapter
 
-`src/reference_service/infrastructure/`. The only code that knows a storage
+`src/{{ cookiecutter.package_name }}/infrastructure/`. The only code that knows a storage
 technology.
 
 Implement the port. Do not inherit from it — a Protocol is satisfied
@@ -200,7 +200,7 @@ a subclass inherits its parent's status.
   the status, the body, and — for anything that must not be published — its
   *absence*.
 
-Write the failing test first; that is how the reference service was built.
+Write the failing test first; that is how the service was built.
 
 ## 10. Check it
 

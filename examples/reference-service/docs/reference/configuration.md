@@ -23,7 +23,7 @@ cp .env.example .env
 
 This table is generated from the settings model. To change a description,
 edit `Field(description=...)` in
-`examples/reference-service/src/reference_service/settings.py` and run
+`src/reference_service/settings.py` and run
 `just config-docs`.
 
 <!-- generated: config-table. Run `just config-docs`. -->

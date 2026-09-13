@@ -9,7 +9,7 @@ last_reviewed: 2026-09-10
 
 ## Context
 
-M2 adds observability to the reference service. Every organisation
+M2 adds observability to the service. Every organisation
 generating a service from PyFr already sends telemetry somewhere —
 Datadog, an in-house Grafana stack, a managed vendor — so the template
 has to decide how much of an observability platform, if any, it ships
