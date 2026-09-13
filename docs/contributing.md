@@ -162,9 +162,10 @@ test still does `from … import` of it — ruff has no way to know the name
 stopped existing, so it stays quiet, and pytest would only discover the gap
 while collecting the test. After any template edit, `just regen` then
 `git diff --stat examples/reference-service` coming back empty is the proof
-that the everything-on render did not move; `just regen-check` alone
-compares the freshly regenerated example against itself and would not
-catch a lost byte.
+that the everything-on render did not move. `just regen-check` run *after*
+`just regen` compares the freshly regenerated example against itself and
+would not catch a lost byte; run against the committed example instead, it
+is the golden diff CI runs, and that does catch one.
 
 ### Dependabot and the template
 
