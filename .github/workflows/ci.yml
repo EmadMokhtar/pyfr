@@ -55,6 +55,11 @@ jobs:
     # parse Jinja. On its pull requests -- and on the push that merges one --
     # adopt its pin changes into the template first (M7-10). adopt.yml then
     # commits the same result to main.
+    #
+    # The same step carries the root workflows' action pins into the
+    # template's workflows: Dependabot's github-actions ecosystem reads
+    # /.github/workflows only, so a `ci(deps)` bump lands here and the
+    # template follows it (scripts/regen.py, adopt_action_pins).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -206,6 +211,14 @@ jobs:
 
       - name: Install the documentation toolchain
         run: uv sync --group docs
+
+      - name: Adopt Dependabot's pins into the template
+        # Same step, same condition as the `golden` job's: `just check`
+        # below runs the golden diff and tests/test_regen.py's check that
+        # the template's action pins match the root's, and on a Dependabot
+        # pull request neither holds until the pins are adopted.
+        if: github.event.pull_request.user.login == 'dependabot[bot]' || github.event.head_commit.author.name == 'dependabot[bot]'
+        run: just adopt
 
       - name: Run every root-level gate
         run: just check

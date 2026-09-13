@@ -185,6 +185,14 @@ and you make it in the template by hand. If `main` is ever red on
 `golden` after a Dependabot merge — `adopt.yml` lost a race with another
 merge, or its rebase conflicted — run `just adopt`, commit and push.
 
+Action versions go the other way. Dependabot's `github-actions` ecosystem
+reads `/.github/workflows` only, so its bumps land in this repository's
+own workflows, and `just adopt` copies each bumped `uses:` ref into the
+template's workflows and regenerates the example. `tests/test_regen.py`
+fails when a template workflow pins an action at a different ref than the
+root does — or uses one the root does not — so every action a generated
+project runs is one Dependabot sees here.
+
 ## Working on the documentation
 
 From the repository root:

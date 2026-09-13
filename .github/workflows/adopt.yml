@@ -2,6 +2,8 @@
 # rendered example into the template (M7 spec, M7-10). The pull request's
 # `golden` job already ran `just adopt` and proved the result renders back
 # clean, so this commit is that proven result, not a new experiment.
+# A github-actions bump goes the other way -- the root's workflows to the
+# template's -- and regenerates the example, so the example is staged too.
 #
 # The push uses the same token release.yml pushes with -- RELEASE_TOKEN,
 # the admin's fine-grained token that the `main` ruleset exempts, falling
@@ -56,13 +58,13 @@ jobs:
         env:
           PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          if git diff --quiet -- '{{cookiecutter.project_slug}}'; then
+          if git diff --quiet -- '{{cookiecutter.project_slug}}' examples/reference-service; then
             echo "Nothing to adopt: the template already matches."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- '{{cookiecutter.project_slug}}'
+          git add -- '{{cookiecutter.project_slug}}' examples/reference-service
           git commit -m "build(deps): adopt dependabot's pins into the template"
           # `main` may have moved since the checkout (a merge landed while
           # `just adopt` ran). Rebase this one commit onto it rather than
