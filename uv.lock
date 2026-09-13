@@ -2,6 +2,9 @@ version = 1
 revision = 3
 requires-python = ">=3.13"
 
+[options]
+prerelease-mode = "explicit"
+
 [[package]]
 name = "argcomplete"
 version = "3.7.2"

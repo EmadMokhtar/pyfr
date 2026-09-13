@@ -137,6 +137,31 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/reference_service"]
 
+[tool.uv]
+# Never resolve to a pre-release unless a requirement names one. uv's
+# default mode (`if-necessary`, since uv 0.12.3) tries stable versions
+# first and then falls back to a pre-release when no stable version fits
+# the constraints -- which is how a lone pydantic-core bump pulled in
+# pydantic 2.14.0b2 (PR #32): only that beta pins pydantic-core 2.49.0.
+# `explicit` closes the fallback: the resolver fails instead, naming the
+# package in its hint.
+prerelease = "explicit"
+# The OpenTelemetry instrumentation line is permanently beta-versioned
+# (see the `0.65b0` floors above). Under `explicit` a pre-release is only
+# allowed where a first-party requirement carries the marker; the direct
+# dependencies above carry their own, and these constraints carry it for
+# the four packages that arrive only transitively. A constraint changes
+# nothing for a package that is not in the graph, so this list is the
+# same for every answer set. A new instrumentation package that drags in
+# another beta-only transitive dependency fails `uv lock` with that
+# package's name in the hint: add it here.
+constraint-dependencies = [
+    "opentelemetry-instrumentation>=0.65b0",
+    "opentelemetry-instrumentation-asgi>=0.65b0",
+    "opentelemetry-semantic-conventions>=0.65b0",
+    "opentelemetry-util-http>=0.65b0",
+]
+
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --strict-config -m 'not integration and not contract'"
 testpaths = ["tests"]

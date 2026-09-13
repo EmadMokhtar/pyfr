@@ -55,7 +55,14 @@ and Dependabot's `uv` entries move both. Those entries ignore
 `pydantic-core`: each pydantic release pins one exact pydantic-core, and
 pydantic-core publishes stable-numbered releases for pydantic betas too,
 so a lone pydantic-core bump resolves to a beta pydantic. The pydantic
-bump carries pydantic-core. Every Dependabot pull request
+bump carries pydantic-core. Behind that, both `pyproject.toml`s set
+`tool.uv.prerelease = "explicit"`: uv resolves to a pre-release only
+where a first-party requirement names one, so Dependabot's `uv lock`
+fails outright rather than opening a pull request that installs a beta.
+The permanently beta-versioned OpenTelemetry instrumentation packages
+are named -- the direct ones by their own `0.65b0` floors, the transitive
+ones by `constraint-dependencies` beside the setting. Every Dependabot
+pull request
 carries the `no-docs-needed` label, because a version bump is exactly
 the internal-only change `ci.yml`'s docs-freshness job has that label
 for.
