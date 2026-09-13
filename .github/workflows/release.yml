@@ -50,9 +50,15 @@ jobs:
     # and publish it as the repository's release.
     if: "github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the bump commit, the tag, `gh release create`
+      packages: read    # the registry probe that decides on publish-images
+    # Decided by the registry probe at the end of this job, not by whether
+    # THIS run cut a release -- see "Decide whether that tag still needs
+    # its images" below.
     outputs:
-      released: ${{ steps.bump.outputs.released }}
-      version: ${{ steps.bump.outputs.version }}
+      publish: ${{ steps.images.outputs.publish }}
+      version: ${{ steps.images.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -247,6 +253,7 @@ jobs:
           fi
 
       - name: Publish the GitHub Release
+        id: publish
         # Deliberately NOT gated on `released == 'true'`, and idempotent
         # for an existing tag. If `gh release create` fails after the tag
         # (and, steady-state, the bump commit) have already been pushed, a
@@ -256,7 +263,8 @@ jobs:
         # release, repairable only by hand. So this step always runs,
         # works out the tag it should be publishing (the one just cut, or
         # otherwise the most recent tag on `main`), and creates the
-        # release only if that tag has none yet.
+        # release only if that tag has none yet. The tag it settles on is
+        # also what the images probe below asks the registry about.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASED: ${{ steps.bump.outputs.released }}
@@ -277,6 +285,7 @@ jobs:
           else
             tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
           fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [ -z "$tag" ]; then
             echo "No tag exists yet, so there is no release to publish."
             exit 0
@@ -290,6 +299,48 @@ jobs:
           gh release create "$tag" \
             --title "$tag" \
             --notes-file release-notes.md
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether that tag still needs its images
+        id: images
+        # `publish-images` below used to run only when THIS run cut the
+        # release. If this job failed after its tag was pushed -- at `gh
+        # release create`, say -- the rerun found no releasable commits,
+        # `released` was false, and the tagged version stayed without
+        # images for good. So the registry is asked instead: does the tag
+        # the step above settled on have every image it should? Any
+        # missing, `publish-images` runs -- on the release run and on a
+        # rerun alike; all present, it is skipped, so a docs-only merge
+        # rebuilds nothing. (A failure inside `publish-images` itself is
+        # repaired with "Re-run failed jobs", which keeps this job's
+        # outputs.) `docker manifest inspect` needs the login above for a
+        # package that is still private, and `packages: read` for the
+        # token to be allowed to look. The two image names are literals,
+        # as everywhere in this root workflow.
+        env:
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          publish=false
+          for image in reference-service reference-service-migrations; do
+            reference="ghcr.io/emadmokhtar/$image:$TAG"
+            if docker manifest inspect "$reference" >/dev/null 2>&1; then
+              echo "$reference is in the registry."
+            else
+              echo "$reference is not in the registry yet."
+              publish=true
+            fi
+          done
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   publish-images:
     # Both images, both architectures, tagged with the REPOSITORY version
@@ -317,7 +368,7 @@ jobs:
     # current, and `docker buildx` is preinstalled on ubuntu-latest. QEMU
     # stays: it registers the emulator that builder uses for arm64.
     needs: release
-    if: needs.release.outputs.released == 'true'
+    if: needs.release.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write   # gh release upload

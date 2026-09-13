@@ -49,9 +49,15 @@ jobs:
     # and publish it as the repository's release.
     if: "github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'bump:')"
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # the bump commit, the tag, `gh release create`
+      packages: read    # the registry probe that decides on publish-images
+    # Decided by the registry probe at the end of this job, not by whether
+    # THIS run cut a release -- see "Decide whether that tag still needs
+    # its images" below.
     outputs:
-      released: ${{ steps.bump.outputs.released }}
-      version: ${{ steps.bump.outputs.version }}
+      publish: ${{ steps.images.outputs.publish }}
+      version: ${{ steps.images.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -121,18 +127,41 @@ jobs:
         #     happens if nothing else handles this case.
         #
         # So: branch on whether any tag exists. With none, skip `cz bump`
-        # entirely and hand-tag the current commit with the version
-        # already on disk -- 0.1.0 as generated -- so there is nothing to
-        # bump; the GitHub Release below gets an empty notes section for
-        # it, and the first `cz bump` after it creates CHANGELOG.md. With
-        # a tag already in place, run `cz bump` exactly as normal; it is
-        # fully reliable once it has a base to work from.
+        # entirely and hand-tag the version already on disk -- 0.1.0 as
+        # generated -- so there is nothing to bump; the GitHub Release
+        # below gets an empty notes section for it, and the first `cz
+        # bump` after it creates CHANGELOG.md. The one thing the bootstrap
+        # does write is the API contract baseline, and only when the API
+        # changed before this first release; that promotion is committed
+        # and the tag points at that commit. With a tag already in place,
+        # run `cz bump` exactly as normal; it is fully reliable once it
+        # has a base to work from. Either branch says in `committed`
+        # whether it moved HEAD, so the push step knows what to push.
         run: |
           if [ -z "$(git tag -l)" ]; then
             echo "No tags found: bootstrapping the first release."
 
             version=$(uv run --locked cz version --project)
             tag="v${version}"
+
+            # The contract gate reads commit markers over the window since
+            # the last tag, and that window starts here from now on. An
+            # API change made before this first release -- marked
+            # breaking in a commit this tag will contain -- must therefore
+            # be in the baseline the tag ships, or every pull request
+            # after it reports that change as an unannounced break. A
+            # freshly generated baseline already equals openapi.json, and
+            # then nothing is written; otherwise the promotion is
+            # committed here, with a `bump:` subject so the run this push
+            # starts stops at the guard above.
+            just contract-release
+            if git diff --quiet -- openapi.baseline.json; then
+              echo "committed=false" >> "$GITHUB_OUTPUT"
+            else
+              git commit -q -m "bump: promote the api contract baseline for ${tag}" \
+                -- openapi.baseline.json
+              echo "committed=true" >> "$GITHUB_OUTPUT"
+            fi
 
             # A plain (lightweight) tag: cz's own tags carry no message
             # either, via this same config (tag_format = "v$version",
@@ -150,9 +179,8 @@ jobs:
             # window since the last tag -- so the baseline and the tag
             # must move together, or the gate goes red on the first pull
             # request after a release and stays red until someone
-            # promotes by hand. Steady-state only: the bootstrap branch
-            # above makes no commit, and a freshly generated baseline
-            # already equals openapi.json.
+            # promotes by hand. The bootstrap branch above promotes it
+            # too, with a commit of its own when the baseline moved.
             #
             # If cz then decides there is nothing to release (exit 3 or
             # 21 below), these writes are discarded with the runner:
@@ -183,16 +211,17 @@ jobs:
 
             echo "mode=bump" >> "$GITHUB_OUTPUT"
             echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "committed=true" >> "$GITHUB_OUTPUT"
             echo "version=$(uv run --locked cz version --project)" \
               >> "$GITHUB_OUTPUT"
           fi
 
       - name: Push the release
         if: steps.bump.outputs.released == 'true'
-        # The bootstrap branch above never touches the working tree or
-        # history -- only a new tag exists locally -- so only the tag
-        # needs to reach origin. The steady-state `cz bump` branch made a
-        # bump commit too, so both the commit and its tag need pushing.
+        # The steady-state `cz bump` branch always made a bump commit;
+        # the bootstrap branch made one only if it had a baseline to
+        # promote. `committed` says whether HEAD moved, and the tag is
+        # pushed by name either way.
         #
         # Both branches push the tag by name explicitly rather than via
         # `--follow-tags`, because `--follow-tags` only pushes *annotated*
@@ -223,14 +252,13 @@ jobs:
           PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if [ "${{ steps.bump.outputs.mode }}" = "bootstrap" ]; then
-            git push "$remote" "v${{ steps.bump.outputs.version }}"
-          else
+          if [ "${{ steps.bump.outputs.committed }}" = "true" ]; then
             git push "$remote" HEAD:main
-            git push "$remote" "v${{ steps.bump.outputs.version }}"
           fi
+          git push "$remote" "v${{ steps.bump.outputs.version }}"
 
       - name: Publish the GitHub Release
+        id: publish
         # Deliberately NOT gated on `released == 'true'`, and idempotent
         # for an existing tag. If `gh release create` fails after the tag
         # (and, steady-state, the bump commit) have already been pushed, a
@@ -240,7 +268,8 @@ jobs:
         # release, repairable only by hand. So this step always runs,
         # works out the tag it should be publishing (the one just cut, or
         # otherwise the most recent tag on `main`), and creates the
-        # release only if that tag has none yet.
+        # release only if that tag has none yet. The tag it settles on is
+        # also what the images probe below asks the registry about.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASED: ${{ steps.bump.outputs.released }}
@@ -261,6 +290,7 @@ jobs:
           else
             tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
           fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [ -z "$tag" ]; then
             echo "No tag exists yet, so there is no release to publish."
             exit 0
@@ -274,6 +304,49 @@ jobs:
           gh release create "$tag" \
             --title "$tag" \
             --notes-file release-notes.md
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide whether that tag still needs its images
+        id: images
+        # `publish-images` below used to run only when THIS run cut the
+        # release. If this job failed after its tag was pushed -- at `gh
+        # release create`, say -- the rerun found no releasable commits,
+        # `released` was false, and the tagged version stayed without
+        # images for good. So the registry is asked instead: does the tag
+        # the step above settled on have every image it should? Any
+        # missing, `publish-images` runs -- on the release run and on a
+        # rerun alike; all present, it is skipped, so a docs-only merge
+        # rebuilds nothing. (A failure inside `publish-images` itself is
+        # repaired with "Re-run failed jobs", which keeps this job's
+        # outputs.) `docker manifest inspect` needs the login above for a
+        # package that is still private, and `packages: read` for the
+        # token to be allowed to look.
+        env:
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          publish=false
+          for image in \
+            reference-service \
+            reference-service-migrations \
+          ; do
+            reference="ghcr.io/emadmokhtar/$image:$TAG"
+            if docker manifest inspect "$reference" >/dev/null 2>&1; then
+              echo "$reference is in the registry."
+            else
+              echo "$reference is not in the registry yet."
+              publish=true
+            fi
+          done
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   publish-images:
     # Every image, both architectures, tagged with the version
@@ -301,7 +374,7 @@ jobs:
     # current, and `docker buildx` is preinstalled on ubuntu-latest. QEMU
     # stays: it registers the emulator that builder uses for arm64.
     needs: release
-    if: needs.release.outputs.released == 'true'
+    if: needs.release.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write   # gh release upload
