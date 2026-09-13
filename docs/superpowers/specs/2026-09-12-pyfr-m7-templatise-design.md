@@ -303,6 +303,14 @@ and inert, since GitHub runs workflows only from a repository's root.
 | `dependabot.yml` | The five ecosystems | No `docker-compose` entries for services that are not there |
 | `docs.yml` | Build the project's MkDocs site with `--strict` and deploy it to GitHub Pages | — |
 
+Amended during PR 3: the table describes the end state. The
+documentation-dependent jobs and `docs.yml` arrive with PR 4, together
+with the site, the hygiene scripts and `lychee.toml` they read (section
+12). Dependabot's `github-actions` ecosystem reads `/.github/workflows`
+only, so the pins in the template's workflows are adopted from PyFr's
+root workflows by `just adopt` — M7-10's mechanism, in the other
+direction — and a root test holds the two equal.
+
 Commitizen becomes a `dev` dependency of the generated `pyproject.toml`
 (M7-9), with `version_files` pointing at that file's own version. The
 `[tool.commitizen]` table, the commit-message hook in
@@ -460,8 +468,8 @@ Each leaves `main` runnable and the golden diff green.
 |---|---|---|
 | 1 — skeleton | `git mv examples/reference-service '{{cookiecutter.project_slug}}'`; `cookiecutter.json` (without `_template_version`, which arrives with `.pyfr-answers.yml`); both hooks with an empty pruning half; the collision pass (section 7); `scripts/regen.py`, `just regen`, `tests/reference-answers.yaml`, `test_golden.py`; the identity, port, organisation and licence substitutions throughout the tree; a `.gitignore` for generated projects; `just adopt` and `adopt.yml` (M7-10); a root `.pre-commit-config.yaml`; `cookiecutter` and `pytest-cookies` in the root `dev` group; the `golden` CI job, with the generation tests in the `docs` job's root `just check`; roadmap "In progress". | identity, `http_port`, `license` |
 | 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`; `_template_version: 0.6.0` in `cookiecutter.json` until PR 5 wires its bump. | all twelve |
-| 3 — generated `.github/` | Section 8 in full; Commitizen moves (M7-9); the reference service's `.github/` appears as output. | — |
-| 4 — docs split | Section 9 in full; `docs.yml` builds both sites; the hygiene scripts move; root pages rewritten. | — |
+| 3 — generated `.github/` | Section 8's `ci.yml`, `nightly.yml`, `release.yml` and `dependabot.yml`, without the jobs that need the project's own documentation site (`docs`, `docs-freshness`, `docs-warnings`, `links`, `docs-examples`) — those and `docs.yml` land with the site in PR 4, so no generated workflow ever references a file the project does not have; Commitizen moves (M7-9); the reference service's `.github/` appears as output; the template's action pins follow the root's through `just adopt` (Dependabot's `github-actions` ecosystem reads `/.github/workflows` only). | — |
+| 4 — docs split | Section 9 in full; `docs.yml` builds both sites; the hygiene scripts move; root pages rewritten; a generated project's `docs.yml` and the documentation jobs of its `ci.yml` and `nightly.yml`. | — |
 | 5 — done | Full-suite tests and `full-suite.yml`; `_template_version` with the release's regen step; ADR 0017; roadmap **Done**; README status; `v0.7.0`. | — |
 
 PR 1 is the largest by line count — it contains the moved tree — and the
