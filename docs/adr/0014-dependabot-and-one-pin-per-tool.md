@@ -51,7 +51,11 @@ pinned in `examples/reference-service/scripts/check_contract_compatibility.py`
 as `tufin/oasdiff:v1.31.0`, a pin that predates M6. ruff is pinned in
 both locks — the root's, for `hooks/`, `scripts/` and `tests/`, and the
 reference service's, which is the template's. Two projects, two locks,
-and Dependabot's `uv` entries move both. Every Dependabot pull request
+and Dependabot's `uv` entries move both. Those entries ignore
+`pydantic-core`: each pydantic release pins one exact pydantic-core, and
+pydantic-core publishes stable-numbered releases for pydantic betas too,
+so a lone pydantic-core bump resolves to a beta pydantic. The pydantic
+bump carries pydantic-core. Every Dependabot pull request
 carries the `no-docs-needed` label, because a version bump is exactly
 the internal-only change `ci.yml`'s docs-freshness job has that label
 for.
