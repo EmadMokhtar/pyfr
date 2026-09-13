@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-13
 covers:
   - scripts/check_docs_updated.py
   - scripts/check_docs_freshness.py
@@ -304,7 +304,7 @@ to be. One pin, in one file Dependabot updates, is the whole point — see
 
 ## One-time repository settings
 
-Eight settings live in the GitHub interface, not in this repository, so they
+Nine settings live in the GitHub interface, not in this repository, so they
 are easy to miss when standing up a fork.
 
 - **Settings → Pages → Source = "GitHub Actions".** Without it the `Docs`
@@ -324,19 +324,21 @@ are easy to miss when standing up a fork.
   the runner's local checkout, so the run looks like it did most of the work
   before dying on something that reads like a permissions typo rather than a
   missing setting.
-- **Branch protection on `main`, if enabled, must let the release push
-  through.** A protected `main` rejects a push from the default
-  `GITHUB_TOKEN` the same way it would reject one from any other
-  contributor, so every release fails at the push step with no tag ever
-  reaching origin. Either exempt the `github-actions[bot]` actor in the
-  protection rule, or supply a personal access token or a GitHub App
-  installation token that is exempt. Whichever route is chosen, the token
-  that matters is the one passed to the `actions/checkout@v4` step, not the
+- **A `RELEASE_TOKEN` secret, so the release push lands.** The `main`
+  ruleset requires a pull request and exempts only the repository admin.
+  The default `GITHUB_TOKEN` is not exempt, so `release.yml`'s push of the
+  bump commit and tag is refused (`GH013`) and every release fails at that
+  step with no tag reaching origin — and on a user-owned repository GitHub
+  refuses to add the Actions app to the bypass list, so the only route is
+  a token whose owner is exempt. Create a fine-grained personal access
+  token as the admin (repository access: this repository only; Contents:
+  read and write) and store it as the repository secret `RELEASE_TOKEN`.
+  The token that matters is the one passed to `actions/checkout`, not the
   one used later for `gh release create`: `git push` uses the credentials
-  `checkout` wired into the local git config, so replacing only the
-  `gh release create` token changes nothing.
-- **`adopt.yml` pushes to `main`** under the same write permission and
-  branch-protection exemption as `release.yml`.
+  `checkout` wired into the local git config. Renew it before it expires;
+  the failure mode when it lapses is the same `GH013` at the push step.
+- **`adopt.yml` pushes to `main`** with the same `RELEASE_TOKEN`, for the
+  same reason.
 - **After the first release, make the two GHCR packages public.** The first
   `publish-images` run creates `reference-service` and
   `reference-service-migrations` as *private* packages: `docker pull`

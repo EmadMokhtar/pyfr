@@ -59,20 +59,27 @@ jobs:
           # cz reads every commit since the last tag, and needs the tags
           # themselves to know where that is.
           fetch-depth: 0
-          # A push made with the default GITHUB_TOKEN does not trigger
-          # other workflows. That is correct here -- ci.yml and docs.yml
-          # already ran on the merge commit this release is built from --
-          # but it looks like a broken trigger to whoever investigates
-          # later, so: it is deliberate, and it is GitHub's loop
-          # protection, not a misconfiguration.
+          # This is the token `git push` uses later in this job, because
+          # it is the token the checkout step wires into the local git
+          # config -- replacing it here, not in the `gh release create`
+          # step, is what decides whether the push lands.
           #
-          # This is also the token `git push` uses later in this job,
-          # because it is the token the checkout step wired into the
-          # local git config. If `main` is branch-protected and the
-          # default token is not exempt, replacing it here -- not in the
-          # `gh release create` step -- is what fixes the push. See
-          # docs/contributing.md, "One-time repository settings".
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # The `main` ruleset requires a pull request and exempts only
+          # the repository admin; on a user-owned repository GitHub does
+          # not let the Actions app be exempted, so the default
+          # GITHUB_TOKEN's push is refused (GH013) and every release
+          # failed at this step until RELEASE_TOKEN existed. RELEASE_TOKEN
+          # is a fine-grained personal access token of the admin (Contents:
+          # read and write on this repository), kept as a repository
+          # secret; the `||` falls back to the default token when the
+          # secret is absent, so a fork without it still runs this far.
+          # See docs/contributing.md, "One-time repository settings".
+          #
+          # A push made with that token, unlike one made with
+          # GITHUB_TOKEN, DOES start other workflows: ci.yml and docs.yml
+          # run again on the bump commit (harmless), and this workflow
+          # runs again and stops at the `bump:` guard above.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
