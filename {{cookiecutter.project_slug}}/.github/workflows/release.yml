@@ -101,8 +101,8 @@ jobs:
         # the working tree before this step BY ACCIDENT. There is
         # deliberately no `uv sync` above for that reason, and `uv run
         # --locked` is safe here: it refuses to rewrite uv.lock rather than
-        # updating it, and `.venv/` is untracked and ignored (M6 plan,
-        # Verified Fact 12). The one deliberate write is the
+        # updating it, and `.venv/` is untracked and ignored. The one
+        # deliberate write is the
         # contract-baseline promotion inside the else branch below, which
         # relies on exactly this behaviour to ride along in the bump
         # commit.
@@ -283,7 +283,7 @@ jobs:
 
   publish-images:
     # Every image, both architectures, tagged with the version
-    # just released and, once verified, `latest` (ADR 0015). In order:
+    # just released and, once verified, `latest`. In order:
     # build the single-architecture images and scan them, so a fixed HIGH
     # or CRITICAL finding stops the push before anything leaves the
     # runner; push both platforms under the version tag only; scan the
@@ -364,8 +364,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 {%- endraw %}
         # `--clobber` so "re-run failed jobs" after a failed upload does
-        # not die on "asset already exists" when one of the two files had
-        # already made it up.
+        # not die on "asset already exists" when a file had already made it
+        # up.
         run: >-
           gh release upload --clobber "$VERSION"
           sbom/{{ cookiecutter.project_slug }}.cdx.json
