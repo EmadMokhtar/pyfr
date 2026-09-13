@@ -431,10 +431,11 @@ where it lives in PyFr's own repository.
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
 
-Four settings live in the GitHub interface, not in this repository:
+Three settings live in the GitHub interface, not in this repository. The
+workflow-token permission is not one of them: each workflow declares what
+it needs in its own `permissions:` key, so the repository can stay at
+GitHub's default.
 
-- **Settings → Actions → General → Workflow permissions → "Read and write
-  permissions"**, so `release.yml` can push its tag and bump commit.
 - **A `RELEASE_TOKEN` secret, only if a ruleset on `main` requires a pull
   request.** The workflow token cannot pass such a ruleset (`GH013`), and
   on a user-owned repository GitHub does not let the Actions app be
