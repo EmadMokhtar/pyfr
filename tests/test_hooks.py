@@ -40,6 +40,12 @@ def test_default_answers_render(cookies) -> None:
         # 26 characters: one over the cap tests/test_generation.py proves
         # format-clean.
         ({"package_name": "abcde_fghij_klmno_pqrst_uv"}, "25 characters"),
+        # Free text is pasted into pyproject.toml, Python and Markdown as is:
+        # a quote, a backslash or a line break would break one of them.
+        ({"description": 'Orders "API"'}, "description"),
+        ({"author_name": "Back\\slash"}, "author_name"),
+        ({"project_name": "Line\nbreak"}, "project_name"),
+        ({"author_email": "tab\tme@example.com"}, "author_email"),
         ({"http_port": "0"}, "http_port"),
         ({"http_port": "70000"}, "http_port"),
         ({"http_port": "eighty"}, "http_port"),
@@ -56,6 +62,20 @@ def test_bad_answers_are_rejected_before_anything_is_written(
     assert result.exit_code != 0
     assert result.project_path is None or not result.project_path.exists()
     assert message in capfd.readouterr().err
+
+
+def test_free_text_may_contain_apostrophes_and_non_ascii(cookies) -> None:
+    # The refusal above is narrow: everything the formats can carry is fine.
+    result = cookies.bake(
+        extra_context={
+            "description": "Emad's caf\u00e9 orders service \u2014 v2.",
+            "author_name": "Zo\u00eb O'Neil",
+        }
+    )
+    assert result.exit_code == 0, result.exception
+    pyproject = (result.project_path / "pyproject.toml").read_text()
+    assert "Emad's caf\u00e9 orders service \u2014 v2." in pyproject
+    assert "Zo\u00eb O'Neil" in pyproject
 
 
 @pytest.mark.parametrize("choice", ["Apache-2.0", "MIT", "MPL-2.0", "Proprietary"])

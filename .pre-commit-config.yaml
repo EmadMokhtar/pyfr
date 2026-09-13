@@ -9,11 +9,16 @@
 # hook below runs at the `commit-msg` stage and would never fire.
 default_install_hook_types: [pre-commit, commit-msg]
 
-# The template body is Jinja, not Python, YAML or TOML: its files render into
-# those languages and are checked there, in examples/reference-service/.
 # .idea/ is IDE metadata, not code -- the repository's .gitignore already
 # lists it (the directory is tracked from before that entry was added).
-exclude: ^(\{\{cookiecutter\.project_slug\}\}/|\.idea/)
+#
+# The template body is deliberately NOT excluded here. It is Jinja, not
+# Python, YAML or TOML, so the hooks that parse those languages exclude it
+# individually below and check its render in examples/reference-service/
+# instead -- but gitleaks and the whitespace hooks must still see it: a
+# secret that exists only in template source would otherwise never be
+# scanned.
+exclude: ^\.idea/
 
 repos:
   # ruff, uv and Commitizen run from the environments uv.lock pins -- the
@@ -32,12 +37,14 @@ repos:
         language: system
         types_or: [python, pyi]
         require_serial: true
+        exclude: ^\{\{cookiecutter\.project_slug\}\}/
       - id: ruff-format
         name: ruff format --check
         entry: uv run --group dev ruff format --check --force-exclude
         language: system
         types_or: [python, pyi]
         require_serial: true
+        exclude: ^\{\{cookiecutter\.project_slug\}\}/
       - id: uv-lock
         name: uv lock --check (reference service)
         entry: uv lock --check --project examples/reference-service
@@ -74,5 +81,7 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        exclude: ^\{\{cookiecutter\.project_slug\}\}/
       - id: check-toml
+        exclude: ^\{\{cookiecutter\.project_slug\}\}/
       - id: check-merge-conflict

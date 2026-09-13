@@ -1,19 +1,46 @@
 """Reject bad answers before cookiecutter writes a single file.
 
 Cookiecutter renders this file through Jinja before running it, so the
-three constants below are literals by the time Python sees them. A
+constants below are literals by the time Python sees them. Each is
+rendered with Jinja's `tojson` filter inside a raw triple-quoted string and
+decoded with json.loads: `tojson` escapes every quote (including the
+apostrophe, as \u0027) and every control character, so an answer
+containing a double quote, a backslash or a line break reaches the checks
+below instead of breaking this file's own syntax -- and the file stays
+valid Python before rendering, so the repository's ruff can read it. A
 non-zero exit aborts the generation and nothing is left on disk.
 """
 
 from __future__ import annotations
 
+import json
 import keyword
 import re
 import sys
 
-PROJECT_SLUG = "{{ cookiecutter.project_slug }}"
-PACKAGE_NAME = "{{ cookiecutter.package_name }}"
-HTTP_PORT = "{{ cookiecutter.http_port }}"
+# The single quotes are load-bearing: the rendered JSON value begins and
+# ends with a double quote, so a """ delimiter would close early.
+# fmt: off
+PROJECT_NAME = json.loads(r'''{{ cookiecutter.project_name | tojson }}''')
+PROJECT_SLUG = json.loads(r'''{{ cookiecutter.project_slug | tojson }}''')
+PACKAGE_NAME = json.loads(r'''{{ cookiecutter.package_name | tojson }}''')
+DESCRIPTION = json.loads(r'''{{ cookiecutter.description | tojson }}''')
+AUTHOR_NAME = json.loads(r'''{{ cookiecutter.author_name | tojson }}''')
+AUTHOR_EMAIL = json.loads(r'''{{ cookiecutter.author_email | tojson }}''')
+HTTP_PORT = json.loads(r'''{{ cookiecutter.http_port | tojson }}''')
+# fmt: on
+
+# Free-text answers are pasted into pyproject.toml basic strings, Python
+# docstrings, Markdown and licence texts exactly as typed. None of those
+# formats is escaped by the template, so the characters that would break
+# one of them are refused up front.
+FREE_TEXT = {
+    "project_name": PROJECT_NAME,
+    "description": DESCRIPTION,
+    "author_name": AUTHOR_NAME,
+    "author_email": AUTHOR_EMAIL,
+}
+UNREPRESENTABLE = re.compile(r'["\\\x00-\x1f\x7f]')
 
 SLUG_PATTERN = re.compile(r"[a-z][a-z0-9-]*")
 PORT_PATTERN = re.compile(r"[1-9][0-9]*")
@@ -27,6 +54,14 @@ MAX_PACKAGE_NAME_LENGTH = 25
 
 def problems() -> list[str]:
     found: list[str] = []
+    for key, value in FREE_TEXT.items():
+        if UNREPRESENTABLE.search(value):
+            found.append(
+                f"{key} {value!r} must not contain a double quote, a "
+                "backslash or a control character such as a line break; "
+                "the template pastes it into pyproject.toml, Python and "
+                "Markdown as is."
+            )
     if not SLUG_PATTERN.fullmatch(PROJECT_SLUG):
         found.append(
             f"project_slug {PROJECT_SLUG!r} must match ^[a-z][a-z0-9-]*$: "
