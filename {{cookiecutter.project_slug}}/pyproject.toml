@@ -205,7 +205,11 @@ only_mutate = [
 # nothing else. Without these two, M2's tests/unit/test_dashboards.py
 # fails with "mutants/ops/grafana/dashboards not found" and M1's
 # test_migration_files.py cannot find the files it hashes.
+{%- if cookiecutter.database == "postgres" %}
 also_copy = ["ops", "migrations"]
+{%- else %}
+also_copy = ["ops"]
+{%- endif %}
 
 # Behaviour tests only, and this list is the important line in this file.
 #

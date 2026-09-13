@@ -600,9 +600,9 @@ def load_settings(env_file: str | None = ".env") -> Settings:
     except ValidationError as exc:
         # exc.errors(include_input=False), not str(exc) or the bare exc:
         # pydantic's default rendering embeds the VALUE that failed
-        # validation for every field, and for database.dsn that value is
+        # validation for every field, and for a DSN field that value is
         # the connection string with its password in it — verified: a
-        # malformed database DSN `mysql://app:sup3rs3cr3t@...` printed
+        # malformed DSN `mysql://app:sup3rs3cr3t@...` printed
         # `input_value='mysql://app:sup3rs3cr3t@...'` to stderr here, in
         # direct contradiction of this module's own docstring ("a missing
         # or malformed variable stops the process ... with a readable
@@ -612,7 +612,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         # confirmed on the installed pydantic (2.13.4) to still identify
         # exactly which setting is wrong and why.
         #
-        # Applied globally, not only to database.dsn: every OTHER field
+        # Applied globally, not only to DSN fields: every OTHER field
         # loses the courtesy of having its bad value echoed back too, which
         # is a real trade-off — a typo in, say, http_port is now named by
         # field and constraint but not shown verbatim. The alternative, an
