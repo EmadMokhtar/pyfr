@@ -59,14 +59,14 @@ Everything below already runs in the reference service, today:
 - **FastAPI** with an application factory and a lifespan, so tests build the
   app themselves instead of importing a module-level global.
 - **Four layers** — domain, services, infrastructure, api — with the
-  dependency rule [enforced by a build check](explanation/layers.md), not by
+  dependency rule [enforced by a build check](https://emadmokhtar.github.io/pyfr/reference-service/explanation/layers/), not by
   code review.
 - **Configuration** validated at startup. A bad value stops the process with
   a readable message instead of causing an error an hour later.
 - **Structured logging**: one JSON object per line, on standard output, with
   every third-party library's records passing through the same chain.
 - **Three health endpoints** answering three different questions —
-  see [HTTP API](reference/http-api.md).
+  see [HTTP API](https://emadmokhtar.github.io/pyfr/reference-service/reference/http-api/).
 - **RFC 9457 Problem Details** error responses. RFC 9457 is the internet
   standard shape for a JSON error body.
 - **Correlation identifiers**: one identifier binds every log line a single
@@ -79,13 +79,13 @@ Everything below already runs in the reference service, today:
 
 | If you want to | Read |
 | --- | --- |
-| Run the reference service and place an order | [Getting started](getting-started.md) |
-| Add your own endpoint through all four layers | [Add an endpoint](guides/add-an-endpoint.md) |
-| Store data in something PyFr does not ship | [Add a backend](guides/add-a-backend.md) |
-| Look up a `just` command | [Commands](reference/commands.md) |
-| Look up an environment variable | [Configuration](reference/configuration.md) |
-| Look up an endpoint or an error shape | [HTTP API](reference/http-api.md) · [Errors](reference/errors.md) |
-| Understand how the pieces fit | [Architecture](explanation/architecture.md) |
+| Run the reference service and place an order | [Getting started](https://emadmokhtar.github.io/pyfr/reference-service/getting-started/) |
+| Add your own endpoint through all four layers | [Add an endpoint](https://emadmokhtar.github.io/pyfr/reference-service/guides/add-an-endpoint/) |
+| Store data in something PyFr does not ship | [Add a backend](https://emadmokhtar.github.io/pyfr/reference-service/guides/add-a-backend/) |
+| Look up a `just` command | [Commands](https://emadmokhtar.github.io/pyfr/reference-service/reference/commands/) |
+| Look up an environment variable | [Configuration](https://emadmokhtar.github.io/pyfr/reference-service/reference/configuration/) |
+| Look up an endpoint or an error shape | [HTTP API](https://emadmokhtar.github.io/pyfr/reference-service/reference/http-api/) · [Errors](https://emadmokhtar.github.io/pyfr/reference-service/reference/errors/) |
+| Understand how the pieces fit | [Architecture](https://emadmokhtar.github.io/pyfr/reference-service/explanation/architecture/) |
 | Know what ships when | [Roadmap](roadmap.md) |
 | Work on PyFr itself | [Contributing](contributing.md) |
 | Look up a term used on this site | [Glossary](glossary.md) |

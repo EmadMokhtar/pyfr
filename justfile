@@ -16,12 +16,18 @@ docs-install:
 docs:
     uv run mkdocs serve
 
-# Build the site into site/ with --strict, exactly as CI does.
+# Build both sites into site/ with --strict, exactly as CI does: PyFr's own
+# at the top, and the reference service's rendered site -- built from
+# examples/reference-service/ with its own toolchain and its own
+# mkdocs.yml -- under site/reference-service/. One deploy, two sites
+# (spec §9.2). SITE_URL tells the second build where it will live; a
+# generated project leaves it unset and gets its own Pages URL.
 docs-build:
     # --strict turns a warning into a failure: a link to a page that no
     # longer exists, a renamed heading anchor, or an unresolvable include
     # each fail the build rather than printing a warning nobody reads.
     uv run mkdocs build --strict
+    cd examples/reference-service && SITE_URL=https://emadmokhtar.github.io/pyfr/reference-service/ uv run --group docs mkdocs build --strict --site-dir ../../site/reference-service
 
 # Dead external links. Internal ones are already `mkdocs build --strict`'s job.
 links:
@@ -29,9 +35,10 @@ links:
     # where the action provides it.
     lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md
 
-# The repository's own script tests.
+# The repository's own script tests. Both groups: the generation tests
+# build a render's documentation site with the root's MkDocs.
 test:
-    uv run --group dev pytest tests/
+    uv run --group dev --group docs pytest tests/
 
 # The repository's git hooks over every tracked file. The reference service's
 # own precommit recipe skips itself when it finds it is nested inside this

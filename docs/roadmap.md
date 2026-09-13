@@ -62,7 +62,7 @@ Not "later" — decided against, with a reason.
 | Excluded | Why |
 | --- | --- |
 | A published runtime library | Extract one after real services exist, when the right boundaries are visible rather than guessed. |
-| MySQL, MongoDB, Memcached, GCS, Azure Blob adapters | A narrow set that is genuinely finished beats a long list that is half-working. [Add a backend](guides/add-a-backend.md) covers writing your own. |
+| MySQL, MongoDB, Memcached, GCS, Azure Blob adapters | A narrow set that is genuinely finished beats a long list that is half-working. [Add a backend](https://emadmokhtar.github.io/pyfr/reference-service/guides/add-a-backend/) covers writing your own. |
 | Consumer-driven contract testing | Pays off only with consumer-team buy-in and a hosted broker. Unused scaffolding otherwise. |
 | A production observability platform | Teams already have one. PyFr emits standard telemetry and stops there. |
 | Message queues | A large subsystem that deserves its own design round. |
@@ -70,7 +70,7 @@ Not "later" — decided against, with a reason.
 | Multi-tenancy | Same reason. |
 | `catalog-info.yaml`, a Backstage service-catalogue file | M5's specification justified it as making the README's Backstage integration claim true, but the README rewrite removed that claim. There is nothing left to justify, no portal to register with, and no service anyone deploys to describe. If Backstage ever matters here, it is template content for M7, not documentation for M5. |
 | A weekly job re-recording outbound HTTP cassettes | `just test-record` records against a committed, deterministic local WireMock stub, not a real upstream. A scheduled re-record against a stub that never changes would produce an empty diff every week, forever. |
-| A distroless runtime image | No maintained free Python 3.13 distroless with pinned tags, and the start command needs a shell to expand the port. Scanning the slim image is the mitigation; see [ADR 0016](adr/0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire.md). |
+| A distroless runtime image | No maintained free Python 3.13 distroless with pinned tags, and the start command needs a shell to expand the port. Scanning the slim image is the mitigation; see [ADR 0016](https://emadmokhtar.github.io/pyfr/reference-service/adr/0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire/). |
 
 ## Where the detail lives
 

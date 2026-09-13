@@ -270,6 +270,28 @@ migrate-force version:
     docker compose run --rm migrate force {% raw %}{{version}}{% endraw %}
 {%- endif %}
 
+# Install the documentation toolchain.
+docs-install:
+    uv sync --group docs
+
+# Serve a live preview on http://127.0.0.1:8001, rebuilding on save. One
+# above the service's default port, so `just dev` and this can run together.
+docs:
+    uv run --group docs mkdocs serve --dev-addr 127.0.0.1:8001
+
+# Build the site into site/ with --strict, exactly as CI does.
+docs-build:
+    # --strict turns a warning into a failure: a link to a page that no
+    # longer exists, a renamed heading anchor, or an unresolvable include
+    # each fail the build rather than printing a warning nobody reads.
+    uv run --group docs mkdocs build --strict
+
+# Dead external links. Internal ones are already `mkdocs build --strict`'s job.
+links:
+    # Needs the lychee binary: `brew install lychee`, or run it in CI,
+    # where the action provides it.
+    lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md
+
 # Run the documentation's marked `curl` examples against a real service.
 docs-examples:
     #!/usr/bin/env bash

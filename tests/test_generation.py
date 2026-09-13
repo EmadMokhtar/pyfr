@@ -617,3 +617,37 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
 @pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
 def test_a_render_carries_only_the_backends_it_chose(cookies, answers) -> None:
     assert_invariant(render(cookies, **answers), answers)
+
+
+def build_site(root: Path) -> subprocess.CompletedProcess[str]:
+    # The root's MkDocs over the render's own mkdocs.yml: no `uv sync` in
+    # the render, so no network and no second toolchain. `site_url` reads
+    # SITE_URL through `!ENV`; unset, the default applies.
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mkdocs",
+            "build",
+            "--strict",
+            "--config-file",
+            str(root / "mkdocs.yml"),
+            "--site-dir",
+            str(root / "site"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "answers", [EVERYTHING_ON, COMBINATIONS[-1]], ids=combination_id
+)
+def test_the_two_extreme_renders_build_their_sites(cookies, answers) -> None:
+    # Every page, every nav entry and every cross-reference must resolve
+    # with everything on and with everything off; the six other
+    # combinations are covered by the full-suite tests (PR 5).
+    root = render(cookies, **answers)
+    built = build_site(root)
+    assert built.returncode == 0, built.stdout + built.stderr
+    assert (root / "site" / "index.html").is_file()

@@ -82,15 +82,15 @@ toolchain's lock. It needs Docker, and it is deliberately **not** part of
 changes without a commit, because an advisory can be published overnight
 against a version that is already locked. `security` can turn red on a
 re-run of an unchanged branch — that is normal, and the
-[runbook](runbook.md#security-is-red-on-a-pull-request) says what to do
-with it. [Supply chain](reference/supply-chain.md) describes each step.
+[runbook](https://emadmokhtar.github.io/pyfr/reference-service/runbook/#security-is-red-on-a-pull-request) says what to do
+with it. [Supply chain](https://emadmokhtar.github.io/pyfr/reference-service/reference/supply-chain/) describes each step.
 
 `.python-version` pins the interpreter to 3.13, so `uv sync` uses the same one
 continuous integration does. There is no separate setup step and no drift
 between your machine and the pipeline.
 
 Development is test-driven: write the failing test first, then the
-implementation. See [Testing strategy](explanation/testing.md).
+implementation. See [Testing strategy](https://emadmokhtar.github.io/pyfr/reference-service/explanation/testing/).
 
 ### Generated files
 
@@ -317,7 +317,7 @@ has to be got right by hand:
   "successful" `curl` invocation as far as the shell is concerned, and
   the check only looks at the shell's exit code. A marked block has to
   check the response itself and fail the shell if it does not match, the
-  way the examples in [Getting started](getting-started.md) capture the
+  way the examples in [Getting started](https://emadmokhtar.github.io/pyfr/reference-service/getting-started/) capture the
   response and then `grep -q ... <<< "$response"` against the status line
   and body. `curl -f` is the single-command version of the same rule when
   only the status code matters.
@@ -399,7 +399,7 @@ that checks a message is the same version that later decides the release. Run
 docs-install` does too, since `dev` is a default group); otherwise `uv run`
 installs it on first use, which makes the first commit slower than it needs
 to be. One pin, in one file Dependabot updates, is the whole point — see
-[ADR 0014](adr/0014-dependabot-and-one-pin-per-tool.md).
+[ADR 0014](https://emadmokhtar.github.io/pyfr/reference-service/adr/0014-dependabot-and-one-pin-per-tool/).
 
 A generated project carries its own Commitizen (spec M7-9): `commitizen`
 in its `dev` group, a `[tool.commitizen]` table in its `pyproject.toml`,

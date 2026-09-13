@@ -282,10 +282,11 @@ def walk_settings() -> list[ConfigGroup]:
 
 
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
-_REPOSITORY_ROOT = _SERVICE_ROOT.parents[1]
 
 ENV_EXAMPLE = _SERVICE_ROOT / ".env.example"
-CONFIGURATION_DOC = _REPOSITORY_ROOT / "docs" / "reference" / "configuration.md"
+# The project's own docs/, not the enclosing repository's: every generated
+# project carries its own documentation site (M7 PR 4).
+CONFIGURATION_DOC = _SERVICE_ROOT / "docs" / "reference" / "configuration.md"
 
 MARKER_BEGIN = "<!-- generated: config-table. Run `just config-docs`. -->"
 MARKER_END = "<!-- /generated: config-table -->"
@@ -439,7 +440,7 @@ def write_outputs() -> None:
 def check_outputs() -> list[str]:
     """Paths whose committed content differs from what the model produces."""
     return [
-        str(path.relative_to(_REPOSITORY_ROOT))
+        str(path.relative_to(_SERVICE_ROOT))
         for path, content in _rendered_outputs().items()
         if path.read_text(encoding="utf-8") != content
     ]

@@ -1,6 +1,19 @@
 line-length = 88
 target-version = "py313"
 src = ["src", "tests"]
+# Ruff's default `include` gained "*.md" (it now parses Python fences inside
+# Markdown as lintable/formattable source). Restated here without it: this
+# file governs the project's own Python -- src/, tests/, scripts/ -- not the
+# code samples inside docs/, which `ruff check .` would otherwise walk into
+# and try to reformat. Otherwise identical to ruff's own pre-"*.md" default.
+include = [
+    "*.py",
+    "*.pyi",
+    "*.ipynb",
+    "**/pyproject.toml",
+    "**/ruff.toml",
+    "**/.ruff.toml",
+]
 
 [lint]
 select = [

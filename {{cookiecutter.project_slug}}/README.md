@@ -425,11 +425,6 @@ with the project and run from the first push:
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
 
-Until PyFr's next release moves the documentation site into the template,
-the `check` and `gates` jobs stay red: `just test` and `just gates` look
-for `docs/reference/configuration.md` two directories above the project,
-where it lives in PyFr's own repository.
-
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
 
