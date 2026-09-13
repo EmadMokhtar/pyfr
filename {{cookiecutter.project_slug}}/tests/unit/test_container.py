@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import pytest
 from redis.asyncio import Redis
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncEngine
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.container import build_container, close_container
 from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
+{%- if cookiecutter.database == "postgres" %}
 from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
@@ -23,8 +27,10 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import
     S3ReceiptStore,
 )
 from {{ cookiecutter.package_name }}.settings import Settings
+{%- if cookiecutter.database == "postgres" %}
 
 DSN = "postgresql://app:secret@localhost:5432/app"
+{%- endif %}
 
 
 def test_no_database_configured_selects_the_in_memory_adapter() -> None:
@@ -34,7 +40,9 @@ def test_no_database_configured_selects_the_in_memory_adapter() -> None:
     container = build_container(settings)
 
     assert isinstance(container.orders, InMemoryOrderRepository)
+{%- if cookiecutter.database == "postgres" %}
     assert container.engine is None
+{%- endif %}
 
 
 def test_no_database_configured_registers_no_readiness_check() -> None:
@@ -44,6 +52,7 @@ def test_no_database_configured_registers_no_readiness_check() -> None:
     container = build_container(settings)
 
     assert container.readiness._gating == {}
+{%- if cookiecutter.database == "postgres" %}
 
 
 def test_a_configured_dsn_selects_the_postgresql_adapter(
@@ -56,6 +65,8 @@ def test_a_configured_dsn_selects_the_postgresql_adapter(
 
     assert isinstance(container.orders, PostgresOrderRepository)
     assert container.engine is not None
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 
 
 def test_a_configured_dsn_registers_a_database_readiness_check(
@@ -67,6 +78,8 @@ def test_a_configured_dsn_registers_a_database_readiness_check(
     container = build_container(settings)
 
     assert "database" in container.readiness._gating
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 
 
 async def test_close_container_disposes_the_pool(
@@ -101,6 +114,7 @@ async def test_close_container_disposes_the_pool(
     await close_container(container)
 
     assert disposed
+{%- endif %}
 
 
 async def test_close_container_is_safe_without_a_database() -> None:
@@ -151,9 +165,11 @@ def test_no_cache_settings_means_no_cache_and_no_report() -> None:
 def test_cache_settings_wrap_the_repository_and_register_a_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+{%- if cookiecutter.database == "postgres" %}
     monkeypatch.setenv(
         "APP_DATABASE__DSN", "postgresql://app:secret@localhost:5432/app"
     )
+{%- endif %}
     monkeypatch.setenv("APP_CACHE__DSN", "redis://localhost:6379/0")
     container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
 
@@ -197,6 +213,7 @@ def test_storage_settings_select_the_s3_store_and_register_a_report(
     # taking the pod out of rotation would cost far more than it saves.
     assert "storage" in container.readiness._informational
     assert "storage" not in container.readiness._gating
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 
 def test_all_three_dependencies_together_split_into_the_right_tiers(
@@ -220,3 +237,4 @@ def test_all_three_dependencies_together_split_into_the_right_tiers(
 
     assert set(container.readiness._gating) == {"database"}
     assert set(container.readiness._informational) == {"cache", "storage"}
+{%- endif %}

@@ -56,7 +56,9 @@ def test_a_malformed_url_is_returned_as_is() -> None:
 def test_the_resolved_configuration_masks_every_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+{%- if cookiecutter.database == "postgres" %}
     monkeypatch.setenv("APP_DATABASE__DSN", "postgresql://app:db-pass@db:5432/app")
+{%- endif %}
     monkeypatch.setenv("APP_CACHE__DSN", "redis://:cache-pass@cache:6379/0")
     monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://pay")
     monkeypatch.setenv("APP_PAYMENT__API_KEY", "pay-key")
@@ -71,7 +73,9 @@ def test_the_resolved_configuration_masks_every_secret(
         assert secret not in rendered
     # Everything that is not a secret is still there to read.
     assert '"bucket": "receipts"' in rendered
+{%- if cookiecutter.database == "postgres" %}
     assert "@db:5432/app" in rendered
+{%- endif %}
 
 
 def test_main_prints_one_json_object_and_returns_zero(
@@ -82,6 +86,7 @@ def test_main_prints_one_json_object_and_returns_zero(
     printed = json.loads(capsys.readouterr().out)
     assert printed["service_name"] == "{{ cookiecutter.project_slug }}"
     assert printed["log"]["level"] == "info"
+{%- if cookiecutter.database == "postgres" %}
 
 
 def test_main_exits_78_without_echoing_the_bad_value(
@@ -98,3 +103,4 @@ def test_main_exits_78_without_echoing_the_bad_value(
     captured = capsys.readouterr()
     assert "sup3rs3cr3t" not in captured.err
     assert "sup3rs3cr3t" not in captured.out
+{%- endif %}

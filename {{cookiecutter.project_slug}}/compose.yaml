@@ -1,4 +1,5 @@
 services:
+{%- if cookiecutter.database == "postgres" %}
   postgres:
     image: postgres:18-alpine
     environment:
@@ -28,6 +29,7 @@ services:
       # down` (`docker compose down -v`) removes it, and the next `just up`
       # initialises a fresh 18 cluster.
       - postgres-data:/var/lib/postgresql
+{%- endif %}
 
   # The cache. Not behind a profile: it is small, starts in under a second,
   # and `just up` should exercise the same arrangement production runs.
@@ -59,6 +61,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+{%- if cookiecutter.database == "postgres" %}
 
   migrate:
     build:
@@ -86,6 +89,7 @@ services:
       - -database
       - postgres://app:secret@postgres:5432/app?sslmode=disable
     command: ["up"]
+{%- endif %}
 
   # The object store. MinIO speaks the S3 API, so the same adapter that runs
   # here runs against Amazon S3 in production with only endpoint_url
@@ -152,12 +156,14 @@ services:
     ports:
       - "{{ cookiecutter.http_port }}:{{ cookiecutter.http_port }}"
     depends_on:
+{%- if cookiecutter.database == "postgres" %}
       # Not just "started": the API must not serve a request against a schema
       # that is not there yet. service_completed_successfully waits for the
       # one-shot migrate container to exit 0, so `just up` is a single command
       # that yields a migrated database and a working API.
       migrate:
         condition: service_completed_successfully
+{%- endif %}
       # The bucket must exist before the first receipt is requested. Same
       # arrangement as `migrate`: wait for the one-shot container to exit 0.
       minio-bootstrap:
@@ -174,9 +180,11 @@ services:
     environment:
       APP_ENVIRONMENT: production
       APP_LOG__LEVEL: info
+{%- if cookiecutter.database == "postgres" %}
       # Host `postgres` is the compose service name. No driver suffix and no
       # sslmode — see settings.py's DatabaseSettings.dsn.
       APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
+{%- endif %}
       # `redis` is the compose service name above. Set here rather than
       # defaulted, because `just up` should exercise the cached path — an
       # adapter that only runs in tests is an adapter nobody has really run.
@@ -341,7 +349,9 @@ services:
       - ./sbom:/sbom
 
 volumes:
+{%- if cookiecutter.database == "postgres" %}
   postgres-data:
+{%- endif %}
   minio-data:
   seed-state:
   trivy-cache:

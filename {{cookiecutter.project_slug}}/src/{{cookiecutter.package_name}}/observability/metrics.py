@@ -19,8 +19,10 @@ from typing import Any
 import structlog
 from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
 from opentelemetry.metrics import CallbackOptions, Meter, Observation
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import QueuePool
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.observability.otel import OtelRuntime
 
@@ -136,6 +138,7 @@ def _register_service_info(meter: Meter, service_version: str) -> None:
         unit="{info}",
         description="Always 1. Carries the running version as a label.",
     )
+{%- if cookiecutter.database == "postgres" %}
 
 
 def _register_pool_metrics(meter: Meter, engine: AsyncEngine) -> None:
@@ -185,6 +188,7 @@ def _register_pool_metrics(meter: Meter, engine: AsyncEngine) -> None:
         unit="{connection}",
         description="The pool ceiling. Exact, because max_overflow is 0.",
     )
+{%- endif %}
 
 
 async def _probe_event_loop_lag(histogram: Any, interval_seconds: float) -> None:
@@ -227,7 +231,9 @@ def register_runtime_metrics(
     runtime: OtelRuntime,
     *,
     service_version: str,
+{%- if cookiecutter.database == "postgres" %}
     engine: AsyncEngine | None = None,
+{%- endif %}
     event_loop_probe_interval_seconds: float = (
         DEFAULT_EVENT_LOOP_PROBE_INTERVAL_SECONDS
     ),
@@ -240,8 +246,10 @@ def register_runtime_metrics(
     meter = runtime.meter_provider.get_meter(METER_NAME)
 
     _register_service_info(meter, service_version)
+{%- if cookiecutter.database == "postgres" %}
     if engine is not None:
         _register_pool_metrics(meter, engine)
+{%- endif %}
 
     instrumentor = SystemMetricsInstrumentor(config=_PROCESS_METRICS_CONFIG)
     instrumentor.instrument(meter_provider=runtime.meter_provider)

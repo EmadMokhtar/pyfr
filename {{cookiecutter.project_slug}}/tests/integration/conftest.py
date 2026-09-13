@@ -26,26 +26,39 @@ protects against.
 """
 
 from __future__ import annotations
+{%- if cookiecutter.database == "postgres" %}
 
 from collections.abc import AsyncIterator, Callable, Iterator
+{%- else %}
+
+from collections.abc import AsyncIterator, Iterator
+{%- endif %}
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from pydantic import SecretStr
 from redis.asyncio import Redis
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+{%- endif %}
 from testcontainers.community.minio import MinioContainer
+{%- if cookiecutter.database == "postgres" %}
 from testcontainers.community.postgres import PostgresContainer
+{%- endif %}
 from testcontainers.community.redis import RedisContainer
+{%- if cookiecutter.database == "postgres" %}
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_redis_client
+{%- if cookiecutter.database == "postgres" %}
 from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
@@ -55,10 +68,16 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import
 )
 from {{ cookiecutter.package_name }}.settings import (
     CacheSettings,
+{%- if cookiecutter.database == "postgres" %}
     DatabaseSettings,
+{%- endif %}
     StorageSettings,
 )
+{%- if cookiecutter.database == "postgres" %}
 from tests.compose_images import compose_image, dockerfile_base_image
+{%- else %}
+from tests.compose_images import compose_image
+{%- endif %}
 
 # Read from compose.yaml and Dockerfile.migrations rather than pinned here
 # (ADR 0014): a gate that passes against a different PostgreSQL than
@@ -69,13 +88,16 @@ from tests.compose_images import compose_image, dockerfile_base_image
 # deprecated shims that call warnings.warn on import, and this project runs
 # filterwarnings=["error"], so importing them would fail outright. The
 # community paths above are the supported ones.
+{%- if cookiecutter.database == "postgres" %}
 POSTGRES_IMAGE = compose_image("postgres")
 MIGRATE_IMAGE = dockerfile_base_image()
+{%- endif %}
 REDIS_IMAGE = compose_image("redis")
 MINIO_IMAGE = compose_image("minio")
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
 RECEIPTS_BUCKET = "receipts"
+{%- if cookiecutter.database == "postgres" %}
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
@@ -100,6 +122,7 @@ MIGRATE_URL = (
 # ruleset is not enabled in ruff.toml, and RUF100 (which is) rejects a
 # suppression that names a rule that is not enabled.
 MigrateRunner = Callable[[str], tuple[int, str]]
+{%- endif %}
 
 
 _THIS_DIRECTORY = Path(__file__).resolve().parent
@@ -153,6 +176,7 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
         if _THIS_DIRECTORY in Path(item.path).resolve().parents:
             item.add_marker(pytest.mark.integration)
+{%- if cookiecutter.database == "postgres" %}
 
 
 @pytest.fixture(scope="session")
@@ -299,6 +323,7 @@ def clean_database(migrated_database: PostgresContainer) -> None:
         ]
     )
     assert result.exit_code == 0, result.output.decode()
+{%- endif %}
 
 
 @pytest.fixture(scope="session")

@@ -27,8 +27,10 @@ dependencies = [
     "pydantic-core>=2.23.2",
     "structlog>=24.4",
     "orjson>=3.10",
+{%- if cookiecutter.database == "postgres" %}
     "sqlalchemy[asyncio]>=2.0.52",
     "asyncpg>=0.31",
+{%- endif %}
     # Traces, metrics and logs. The API/SDK/exporter line and the
     # instrumentation line version SEPARATELY and always will: 1.44 for the
     # first, 0.65b0 for the second. The `b` is upstream's, not a typo — the
@@ -36,7 +38,9 @@ dependencies = [
     "opentelemetry-sdk>=1.44,<2",
     "opentelemetry-exporter-otlp-proto-grpc>=1.44,<2",
     "opentelemetry-instrumentation-fastapi>=0.65b0",
+{%- if cookiecutter.database == "postgres" %}
     "opentelemetry-instrumentation-sqlalchemy>=0.65b0",
+{%- endif %}
     # Garbage collection, memory and thread counts for the runtime dashboard.
     # Its defaults emit both the current metric names and their deprecated
     # `process.runtime.cpython.*` duplicates plus whole-host `system.*`
@@ -105,6 +109,7 @@ dev = [
     "ruff>=0.7",
     "import-linter>=2.1",
     "pre-commit>=4.0",
+{%- if cookiecutter.database == "postgres" %}
     # Alembic is NOT a migration tool in this project — golang-migrate owns the
     # schema (spec D12), and there is deliberately no alembic/ directory and no
     # alembic_version table. It is installed for exactly one job: its
@@ -112,7 +117,10 @@ dev = [
     # model/schema drift gate in tests/integration/test_schema_drift.py. Deleting
     # this dependency silently removes that gate. See Task 9 of the M1 plan.
     "alembic>=1.19",
-    "testcontainers[postgres,redis,minio]>=4.15",
+{%- endif %}
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
+    "testcontainers[{{ ((['postgres'] if cookiecutter.database == 'postgres' else []) + (['redis'] if cookiecutter.cache == 'redis' else []) + (['minio'] if cookiecutter.object_storage == 's3' else [])) | join(',') }}]>=4.15",
+{%- endif %}
     # Imported at module scope by testcontainers.community.minio (its first
     # line is `from minio import Minio`), so collection fails without it.
     # The production adapter uses aioboto3 and never imports this — it is

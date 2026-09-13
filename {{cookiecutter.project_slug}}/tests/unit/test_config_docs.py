@@ -44,6 +44,7 @@ def groups() -> list[ConfigGroup]:
 @pytest.fixture(scope="module")
 def by_name(groups: list[ConfigGroup]) -> dict[str, ConfigVariable]:
     return {variable.name: variable for group in groups for variable in group.variables}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 
 def test_walks_every_environment_variable(by_name: dict[str, ConfigVariable]) -> None:
@@ -52,6 +53,7 @@ def test_walks_every_environment_variable(by_name: dict[str, ConfigVariable]) ->
     38 before Task 2 added `APP_LOG__REDACT_FIELDS`.
     """
     assert len(by_name) == 39
+{%- endif %}
 
 
 def test_top_level_fields_carry_no_group_prefix(
@@ -84,7 +86,9 @@ def test_optional_submodels_are_unwrapped_not_skipped(
     A walker that only recurses into bare BaseModel annotations silently
     documents 10 variables instead of 38.
     """
+{%- if cookiecutter.database == "postgres" %}
     assert "APP_DATABASE__DSN" in by_name
+{%- endif %}
     assert "APP_STORAGE__BUCKET" in by_name
 
 
@@ -163,7 +167,9 @@ def test_literals_render_as_alternatives(by_name: dict[str, ConfigVariable]) -> 
 
 
 def test_network_types_render_by_name(by_name: dict[str, ConfigVariable]) -> None:
+{%- if cookiecutter.database == "postgres" %}
     assert by_name["APP_DATABASE__DSN"].type_label == "PostgreSQL URL"
+{%- endif %}
     assert by_name["APP_CACHE__DSN"].type_label == "Redis URL"
     assert by_name["APP_PAYMENT__BASE_URL"].type_label == "URL"
 
@@ -183,7 +189,9 @@ def test_required_field_in_an_optional_group_is_marked(
 def test_optional_groups_are_marked_optional(groups: list[ConfigGroup]) -> None:
     by_path = {group.path: group for group in groups}
     assert by_path[("storage",)].optional is True
+{%- if cookiecutter.database == "postgres" %}
     assert by_path[("database",)].optional is True
+{%- endif %}
     assert by_path[("log",)].optional is False
 
 
@@ -195,7 +203,9 @@ def test_groups_are_returned_in_declaration_order(
         (),
         ("log",),
         ("otel",),
+{%- if cookiecutter.database == "postgres" %}
         ("database",),
+{%- endif %}
         ("payment",),
         ("payment", "http"),
         ("cache",),
@@ -239,6 +249,7 @@ def test_no_secret_field_has_a_default(by_name: dict[str, ConfigVariable]) -> No
         if variable.secret and variable.default_label != "unset"
     )
     assert leaked == []
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 
 def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
@@ -247,6 +258,7 @@ def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
     # header + separator + 39 rows
     assert len(lines) == 41
     assert lines[0].startswith("| Variable |")
+{%- endif %}
 
 
 def test_markdown_rows_carry_the_variable_type_and_default() -> None:
@@ -367,6 +379,7 @@ def test_env_example_comments_every_prose_line() -> None:
     for line in render_env_example().splitlines():
         if line and not line.startswith("#"):
             assert "=" in line, f"uncommented prose line: {line!r}"
+{%- if cookiecutter.database == "postgres" %}
 
 
 def test_env_example_comments_out_variables_with_no_default() -> None:
@@ -379,6 +392,7 @@ def test_env_example_comments_out_variables_with_no_default() -> None:
     rendered = render_env_example()
     assert "# APP_DATABASE__DSN=" in rendered
     assert "\nAPP_DATABASE__DSN=" not in rendered
+{%- endif %}
 
 
 def test_env_example_sets_variables_that_have_defaults() -> None:
@@ -447,7 +461,9 @@ def test_generated_env_example_starts_the_service_with_no_backends(
     env_file = tmp_path / ".env"
     env_file.write_text(render_env_example(), encoding="utf-8")
     settings = Settings(_env_file=str(env_file))  # type: ignore[call-arg]
+{%- if cookiecutter.database == "postgres" %}
     assert settings.database is None
+{%- endif %}
     assert settings.payment is None
     assert settings.cache is None
     assert settings.storage is None

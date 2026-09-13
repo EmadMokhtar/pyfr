@@ -18,8 +18,10 @@ forbidden_modules =
     {{ cookiecutter.package_name }}.main
     fastapi
     starlette
+{%- if cookiecutter.database == "postgres" %}
     sqlalchemy
     asyncpg
+{%- endif %}
     opentelemetry
     httpx
     stamina
@@ -38,8 +40,10 @@ forbidden_modules =
     {{ cookiecutter.package_name }}.main
     fastapi
     starlette
+{%- if cookiecutter.database == "postgres" %}
     sqlalchemy
     asyncpg
+{%- endif %}
     opentelemetry
     httpx
     stamina

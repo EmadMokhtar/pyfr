@@ -27,7 +27,9 @@ from {{ cookiecutter.package_name }}.observability.metrics import (
 from {{ cookiecutter.package_name }}.observability.otel import (
     OtelRuntime,
     configure_otel,
+{%- if cookiecutter.database == "postgres" %}
     instrument_database,
+{%- endif %}
     instrument_fastapi,
     instrument_http_client,
     instrument_redis,
@@ -86,12 +88,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # moving the block in is sufficient; nothing else has to change.
         try:
             if otel_runtime is not None:
+{%- if cookiecutter.database == "postgres" %}
                 if container.engine is not None:
                     # Here rather than in create_app because the engine does
                     # not exist until the container is built, and here rather
                     # than in container.py because the composition root has no
                     # business importing an SDK.
                     instrument_database(container.engine, otel_runtime)
+{%- endif %}
                 if container.http_client is not None:
                     # Only when a real payment provider is configured. The
                     # in-memory gateway makes no HTTP request, so there is no
@@ -109,7 +113,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 runtime_metrics = register_runtime_metrics(
                     otel_runtime,
                     service_version=__version__,
+{%- if cookiecutter.database == "postgres" %}
                     engine=container.engine,
+{%- endif %}
                 )
             container.started = True
             yield

@@ -11,7 +11,9 @@ from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrument
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.observability.metrics import register_runtime_metrics
 from {{ cookiecutter.package_name }}.observability.otel import OtelRuntime, build_views
@@ -52,6 +54,7 @@ def runtime(reader: InMemoryMetricReader) -> OtelRuntime:
         meter_provider=MeterProvider(metric_readers=[reader], views=build_views()),
         logger_provider=None,
     )
+{%- if cookiecutter.database == "postgres" %}
 
 
 @pytest.fixture
@@ -64,6 +67,7 @@ def engine() -> AsyncEngine:
     return create_async_engine(
         "postgresql+asyncpg://u:p@localhost:5432/db", pool_size=7, max_overflow=0
     )
+{%- endif %}
 
 
 def _points(reader: InMemoryMetricReader, name: str) -> list[Any]:
@@ -106,6 +110,7 @@ async def test_service_info_reports_one_carrying_the_version(
         assert [point.value for point in _points(reader, "service.info")] == [1]
     finally:
         await metrics.stop()
+{%- if cookiecutter.database == "postgres" %}
 
 
 async def test_pool_gauges_report_used_idle_and_the_ceiling(
@@ -129,6 +134,7 @@ async def test_pool_gauges_report_used_idle_and_the_ceiling(
     finally:
         await metrics.stop()
         await engine.dispose()
+{%- endif %}
 
 
 async def test_no_pool_gauges_without_a_database(

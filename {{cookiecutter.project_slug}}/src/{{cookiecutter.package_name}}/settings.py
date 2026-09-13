@@ -24,19 +24,25 @@ from __future__ import annotations
 
 import sys
 from typing import Annotated, Literal
+{%- if cookiecutter.database == "postgres" %}
 from urllib.parse import parse_qs, urlsplit
+{%- endif %}
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     HttpUrl,
+{%- if cookiecutter.database == "postgres" %}
     PostgresDsn,
+{%- endif %}
     RedisDsn,
     SecretStr,
     StringConstraints,
     ValidationError,
+{%- if cookiecutter.database == "postgres" %}
     field_validator,
+{%- endif %}
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -179,6 +185,7 @@ class OtelSettings(BaseModel):
                 "builds, so on its own this setting does nothing."
             )
         return self
+{%- if cookiecutter.database == "postgres" %}
 
 
 # Parameters libpq accepts and asyncpg does not — see the field_validator
@@ -277,6 +284,7 @@ class DatabaseSettings(BaseModel):
                     f"connection string this application never sees."
                 )
         return dsn
+{%- endif %}
 
 
 class HttpClientSettings(BaseModel):
@@ -575,9 +583,11 @@ class Settings(BaseSettings):
     )
     log: LogSettings = Field(default_factory=LogSettings)
     otel: OtelSettings = Field(default_factory=OtelSettings)
+{%- if cookiecutter.database == "postgres" %}
     # Optional on purpose: None selects the in-memory adapter, which is the
     # path a service generated with database=none takes. See container.py.
     database: DatabaseSettings | None = None
+{%- endif %}
     # Optional on purpose: None selects the in-memory gateway, which is
     # what keeps `just dev` working with no payment provider anywhere —
     # the same arrangement `database` above has with the in-memory

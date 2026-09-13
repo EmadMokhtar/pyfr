@@ -275,6 +275,7 @@ def test_a_service_defect_is_a_500_not_a_422(settings: Settings) -> None:
     body = response.json()
     assert body["title"] == "Internal server error"
     assert "detail" not in body or body["detail"] is None
+{%- if cookiecutter.database == "postgres" %}
 
 
 class _FakeCorruptScalarResult:
@@ -410,6 +411,7 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
     body = response.json()
     assert body["title"] == "Internal server error"
     assert "detail" not in body or body["detail"] is None
+{%- endif %}
 
 
 def test_request_validation_produces_problem_details() -> None:

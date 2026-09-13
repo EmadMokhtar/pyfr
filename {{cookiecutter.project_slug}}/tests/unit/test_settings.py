@@ -5,7 +5,9 @@ from pydantic import ValidationError
 
 from {{ cookiecutter.package_name }}.observability.redaction import DEFAULT_REDACT_FIELDS
 from {{ cookiecutter.package_name }}.settings import (
+{%- if cookiecutter.database == "postgres" %}
     EXIT_CONFIG_ERROR,
+{%- endif %}
     Settings,
     load_settings,
 )
@@ -184,6 +186,7 @@ def test_http_port_accepts_the_boundary_values(
 
     monkeypatch.setenv("APP_HTTP_PORT", "65535")
     assert Settings(_env_file=None).http_port == 65535  # type: ignore[call-arg]
+{%- if cookiecutter.database == "postgres" %}
 
 
 def test_database_is_absent_by_default() -> None:
@@ -306,6 +309,7 @@ def test_a_malformed_dsn_s_password_never_reaches_stderr(
     # Still useful, not merely silent: names the field and the constraint.
     assert "dsn" in stderr
     assert "url_scheme" in stderr
+{%- endif %}
 
 
 def test_otel_is_off_by_default() -> None:

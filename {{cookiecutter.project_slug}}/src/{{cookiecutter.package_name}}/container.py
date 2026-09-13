@@ -16,8 +16,10 @@ from dataclasses import dataclass, field
 import httpx
 import structlog
 from redis.asyncio import Redis
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.domain.payments import PaymentGateway
 from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
@@ -26,6 +28,7 @@ from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_re
 from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
+{%- if cookiecutter.database == "postgres" %}
 from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
@@ -33,6 +36,7 @@ from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
 from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
 from {{ cookiecutter.package_name }}.infrastructure.http.client import build_http_client
 from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import (
@@ -183,9 +187,11 @@ class Container:
     settings: Settings
     orders: OrderRepository
     payments: PaymentGateway
+{%- if cookiecutter.database == "postgres" %}
     # None when no database is configured. Held only so close_container can
     # dispose the pool at shutdown; nothing else reaches for it.
     engine: AsyncEngine | None = None
+{%- endif %}
     # None when no payment provider is configured (the in-memory gateway's
     # case). Held for the same reason `engine` is: only close_container
     # reaches for it, to close the pooled connections at shutdown.
@@ -233,6 +239,7 @@ def build_container(settings: Settings) -> Container:
             wait_initial_seconds=settings.payment.retry_initial_wait_seconds,
             wait_max_seconds=settings.payment.retry_max_wait_seconds,
         )
+{%- if cookiecutter.database == "postgres" %}
 
     engine: AsyncEngine | None = None
     orders: OrderRepository
@@ -243,6 +250,10 @@ def build_container(settings: Settings) -> Container:
     else:
         engine = build_engine(settings.database)
         orders = PostgresOrderRepository(build_sessionmaker(engine))
+{%- else %}
+
+    orders: OrderRepository = InMemoryOrderRepository()
+{%- endif %}
 
     # The cache wraps whatever was selected above and satisfies the same
     # port, so this is the ONLY place in the application that knows a cache
@@ -267,11 +278,14 @@ def build_container(settings: Settings) -> Container:
         settings=settings,
         orders=orders,
         payments=payments,
+{%- if cookiecutter.database == "postgres" %}
         engine=engine,
+{%- endif %}
         http_client=http_client,
         redis=redis,
         receipts=receipts,
     )
+{%- if cookiecutter.database == "postgres" %}
 
     if engine is not None:
 
@@ -288,6 +302,7 @@ def build_container(settings: Settings) -> Container:
                 await connection.execute(text("SELECT 1"))
 
         container.readiness.register("database", database_is_reachable)
+{%- endif %}
 
     if redis is not None:
         cache_client = redis
@@ -353,6 +368,7 @@ async def close_container(container: Container) -> None:
     the moment a leak is least affordable. Each resource's cleanup is
     independent of the others' success.
     """
+{%- if cookiecutter.database == "postgres" %}
     try:
         if container.engine is not None:
             # Closes every pooled connection. Without this, shutdown leaves
@@ -372,3 +388,16 @@ async def close_container(container: Container) -> None:
                 # down. Redis.from_pool means this owns the pool and
                 # disconnects it.
                 await container.redis.aclose()
+{%- else %}
+    try:
+        if container.http_client is not None:
+            await container.http_client.aclose()
+    finally:
+        if container.redis is not None:
+            # aclose(), not close(): the sync name is deprecated in
+            # redis-py 5+ and warns, which filterwarnings=["error"]
+            # turns into a failure in any test that shuts a container
+            # down. Redis.from_pool means this owns the pool and
+            # disconnects it.
+            await container.redis.aclose()
+{%- endif %}
