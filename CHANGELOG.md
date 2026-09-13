@@ -8,6 +8,13 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.7.0 (2026-09-13)
+
+### Feat
+
+- add the backend prompts and prune the unchosen backends (m7 pr 2) (#37)
+- move the reference service into the template body and add the golden diff (m7 pr 1) (#34)
+
 ## v0.6.0 (2026-09-12)
 
 ### Feat
