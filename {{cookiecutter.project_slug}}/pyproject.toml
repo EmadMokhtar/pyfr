@@ -72,12 +72,14 @@ dependencies = [
     # infrastructure/cache/, which is the one place allowed to import it.
     "redis>=8.1",
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     # The S3-compatible object store client. aioboto3 wraps aiobotocore,
     # which wraps botocore: one adapter serves MinIO, Amazon S3, Cloudflare
     # R2, Ceph and Backblaze B2, distinguished only by endpoint_url (spec
     # 9.1). boto3 itself is synchronous and would block the event loop on
     # every call.
     "aioboto3>=15.5",
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
     # Spans for Redis commands. Same 0.65b0 line as every other
     # opentelemetry-instrumentation-* dependency above; the `b` is
@@ -86,6 +88,7 @@ dependencies = [
     # from main.py's lifespan whenever telemetry is enabled.
     "opentelemetry-instrumentation-redis>=0.65b0",
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     # NO opentelemetry-instrumentation-botocore dependency here, on
     # purpose — it was tried and removed, not merely never added. Task 12
     # measured, rather than assumed, whether that instrumentor sees
@@ -102,6 +105,7 @@ dependencies = [
     # reintroduce a store adapter whose spans never appear, which is worse
     # than no instrumentation: a dashboard built against it would read as
     # "S3 calls are always fast" rather than "S3 calls are not observed".
+{%- endif %}
 ]
 
 [dependency-groups]
@@ -125,11 +129,13 @@ dev = [
 {%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
     "testcontainers[{{ ((['postgres'] if cookiecutter.database == 'postgres' else []) + (['redis'] if cookiecutter.cache == 'redis' else []) + (['minio'] if cookiecutter.object_storage == 's3' else [])) | join(',') }}]>=4.15",
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     # Imported at module scope by testcontainers.community.minio (its first
     # line is `from minio import Minio`), so collection fails without it.
     # The production adapter uses aioboto3 and never imports this — it is
     # purely a test-container dependency.
     "minio>=7.2",
+{%- endif %}
     # Reads ops/prometheus/rules/*.yml in the SLO gate (tests/unit/
     # test_slo_rules.py), so the PromQL and the Python constants cannot
     # drift. Available transitively through pre-commit today; depended on

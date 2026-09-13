@@ -1,8 +1,10 @@
 """The composition root's adapter choice. No database is contacted."""
 
 from __future__ import annotations
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 
 import pytest
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 from redis.asyncio import Redis
 {%- endif %}
@@ -24,12 +26,14 @@ from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
 from {{ cookiecutter.package_name }}.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
+{%- if cookiecutter.object_storage == "s3" %}
 from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
 from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
     S3ReceiptStore,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.settings import Settings
 {%- if cookiecutter.database == "postgres" %}
 
@@ -202,6 +206,7 @@ def test_a_cache_without_a_database_still_wraps_the_in_memory_repository(
 
     assert isinstance(container.orders, CachedOrderRepository)
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_no_storage_settings_means_the_in_memory_store() -> None:
@@ -225,6 +230,7 @@ def test_storage_settings_select_the_s3_store_and_register_a_report(
     # taking the pod out of rotation would cost far more than it saves.
     assert "storage" in container.readiness._informational
     assert "storage" not in container.readiness._gating
+{%- endif %}
 {%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 

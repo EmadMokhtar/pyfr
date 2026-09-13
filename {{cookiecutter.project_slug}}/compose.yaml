@@ -92,6 +92,7 @@ services:
       - postgres://app:secret@postgres:5432/app?sslmode=disable
     command: ["up"]
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
   # The object store. MinIO speaks the S3 API, so the same adapter that runs
   # here runs against Amazon S3 in production with only endpoint_url
@@ -147,6 +148,7 @@ services:
     command: >
       "mc alias set local http://minio:9000 minioadmin minioadmin &&
        mc mb --ignore-existing local/receipts"
+{%- endif %}
 
   app:
     build: .
@@ -166,10 +168,12 @@ services:
       migrate:
         condition: service_completed_successfully
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
       # The bucket must exist before the first receipt is requested. Same
       # arrangement as `migrate`: wait for the one-shot container to exit 0.
       minio-bootstrap:
         condition: service_completed_successfully
+{%- endif %}
       # `payment-stub` has no `profiles:` entry, so plain `docker compose up`
       # already starts it alongside `app` — but starting is not readiness,
       # and without this, `app` could come up and serve its first order
@@ -208,6 +212,7 @@ services:
       # real provider — see ops/payment-stub/mappings and Task 15's
       # documentation of what that does and does not prove.
       APP_PAYMENT__BASE_URL: http://payment-stub:8080
+{%- if cookiecutter.object_storage == "s3" %}
       # `minio` is the compose service name above. endpoint_url is the whole
       # of "one adapter for every S3-compatible provider": unset it and the
       # same code talks to Amazon S3.
@@ -215,6 +220,7 @@ services:
       APP_STORAGE__ENDPOINT_URL: http://minio:9000
       APP_STORAGE__ACCESS_KEY_ID: minioadmin
       APP_STORAGE__SECRET_ACCESS_KEY: minioadmin
+{%- endif %}
     # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
     # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
     # (and Docker's) own default kill deadline is 10s, so without raising
@@ -356,6 +362,8 @@ volumes:
 {%- if cookiecutter.database == "postgres" %}
   postgres-data:
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
   minio-data:
+{%- endif %}
   seed-state:
   trivy-cache:

@@ -473,6 +473,7 @@ def test_retry_attempts_must_be_at_least_one(
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+{%- if cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 
 
 def test_cache_and_storage_are_absent_by_default() -> None:
@@ -481,7 +482,10 @@ def test_cache_and_storage_are_absent_by_default() -> None:
 {%- if cookiecutter.cache == "redis" %}
     assert settings.cache is None
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert settings.storage is None
+{%- endif %}
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 
 
@@ -509,6 +513,7 @@ def test_a_cache_timeout_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> No
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_storage_settings_require_a_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -542,6 +547,7 @@ def test_storage_credentials_are_secrets(monkeypatch: pytest.MonkeyPatch) -> Non
     assert settings.storage is not None
     assert "sup3rs3cr3t" not in repr(settings.storage)
     assert settings.storage.secret_access_key.get_secret_value() == "sup3rs3cr3t"
+{%- endif %}
 
 
 def test_redact_fields_parse_from_a_json_array_and_replace_the_default(

@@ -11,7 +11,7 @@ from tests.compose_images import compose_image
 
 
 def test_every_pinned_service_has_an_explicit_tag() -> None:
-    for service in ({% if cookiecutter.database == "postgres" %}"postgres", {% endif %}{% if cookiecutter.cache == "redis" %}"redis", {% endif %}"minio", "lgtm", "trivy", "payment-stub"):
+    for service in ({% if cookiecutter.database == "postgres" %}"postgres", {% endif %}{% if cookiecutter.cache == "redis" %}"redis", {% endif %}{% if cookiecutter.object_storage == "s3" %}"minio", {% endif %}"lgtm", "trivy", "payment-stub"):
         image = compose_image(service)
         assert ":" in image, image
         assert not image.endswith(":latest"), image

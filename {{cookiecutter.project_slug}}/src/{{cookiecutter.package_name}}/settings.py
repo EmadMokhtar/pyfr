@@ -23,7 +23,11 @@ would be claiming more than the code delivers.
 from __future__ import annotations
 
 import sys
+{%- if cookiecutter.object_storage == "s3" %}
 from typing import Annotated, Literal
+{%- else %}
+from typing import Literal
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from urllib.parse import parse_qs, urlsplit
 {%- endif %}
@@ -40,7 +44,9 @@ from pydantic import (
     RedisDsn,
 {%- endif %}
     SecretStr,
+{%- if cookiecutter.object_storage == "s3" %}
     StringConstraints,
+{%- endif %}
     ValidationError,
 {%- if cookiecutter.database == "postgres" %}
     field_validator,
@@ -470,6 +476,7 @@ class CacheSettings(BaseModel):
         ),
     )
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 # Amazon's bucket naming rules, the subset that is a pure string check:
@@ -541,6 +548,7 @@ class StorageSettings(BaseModel):
         gt=0,
         description="How long to wait for a response once the request is sent.",
     )
+{%- endif %}
 
 
 class Settings(BaseSettings):
@@ -603,10 +611,12 @@ class Settings(BaseSettings):
     # A service generated with cache=none takes this path. See container.py.
     cache: CacheSettings | None = None
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     # Optional on purpose: None selects InMemoryReceiptStore, so the receipt
     # endpoint works with no object store anywhere — the same arrangement
     # `payment` has with the in-memory gateway.
     storage: StorageSettings | None = None
+{%- endif %}
 
 
 def load_settings(env_file: str | None = ".env") -> Settings:

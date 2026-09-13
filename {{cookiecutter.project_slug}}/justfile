@@ -319,6 +319,7 @@ psql:
 redis-cli:
     docker compose exec redis redis-cli
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 # The MinIO web console, for looking at what the receipt store actually
 # holds. Log in with minioadmin / minioadmin — local-only credentials from
@@ -326,6 +327,7 @@ redis-cli:
 minio-console:
     @echo "http://localhost:9001 — minioadmin / minioadmin"
     @open http://localhost:9001 2>/dev/null || true
+{%- endif %}
 
 # The project's own git hooks over its own tracked files.
 #

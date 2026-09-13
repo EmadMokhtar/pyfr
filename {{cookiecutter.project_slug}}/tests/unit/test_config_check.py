@@ -64,17 +64,23 @@ def test_the_resolved_configuration_masks_every_secret(
 {%- endif %}
     monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://pay")
     monkeypatch.setenv("APP_PAYMENT__API_KEY", "pay-key")
+{%- if cookiecutter.object_storage == "s3" %}
     monkeypatch.setenv("APP_STORAGE__BUCKET", "receipts")
     monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "access-id")
     monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "storage-secret")
+{%- endif %}
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     rendered = json.dumps(resolved_configuration(settings))
 
     for secret in ("db-pass", "cache-pass", "pay-key", "access-id", "storage-secret"):
         assert secret not in rendered
+{%- if cookiecutter.database == "postgres" or cookiecutter.object_storage == "s3" %}
     # Everything that is not a secret is still there to read.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert '"bucket": "receipts"' in rendered
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
     assert "@db:5432/app" in rendered
 {%- endif %}

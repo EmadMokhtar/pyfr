@@ -32,24 +32,33 @@ from collections.abc import AsyncIterator, Callable, Iterator
 {%- elif cookiecutter.cache == "redis" %}
 
 from collections.abc import AsyncIterator, Iterator
-{%- else %}
+{%- elif cookiecutter.object_storage == "s3" %}
 
 from collections.abc import Iterator
 {%- endif %}
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 from pathlib import Path
+{%- else %}
+
+from pathlib import Path
+{%- endif %}
 
 import pytest
 {%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" %}
 import pytest_asyncio
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 from pydantic import SecretStr
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 from redis.asyncio import Redis
 {%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 from testcontainers.community.minio import MinioContainer
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from testcontainers.community.postgres import PostgresContainer
 {%- endif %}
@@ -76,6 +85,7 @@ from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_sessionmaker,
 )
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 {%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" %}
 from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
@@ -91,6 +101,8 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
 from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
     S3ReceiptStore,
 )
+{%- endif %}
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 from {{ cookiecutter.package_name }}.settings import (
 {%- if cookiecutter.cache == "redis" %}
     CacheSettings,
@@ -98,13 +110,17 @@ from {{ cookiecutter.package_name }}.settings import (
 {%- if cookiecutter.database == "postgres" %}
     DatabaseSettings,
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     StorageSettings,
+{%- endif %}
 )
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from tests.compose_images import compose_image, dockerfile_base_image
-{%- else %}
+{%- elif cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 from tests.compose_images import compose_image
 {%- endif %}
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 
 # Read from compose.yaml and Dockerfile.migrations rather than pinned here
 # (ADR 0014): a gate that passes against a different PostgreSQL than
@@ -115,6 +131,7 @@ from tests.compose_images import compose_image
 # deprecated shims that call warnings.warn on import, and this project runs
 # filterwarnings=["error"], so importing them would fail outright. The
 # community paths above are the supported ones.
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 POSTGRES_IMAGE = compose_image("postgres")
 MIGRATE_IMAGE = dockerfile_base_image()
@@ -122,10 +139,12 @@ MIGRATE_IMAGE = dockerfile_base_image()
 {%- if cookiecutter.cache == "redis" %}
 REDIS_IMAGE = compose_image("redis")
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 MINIO_IMAGE = compose_image("minio")
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
 RECEIPTS_BUCKET = "receipts"
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
@@ -152,9 +171,14 @@ MIGRATE_URL = (
 # suppression that names a rule that is not enabled.
 MigrateRunner = Callable[[str], tuple[int, str]]
 {%- endif %}
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 
 
 _THIS_DIRECTORY = Path(__file__).resolve().parent
+{%- else %}
+
+_THIS_DIRECTORY = Path(__file__).resolve().parent
+{%- endif %}
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -392,6 +416,7 @@ async def redis_client(cache_settings: CacheSettings) -> AsyncIterator[Redis]:
     yield client
     await client.aclose()
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 @pytest.fixture(scope="session")
@@ -451,3 +476,4 @@ def receipt_store(storage_settings: StorageSettings) -> S3ReceiptStore:
         build_client_config(storage_settings),
         storage_settings,
     )
+{%- endif %}

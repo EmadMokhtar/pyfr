@@ -55,6 +55,7 @@ from {{ cookiecutter.package_name }}.infrastructure.memory.payment_gateway impor
 from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
+{%- if cookiecutter.object_storage == "s3" %}
 from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
@@ -62,6 +63,7 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
 from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
     S3ReceiptStore,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]
@@ -272,6 +274,7 @@ def build_container(settings: Settings) -> Container:
 {%- endif %}
 
     receipts: ReceiptStore = InMemoryReceiptStore()
+{%- if cookiecutter.object_storage == "s3" %}
     s3_store: S3ReceiptStore | None = None
     if settings.storage is not None:
         storage_settings = settings.storage
@@ -281,6 +284,7 @@ def build_container(settings: Settings) -> Container:
             storage_settings,
         )
         receipts = s3_store
+{%- endif %}
 
     container = Container(
         settings=settings,
@@ -330,6 +334,7 @@ def build_container(settings: Settings) -> Container:
         # gives an operator the signal without the outage.
         container.readiness.register_informational("cache", cache_is_reachable)
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
     # Both halves of the condition are checked on purpose, even though
     # `s3_store` is non-None only when `settings.storage` is. That coupling
@@ -363,6 +368,7 @@ def build_container(settings: Settings) -> Container:
                 await s3.head_bucket(Bucket=bucket)
 
         container.readiness.register_informational("storage", storage_is_reachable)
+{%- endif %}
 
     # Deliberately no readiness check registered for the payment provider.
     # /readyz removing this pod from load balancing because someone else's

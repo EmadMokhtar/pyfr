@@ -78,6 +78,7 @@ def test_doubly_nested_models_repeat_the_delimiter(
 ) -> None:
     """PaymentSettings.http is the only double nesting in the model."""
     assert "APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS" in by_name
+{%- if cookiecutter.database == "postgres" or cookiecutter.object_storage == "s3" %}
 
 
 def test_optional_submodels_are_unwrapped_not_skipped(
@@ -91,7 +92,10 @@ def test_optional_submodels_are_unwrapped_not_skipped(
 {%- if cookiecutter.database == "postgres" %}
     assert "APP_DATABASE__DSN" in by_name
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert "APP_STORAGE__BUCKET" in by_name
+{%- endif %}
+{%- endif %}
 
 
 def test_default_factory_fields_do_not_leak_the_undefined_sentinel(
@@ -101,11 +105,13 @@ def test_default_factory_fields_do_not_leak_the_undefined_sentinel(
     levels = by_name["APP_LOG__LEVELS"]
     assert "PydanticUndefined" not in levels.default_label
     assert levels.default_label == "{}"
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_secret_fields_are_flagged(by_name: dict[str, ConfigVariable]) -> None:
     assert by_name["APP_STORAGE__ACCESS_KEY_ID"].secret is True
     assert by_name["APP_STORAGE__SECRET_ACCESS_KEY"].secret is True
+{%- endif %}
 
 
 def test_secret_inside_a_union_is_flagged(by_name: dict[str, ConfigVariable]) -> None:
@@ -178,10 +184,13 @@ def test_network_types_render_by_name(by_name: dict[str, ConfigVariable]) -> Non
     assert by_name["APP_CACHE__DSN"].type_label == "Redis URL"
 {%- endif %}
     assert by_name["APP_PAYMENT__BASE_URL"].type_label == "URL"
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_secret_type_label_says_secret(by_name: dict[str, ConfigVariable]) -> None:
     assert by_name["APP_STORAGE__ACCESS_KEY_ID"].type_label == "secret"
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_required_field_in_an_optional_group_is_marked(
@@ -190,11 +199,14 @@ def test_required_field_in_an_optional_group_is_marked(
     """The rule the hand-written table states for every APP_STORAGE__ field."""
     assert by_name["APP_STORAGE__BUCKET"].required_in_group is True
     assert by_name["APP_STORAGE__REGION"].required_in_group is False
+{%- endif %}
 
 
 def test_optional_groups_are_marked_optional(groups: list[ConfigGroup]) -> None:
     by_path = {group.path: group for group in groups}
+{%- if cookiecutter.object_storage == "s3" %}
     assert by_path[("storage",)].optional is True
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
     assert by_path[("database",)].optional is True
 {%- endif %}
@@ -217,7 +229,9 @@ def test_groups_are_returned_in_declaration_order(
 {%- if cookiecutter.cache == "redis" %}
         ("cache",),
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
         ("storage",),
+{%- endif %}
     ]
 
 
@@ -291,6 +305,7 @@ def test_markdown_never_emits_a_raw_newline_inside_a_row() -> None:
     for line in render_markdown_table().splitlines():
         if line.startswith("| `APP_"):
             assert line.rstrip().endswith("|")
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
@@ -300,6 +315,7 @@ def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
         if line.startswith("| `APP_STORAGE__BUCKET`")
     )
     assert "required once any" in row
+{%- endif %}
 
 
 def _columns(row: str) -> list[str]:
@@ -478,7 +494,9 @@ def test_generated_env_example_starts_the_service_with_no_backends(
 {%- if cookiecutter.cache == "redis" %}
     assert settings.cache is None
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert settings.storage is None
+{%- endif %}
 
 
 def test_groups_nested_under_an_optional_group_are_optional() -> None:

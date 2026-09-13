@@ -28,7 +28,9 @@ forbidden_modules =
 {%- if cookiecutter.cache == "redis" %}
     redis
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     aioboto3
+{%- endif %}
 
 [importlinter:contract:services-independence]
 name = Services import neither api nor infrastructure
@@ -52,4 +54,6 @@ forbidden_modules =
 {%- if cookiecutter.cache == "redis" %}
     redis
 {%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     aioboto3
+{%- endif %}
