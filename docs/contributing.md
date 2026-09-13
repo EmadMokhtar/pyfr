@@ -61,6 +61,17 @@ The example's `just precommit` steps aside inside this repository — the
 root's `.pre-commit-config.yaml` owns the hooks here, and `just precommit`
 at the root runs them over every tracked file.
 
+The template also ships a generated project's `.github/` — `ci.yml`,
+`nightly.yml`, `release.yml` and `dependabot.yml`. In this repository
+their render at `examples/reference-service/.github/` is output and
+inert: GitHub runs workflows from a repository's root only, and the root's
+own workflows test the example through `working-directory`. Edit them in
+the template. The generation tests parse every render's workflows, check
+that each `just` recipe a step calls exists in that render's justfile,
+that a pruned backend leaves no word behind in them, and that every
+`uses:` ref equals the root's; the workflows themselves run only in a
+generated project.
+
 `just security` is the other check worth running before a pull request that
 touches a dependency or a Dockerfile. It builds both images, audits the
 service's lockfile with pip-audit, scans both images with Trivy and writes the
