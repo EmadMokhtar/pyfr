@@ -6,10 +6,12 @@ a matrix over the backend combinations.
 
 from __future__ import annotations
 
+import ast
 import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -315,6 +317,64 @@ def ruff(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def module_scope(body: list[ast.stmt]) -> Iterator[ast.stmt]:
+    """The statements that bind at module scope: the body, descending into
+    try/if/with/for blocks (a `try: __version__ = …` binds the module), never
+    into a def or class."""
+    for node in body:
+        yield node
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            continue
+        blocks = [getattr(node, field, []) for field in ("body", "orelse", "finalbody")]
+        for block in blocks + [h.body for h in getattr(node, "handlers", [])]:
+            yield from module_scope(block)
+
+
+def top_level_names(module: Path) -> set[str]:
+    """Every name a module binds at top level: defs, assignments, imports."""
+    names: set[str] = set()
+    for node in module_scope(ast.parse(module.read_text()).body):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                names.update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            names.update(a.asname or a.name.split(".")[0] for a in node.names)
+    return names
+
+
+def unresolved_first_party_imports(root: Path) -> list[tuple[str, str, str]]:
+    """(file, module, name) for every first-party `from … import name` that
+    names a module the render lacks or a name that module does not bind. A
+    conditional that prunes a def but not a test's import of it passes ruff
+    and fails only at collection time; this is that check, without pytest.
+    """
+    roots = {PACKAGE: root / "src" / PACKAGE, "tests": root / "tests"}
+    failures = []
+    for path in python_files(root):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.ImportFrom) or node.module is None:
+                continue
+            head, *rest = node.module.split(".")
+            if head not in roots:
+                continue
+            location = roots[head].joinpath(*rest)
+            module = location.with_suffix(".py")
+            if not module.is_file():
+                module = location / "__init__.py"
+            bound = top_level_names(module) if module.is_file() else set()
+            for alias in node.names:
+                name = alias.name
+                if name in bound or (location / f"{name}.py").is_file():
+                    continue
+                if (location / name / "__init__.py").is_file():
+                    continue
+                failures.append((path.relative_to(root).as_posix(), node.module, name))
+    return failures
+
+
 def assert_invariant(root: Path, answers: dict[str, str]) -> None:
     services = compose_services(root)
     dependencies = dependency_names(root)
@@ -353,6 +413,7 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
     assert check.returncode == 0, check.stdout + check.stderr
     fmt = ruff(root, "format", "--check")
     assert fmt.returncode == 0, fmt.stdout + fmt.stderr
+    assert unresolved_first_party_imports(root) == []
     # testcontainers is needed by exactly the integration tests the chosen
     # backends keep; with every backend off it has no user.
     any_on = any(answers[key] != "none" for key in BACKEND)
