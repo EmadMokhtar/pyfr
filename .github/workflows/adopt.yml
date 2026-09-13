@@ -3,10 +3,12 @@
 # `golden` job already ran `just adopt` and proved the result renders back
 # clean, so this commit is that proven result, not a new experiment.
 #
-# The push uses the workflow token, so it starts no new CI run -- the same
-# arrangement release.yml has for its bump commit, and the same token
-# requirements docs/contributing.md lists (write permission; branch
-# protection that lets the actions bot push).
+# The push uses the same token release.yml pushes with -- RELEASE_TOKEN,
+# the admin's fine-grained token that the `main` ruleset exempts, falling
+# back to the workflow token where the secret is absent (see release.yml's
+# checkout step and docs/contributing.md, "One-time repository settings").
+# A push made with RELEASE_TOKEN starts ci.yml and docs.yml on the adopted
+# commit, which is what a template change deserves.
 name: Adopt Dependabot pins
 
 on:
@@ -30,6 +32,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # No credential is left in the checkout for `uv sync` and `just
+          # adopt` to read; the push step below gets the token through its
+          # own environment (see release.yml's checkout step for why).
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -46,6 +53,8 @@ jobs:
         run: just adopt
 
       - name: Commit and push the template change
+        env:
+          PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           if git diff --quiet -- '{{cookiecutter.project_slug}}'; then
             echo "Nothing to adopt: the template already matches."
@@ -62,5 +71,6 @@ jobs:
           # if one did, the rebase conflicts and this step fails, and the
           # recovery is `just adopt` by hand (docs/contributing.md,
           # "Dependabot and the template").
-          git pull --rebase origin main
-          git push
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git pull --rebase "$remote" main
+          git push "$remote" HEAD:main
