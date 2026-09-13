@@ -7,6 +7,17 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
+[options]
+prerelease-mode = "explicit"
+
+[manifest]
+constraints = [
+    { name = "opentelemetry-instrumentation", specifier = ">=0.65b0" },
+    { name = "opentelemetry-instrumentation-asgi", specifier = ">=0.65b0" },
+    { name = "opentelemetry-semantic-conventions", specifier = ">=0.65b0" },
+    { name = "opentelemetry-util-http", specifier = ">=0.65b0" },
+]
+
 [[package]]
 name = "aioboto3"
 version = "15.5.0"

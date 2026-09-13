@@ -21,6 +21,10 @@ license = { file = "LICENSE" }
 # project. Stated explicitly so the intent survives someone later adding
 # dependencies here and wondering why nothing installs `pyfr` itself.
 package = false
+# Never resolve to a pre-release unless a requirement names one; the same
+# rule as the template's pyproject.toml, for the same reason (PR #32). No
+# requirement here names one, so this lock holds no pre-releases at all.
+prerelease = "explicit"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
