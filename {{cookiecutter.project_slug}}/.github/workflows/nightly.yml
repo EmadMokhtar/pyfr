@@ -1,0 +1,71 @@
+name: Nightly
+
+# Slow work that must not sit in the pull request path: mutation testing
+# takes far longer than a reviewer will wait, and an advisory published
+# against an image already shipped changes no file here, so nothing in
+# the pull request path would ever re-check it.
+
+on:
+  schedule:
+    # 03:17 UTC. Deliberately not on the hour: every scheduled job on
+    # GitHub is queued at :00, and a job that starts when the queue is
+    # empty starts sooner.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    # Measures whether a test would NOTICE a change in behaviour, which is
+    # the question coverage cannot answer. Read the survivors, not the
+    # percentage -- the recipe enforces a floor so a regression is caught,
+    # but the value is in which mutants lived.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - run: uv sync
+      - run: just mutants-gate
+
+  security:
+    # The same audit ci.yml runs on every pull request, plus a scan of the
+    # images LAST PUBLISHED rather than freshly built: a CVE is published
+    # against a version already shipped, and nothing else here would
+    # re-check the image anyone is actually running. Fails on the night a
+    # new advisory lands, which is the point.
+    #
+    # `packages: read` and the two TRIVY_* variables are what let Trivy
+    # pull a package that has not been made public yet; once it is public
+    # they are harmless. Before the first release there is no `latest`
+    # tag and the scan step fails on "not found" -- expected, until the
+    # first release publishes one.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+{%- raw %}
+    env:
+      TRIVY_USERNAME: ${{ github.actor }}
+      TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+{%- endraw %}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - name: Audit the lock
+        run: just audit
+      - name: Scan what was last published
+        run: >-
+          just scan
+          ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:latest
+{%- if cookiecutter.database == "postgres" %}
+          ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations:latest
+{%- endif %}
