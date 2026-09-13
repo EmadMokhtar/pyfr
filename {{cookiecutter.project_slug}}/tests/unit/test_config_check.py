@@ -94,15 +94,18 @@ def test_main_prints_one_json_object_and_returns_zero(
     printed = json.loads(capsys.readouterr().out)
     assert printed["service_name"] == "{{ cookiecutter.project_slug }}"
     assert printed["log"]["level"] == "info"
-{%- if cookiecutter.database == "postgres" %}
 
 
 def test_main_exits_78_without_echoing_the_bad_value(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The same path the service takes at startup: load_settings exits 78
-    and, by include_input=False, never prints the offending value."""
-    monkeypatch.setenv("APP_DATABASE__DSN", "mysql://app:sup3rs3cr3t@db/app")
+    and, by include_input=False, never prints the offending value.
+
+    `base_url` is an `HttpUrl`, so a `mysql://` value fails on its scheme
+    (`url_scheme`) -- the same rejection a malformed DSN gets -- and the
+    password in it is the thing that must not reach either stream."""
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "mysql://app:sup3rs3cr3t@db/app")
 
     with pytest.raises(SystemExit) as exc_info:
         main(env_file=None)
@@ -111,4 +114,3 @@ def test_main_exits_78_without_echoing_the_bad_value(
     captured = capsys.readouterr()
     assert "sup3rs3cr3t" not in captured.err
     assert "sup3rs3cr3t" not in captured.out
-{%- endif %}
