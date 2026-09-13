@@ -300,7 +300,7 @@ and inert, since GitHub runs workflows only from a repository's root.
 | `ci.yml` | The service's jobs from today's root `ci.yml`: fast gates, unit and api tests, integration, schema gates, contract gates, SLO gates, docs examples, security, image build, docs build | Schema jobs on `database`; the Redis and MinIO integration jobs on their backends |
 | `nightly.yml` | Mutation testing, the link sweep, re-audit, re-scan | — |
 | `release.yml` | Today's root workflow, with the bootstrap branch now *live*: a generated project starts at `0.1.0` with no tags, so its first release takes exactly the path this repository took for `v0.5.0`. Publishes images under `ghcr.io/{{ github_org }}/{{ project_slug }}` | — |
-| `dependabot.yml` | The five ecosystems | No `docker-compose` entries for services that are not there |
+| `dependabot.yml` | The five ecosystems | — (one entry per ecosystem, per directory; nothing in it is per service) |
 | `docs.yml` | Build the project's MkDocs site with `--strict` and deploy it to GitHub Pages | — |
 
 Amended during PR 3: the table describes the end state. The
@@ -312,7 +312,8 @@ root workflows by `just adopt` — M7-10's mechanism, in the other
 direction — and a root test holds the two equal.
 
 Commitizen becomes a `dev` dependency of the generated `pyproject.toml`
-(M7-9), with `version_files` pointing at that file's own version. The
+(M7-9), with `version_provider = "uv"` so a bump rewrites both that
+file's version and the matching entry in `uv.lock`. The
 `[tool.commitizen]` table, the commit-message hook in
 `.pre-commit-config.yaml` and the `changelog` and `next-version` recipes move
 into the template body with it.

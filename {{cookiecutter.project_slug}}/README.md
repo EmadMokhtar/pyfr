@@ -71,7 +71,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
 | `just security` | `build-images`, `audit`, `scan`, `sbom` — what CI's `security` job runs; not part of `check-all` because its result changes with the advisory databases, not the code |
 | `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` with no output — what CI's `build` job runs |
-| `just publish-images VERSION` | Push both platforms of both images to GHCR under `VERSION` — run by the release workflow, not by hand |
+| `just publish-images VERSION` | Push both platforms of both images to GHCR (GitHub Container Registry) under `VERSION` — run by the release workflow, not by hand |
 | `just scan-published VERSION` | Scan the pushed images for both platforms — release workflow only |
 | `just promote-latest VERSION` | Point `latest` at the scanned `VERSION` — release workflow only |
 | `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag — read-only |
@@ -425,6 +425,11 @@ with the project and run from the first push:
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
 
+Until PyFr's next release moves the documentation site into the template,
+the `check` and `gates` jobs stay red: `just test` and `just gates` look
+for `docs/reference/configuration.md` two directories above the project,
+where it lives in PyFr's own repository.
+
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
 
@@ -443,7 +448,12 @@ Four settings live in the GitHub interface, not in this repository:
   Conventional Commit — becomes the commit on `main` that Commitizen reads.
 - **After the first release, make each GHCR package public** under the
   package's own settings; `publish-images` creates them private, and
-  `docker pull` fails for anyone outside the repository until then.
+  `docker pull` fails for anyone outside the repository until then. The
+  workflow token can push only to packages under the repository's own
+  owner, so the repository must live at
+  `github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}`
+  — or pass another `registry` to `publish-images`, `scan-published` and
+  `promote-latest`.
 
 ## Graceful shutdown and the orchestrator's kill deadline
 

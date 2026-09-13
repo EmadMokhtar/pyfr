@@ -68,9 +68,9 @@ inert: GitHub runs workflows from a repository's root only, and the root's
 own workflows test the example through `working-directory`. Edit them in
 the template. The generation tests parse every render's workflows, check
 that each `just` recipe a step calls exists in that render's justfile,
-that a pruned backend leaves no word behind in them, and that every
-`uses:` ref equals the root's; the workflows themselves run only in a
-generated project.
+and that a pruned backend leaves no word behind in them; `tests/test_regen.py`
+holds every `uses:` ref in the template's workflows equal to the root's.
+The workflows themselves run only in a generated project.
 
 `just security` is the other check worth running before a pull request that
 touches a dependency or a Dockerfile. It builds both images, audits the
@@ -202,7 +202,10 @@ own workflows, and `just adopt` copies each bumped `uses:` ref into the
 template's workflows and regenerates the example. `tests/test_regen.py`
 fails when a template workflow pins an action at a different ref than the
 root does — or uses one the root does not — so every action a generated
-project runs is one Dependabot sees here.
+project runs is one Dependabot sees here. Between a `ci(deps)` merge and
+`adopt.yml`'s commit, another pull request's `docs` job can fail that
+test — its merge ref has the new root pins and the old template pins;
+re-run it once the adopted commit is on `main`.
 
 ## Working on the documentation
 
