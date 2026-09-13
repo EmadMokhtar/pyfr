@@ -25,7 +25,9 @@ forbidden_modules =
     opentelemetry
     httpx
     stamina
+{%- if cookiecutter.cache == "redis" %}
     redis
+{%- endif %}
     aioboto3
 
 [importlinter:contract:services-independence]
@@ -47,5 +49,7 @@ forbidden_modules =
     opentelemetry
     httpx
     stamina
+{%- if cookiecutter.cache == "redis" %}
     redis
+{%- endif %}
     aioboto3

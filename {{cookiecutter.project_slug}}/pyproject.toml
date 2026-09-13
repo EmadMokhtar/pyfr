@@ -65,23 +65,27 @@ dependencies = [
     # Outbound spans for the payment call. Closes the first row of the M2
     # plan's "deliberately does not include" table.
     "opentelemetry-instrumentation-httpx>=0.65b0",
+{%- if cookiecutter.cache == "redis" %}
     # The cache client. redis-py's own asyncio interface (redis.asyncio) —
     # aioredis was merged into it years ago and is archived, so there is no
     # separate async package to choose. Used ONLY by
     # infrastructure/cache/, which is the one place allowed to import it.
     "redis>=8.1",
+{%- endif %}
     # The S3-compatible object store client. aioboto3 wraps aiobotocore,
     # which wraps botocore: one adapter serves MinIO, Amazon S3, Cloudflare
     # R2, Ceph and Backblaze B2, distinguished only by endpoint_url (spec
     # 9.1). boto3 itself is synchronous and would block the event loop on
     # every call.
     "aioboto3>=15.5",
+{%- if cookiecutter.cache == "redis" %}
     # Spans for Redis commands. Same 0.65b0 line as every other
     # opentelemetry-instrumentation-* dependency above; the `b` is
     # upstream's permanent beta versioning, not a typo. Wired up in
     # observability/otel.py's instrument_redis, called unconditionally
     # from main.py's lifespan whenever telemetry is enabled.
     "opentelemetry-instrumentation-redis>=0.65b0",
+{%- endif %}
     # NO opentelemetry-instrumentation-botocore dependency here, on
     # purpose — it was tried and removed, not merely never added. Task 12
     # measured, rather than assumed, whether that instrumentor sees

@@ -15,7 +15,9 @@ from dataclasses import dataclass, field
 
 import httpx
 import structlog
+{%- if cookiecutter.cache == "redis" %}
 from redis.asyncio import Redis
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -24,10 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from {{ cookiecutter.package_name }}.domain.payments import PaymentGateway
 from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
 from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+{%- if cookiecutter.cache == "redis" %}
 from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_redis_client
 from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
@@ -196,9 +200,11 @@ class Container:
     # case). Held for the same reason `engine` is: only close_container
     # reaches for it, to close the pooled connections at shutdown.
     http_client: httpx.AsyncClient | None = None
+{%- if cookiecutter.cache == "redis" %}
     # None when no cache is configured. Held only so close_container can
     # release the pool at shutdown; nothing else reaches for it.
     redis: Redis | None = None
+{%- endif %}
     # Always present, never None — unlike engine and http_client, there is
     # always SOME store, because the in-memory one needs no configuration.
     # Defaults to it here; build_container below swaps in the S3 adapter
@@ -254,6 +260,7 @@ def build_container(settings: Settings) -> Container:
 
     orders: OrderRepository = InMemoryOrderRepository()
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
     # The cache wraps whatever was selected above and satisfies the same
     # port, so this is the ONLY place in the application that knows a cache
@@ -262,6 +269,7 @@ def build_container(settings: Settings) -> Container:
     if settings.cache is not None:
         redis = build_redis_client(settings.cache)
         orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
+{%- endif %}
 
     receipts: ReceiptStore = InMemoryReceiptStore()
     s3_store: S3ReceiptStore | None = None
@@ -282,7 +290,9 @@ def build_container(settings: Settings) -> Container:
         engine=engine,
 {%- endif %}
         http_client=http_client,
+{%- if cookiecutter.cache == "redis" %}
         redis=redis,
+{%- endif %}
         receipts=receipts,
     )
 {%- if cookiecutter.database == "postgres" %}
@@ -303,6 +313,7 @@ def build_container(settings: Settings) -> Container:
 
         container.readiness.register("database", database_is_reachable)
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
     if redis is not None:
         cache_client = redis
@@ -318,6 +329,7 @@ def build_container(settings: Settings) -> Container:
         # balancer over a degradation it was built to survive. Reporting it
         # gives an operator the signal without the outage.
         container.readiness.register_informational("cache", cache_is_reachable)
+{%- endif %}
 
     # Both halves of the condition are checked on purpose, even though
     # `s3_store` is non-None only when `settings.storage` is. That coupling
@@ -368,7 +380,7 @@ async def close_container(container: Container) -> None:
     the moment a leak is least affordable. Each resource's cleanup is
     independent of the others' success.
     """
-{%- if cookiecutter.database == "postgres" %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" %}
     try:
         if container.engine is not None:
             # Closes every pooled connection. Without this, shutdown leaves
@@ -388,7 +400,18 @@ async def close_container(container: Container) -> None:
                 # down. Redis.from_pool means this owns the pool and
                 # disconnects it.
                 await container.redis.aclose()
-{%- else %}
+{%- elif cookiecutter.database == "postgres" %}
+    try:
+        if container.engine is not None:
+            # Closes every pooled connection. Without this, shutdown leaves
+            # connections open until the server times them out, and a rolling
+            # deployment can exhaust the database's connection limit with the
+            # sockets of pods that have already stopped serving.
+            await container.engine.dispose()
+    finally:
+        if container.http_client is not None:
+            await container.http_client.aclose()
+{%- elif cookiecutter.cache == "redis" %}
     try:
         if container.http_client is not None:
             await container.http_client.aclose()
@@ -400,4 +423,7 @@ async def close_container(container: Container) -> None:
             # down. Redis.from_pool means this owns the pool and
             # disconnects it.
             await container.redis.aclose()
+{%- else %}
+    if container.http_client is not None:
+        await container.http_client.aclose()
 {%- endif %}

@@ -478,8 +478,11 @@ def test_retry_attempts_must_be_at_least_one(
 def test_cache_and_storage_are_absent_by_default() -> None:
     """Both dependencies are optional, exactly as database and payment are."""
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
+{%- if cookiecutter.cache == "redis" %}
     assert settings.cache is None
+{%- endif %}
     assert settings.storage is None
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_cache_settings_are_read_from_the_environment(
@@ -493,6 +496,8 @@ def test_cache_settings_are_read_from_the_environment(
     # Defaulted, not required: a cache that needs five variables set before it
     # works is a cache nobody turns on.
     assert settings.cache.pool_size == 10
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_a_cache_timeout_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -503,6 +508,7 @@ def test_a_cache_timeout_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("APP_CACHE__OPERATION_TIMEOUT_SECONDS", "0")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+{%- endif %}
 
 
 def test_storage_settings_require_a_bucket(monkeypatch: pytest.MonkeyPatch) -> None:

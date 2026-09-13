@@ -32,7 +32,9 @@ from {{ cookiecutter.package_name }}.observability.otel import (
 {%- endif %}
     instrument_fastapi,
     instrument_http_client,
+{%- if cookiecutter.cache == "redis" %}
     instrument_redis,
+{%- endif %}
 )
 from {{ cookiecutter.package_name }}.settings import Settings, load_settings
 
@@ -101,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     # in-memory gateway makes no HTTP request, so there is no
                     # client and nothing to instrument.
                     instrument_http_client(container.http_client, otel_runtime)
+{%- if cookiecutter.cache == "redis" %}
                 # Unconditional, unlike the two calls above: RedisInstrumentor
                 # is a GLOBAL instrumentor (see its docstring), so it takes
                 # only the runtime and not a specific client. Instrumenting a
@@ -108,6 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # `container.redis is not None` would buy nothing either, so
                 # the condition would only be one more place to forget.
                 instrument_redis(otel_runtime)
+{%- endif %}
                 # Here, not in create_app: the probe task needs a running
                 # event loop, and create_app runs before there is one.
                 runtime_metrics = register_runtime_metrics(

@@ -36,7 +36,9 @@ from pydantic import (
 {%- if cookiecutter.database == "postgres" %}
     PostgresDsn,
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
     RedisDsn,
+{%- endif %}
     SecretStr,
     StringConstraints,
     ValidationError,
@@ -397,6 +399,7 @@ class PaymentSettings(BaseModel):
         gt=0,
         description="How long the circuit stays open before admitting one probe.",
     )
+{%- if cookiecutter.cache == "redis" %}
 
 
 class CacheSettings(BaseModel):
@@ -466,6 +469,7 @@ class CacheSettings(BaseModel):
             "trap."
         ),
     )
+{%- endif %}
 
 
 # Amazon's bucket naming rules, the subset that is a pure string check:
@@ -593,10 +597,12 @@ class Settings(BaseSettings):
     # the same arrangement `database` above has with the in-memory
     # repository.
     payment: PaymentSettings | None = None
+{%- if cookiecutter.cache == "redis" %}
     # Optional on purpose: None selects the plain repository with no cache
     # in front of it, exactly as `database` None selects the in-memory one.
     # A service generated with cache=none takes this path. See container.py.
     cache: CacheSettings | None = None
+{%- endif %}
     # Optional on purpose: None selects InMemoryReceiptStore, so the receipt
     # endpoint works with no object store anywhere — the same arrangement
     # `payment` has with the in-memory gateway.

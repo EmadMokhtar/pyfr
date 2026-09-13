@@ -31,7 +31,9 @@ from {{ cookiecutter.package_name }}.observability.otel import (
     build_views,
     configure_otel,
     instrument_http_client,
+{%- if cookiecutter.cache == "redis" %}
     instrument_redis,
+{%- endif %}
 )
 from {{ cookiecutter.package_name }}.observability.slo import (
     HTTP_DURATION_BUCKET_BOUNDARIES,
@@ -141,6 +143,7 @@ def test_configure_otel_returns_none_when_disabled() -> None:
     settings = Settings(_env_file=None, environment="production")  # type: ignore[call-arg]
 
     assert configure_otel(settings, "1.2.3") is None
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_redis_is_not_instrumented_when_telemetry_is_off() -> None:
@@ -152,6 +155,8 @@ def test_redis_is_not_instrumented_when_telemetry_is_off() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.otel.enabled is False
     assert configure_otel(settings, "0.0.0") is None
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_instrumenting_redis_twice_does_not_raise() -> None:
@@ -174,6 +179,7 @@ def test_instrumenting_redis_twice_does_not_raise() -> None:
 
     instrument_redis(runtime)
     instrument_redis(runtime)
+{%- endif %}
 
 
 @pytest.fixture

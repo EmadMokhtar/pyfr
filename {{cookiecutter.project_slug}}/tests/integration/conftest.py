@@ -29,16 +29,23 @@ from __future__ import annotations
 {%- if cookiecutter.database == "postgres" %}
 
 from collections.abc import AsyncIterator, Callable, Iterator
-{%- else %}
+{%- elif cookiecutter.cache == "redis" %}
 
 from collections.abc import AsyncIterator, Iterator
+{%- else %}
+
+from collections.abc import Iterator
 {%- endif %}
 from pathlib import Path
 
 import pytest
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" %}
 import pytest_asyncio
+{%- endif %}
 from pydantic import SecretStr
+{%- if cookiecutter.cache == "redis" %}
 from redis.asyncio import Redis
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 {%- endif %}
@@ -46,28 +53,48 @@ from testcontainers.community.minio import MinioContainer
 {%- if cookiecutter.database == "postgres" %}
 from testcontainers.community.postgres import PostgresContainer
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 from testcontainers.community.redis import RedisContainer
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_redis_client
-{%- if cookiecutter.database == "postgres" %}
+{%- endif %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" %}
+from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
+    build_engine,
+    build_sessionmaker,
+)
+{%- elif cookiecutter.database == "postgres" %}
+
 from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
 )
 {%- endif %}
+{%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" %}
 from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
 )
+{%- else %}
+
+from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
+    build_client_config,
+    build_s3_session,
+)
+{%- endif %}
 from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
     S3ReceiptStore,
 )
 from {{ cookiecutter.package_name }}.settings import (
+{%- if cookiecutter.cache == "redis" %}
     CacheSettings,
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
     DatabaseSettings,
 {%- endif %}
@@ -92,7 +119,9 @@ from tests.compose_images import compose_image
 POSTGRES_IMAGE = compose_image("postgres")
 MIGRATE_IMAGE = dockerfile_base_image()
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 REDIS_IMAGE = compose_image("redis")
+{%- endif %}
 MINIO_IMAGE = compose_image("minio")
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
@@ -324,6 +353,7 @@ def clean_database(migrated_database: PostgresContainer) -> None:
     )
     assert result.exit_code == 0, result.output.decode()
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 @pytest.fixture(scope="session")
@@ -361,6 +391,7 @@ async def redis_client(cache_settings: CacheSettings) -> AsyncIterator[Redis]:
     await client.flushdb()
     yield client
     await client.aclose()
+{%- endif %}
 
 
 @pytest.fixture(scope="session")

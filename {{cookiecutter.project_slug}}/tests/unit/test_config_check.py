@@ -59,7 +59,9 @@ def test_the_resolved_configuration_masks_every_secret(
 {%- if cookiecutter.database == "postgres" %}
     monkeypatch.setenv("APP_DATABASE__DSN", "postgresql://app:db-pass@db:5432/app")
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
     monkeypatch.setenv("APP_CACHE__DSN", "redis://:cache-pass@cache:6379/0")
+{%- endif %}
     monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://pay")
     monkeypatch.setenv("APP_PAYMENT__API_KEY", "pay-key")
     monkeypatch.setenv("APP_STORAGE__BUCKET", "receipts")

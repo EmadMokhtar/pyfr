@@ -59,6 +59,7 @@ class UnavailablePaymentGateway:
         raise PaymentUnavailableError(
             "acme-pay at https://pay.acme.example did not answer"
         )
+{%- if cookiecutter.cache == "redis" %}
 
 
 class FakeRedis:
@@ -94,3 +95,4 @@ class FakeRedis:
     async def delete(self, key: str) -> None:
         self._maybe_fail("delete")
         self.store.pop(key, None)
+{%- endif %}

@@ -27,7 +27,9 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+{%- if cookiecutter.cache == "redis" %}
 from opentelemetry.instrumentation.redis import RedisInstrumentor
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 {%- endif %}
@@ -357,6 +359,7 @@ def instrument_http_client(client: httpx.AsyncClient, runtime: OtelRuntime) -> N
     HTTPXClientInstrumentor.instrument_client(
         client, tracer_provider=runtime.tracer_provider
     )
+{%- if cookiecutter.cache == "redis" %}
 
 
 def instrument_redis(runtime: OtelRuntime) -> None:
@@ -410,3 +413,4 @@ def instrument_redis(runtime: OtelRuntime) -> None:
     if instrumentor.is_instrumented_by_opentelemetry:
         return
     instrumentor.instrument(tracer_provider=runtime.tracer_provider)
+{%- endif %}

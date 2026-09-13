@@ -30,6 +30,7 @@ services:
       # initialises a fresh 18 cluster.
       - postgres-data:/var/lib/postgresql
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
   # The cache. Not behind a profile: it is small, starts in under a second,
   # and `just up` should exercise the same arrangement production runs.
@@ -61,6 +62,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 
   migrate:
@@ -185,10 +187,12 @@ services:
       # sslmode — see settings.py's DatabaseSettings.dsn.
       APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
       # `redis` is the compose service name above. Set here rather than
       # defaulted, because `just up` should exercise the cached path — an
       # adapter that only runs in tests is an adapter nobody has really run.
       APP_CACHE__DSN: redis://redis:6379/0
+{%- endif %}
       # Defaulted rather than hardcoded so one compose file serves both
       # `just up` (telemetry off) and `just o11y` (telemetry on), which
       # sets these two in its own environment.

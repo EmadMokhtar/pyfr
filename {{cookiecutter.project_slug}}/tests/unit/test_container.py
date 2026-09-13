@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import pytest
+{%- if cookiecutter.cache == "redis" %}
 from redis.asyncio import Redis
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncEngine
 {%- endif %}
 
 from {{ cookiecutter.package_name }}.container import build_container, close_container
+{%- if cookiecutter.cache == "redis" %}
 from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
+{%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
@@ -121,6 +125,7 @@ async def test_close_container_is_safe_without_a_database() -> None:
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     await close_container(build_container(settings))  # must not raise
+{%- if cookiecutter.cache == "redis" %}
 
 
 async def test_close_container_closes_the_redis_client(
@@ -152,6 +157,8 @@ async def test_close_container_closes_the_redis_client(
     await close_container(container)
 
     assert closed
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_no_cache_settings_means_no_cache_and_no_report() -> None:
@@ -160,6 +167,8 @@ def test_no_cache_settings_means_no_cache_and_no_report() -> None:
 
     assert container.redis is None
     assert "cache" not in container.readiness._informational
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_cache_settings_wrap_the_repository_and_register_a_report(
@@ -178,6 +187,8 @@ def test_cache_settings_wrap_the_repository_and_register_a_report(
     # Reported, and NOT gating — the distinction Task 2 exists for.
     assert "cache" in container.readiness._informational
     assert "cache" not in container.readiness._gating
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_a_cache_without_a_database_still_wraps_the_in_memory_repository(
@@ -190,6 +201,7 @@ def test_a_cache_without_a_database_still_wraps_the_in_memory_repository(
     container = build_container(Settings(_env_file=None))  # type: ignore[call-arg]
 
     assert isinstance(container.orders, CachedOrderRepository)
+{%- endif %}
 
 
 def test_no_storage_settings_means_the_in_memory_store() -> None:

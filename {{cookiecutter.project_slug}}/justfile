@@ -305,7 +305,7 @@ docs-examples:
     set -euo pipefail
     project={{ cookiecutter.project_slug }}-docs-examples
     trap 'docker compose -p "$project" down -v' EXIT
-    docker compose -p "$project" up -d --wait app redis
+    docker compose -p "$project" up -d --wait app{% if cookiecutter.cache == "redis" %} redis{% endif %}
     python3 ../../scripts/check_doc_examples.py ../../docs
 {%- if cookiecutter.database == "postgres" %}
 
@@ -313,10 +313,12 @@ docs-examples:
 psql:
     docker compose exec postgres psql -U app -d app
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 # An interactive redis-cli session against the running compose cache.
 redis-cli:
     docker compose exec redis redis-cli
+{%- endif %}
 
 # The MinIO web console, for looking at what the receipt store actually
 # holds. Log in with minioadmin / minioadmin — local-only credentials from

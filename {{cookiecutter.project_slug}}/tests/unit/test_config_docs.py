@@ -68,7 +68,9 @@ def test_nested_models_use_the_double_underscore_delimiter(
     by_name: dict[str, ConfigVariable],
 ) -> None:
     assert "APP_LOG__LEVEL" in by_name
+{%- if cookiecutter.cache == "redis" %}
     assert "APP_CACHE__TTL_SECONDS" in by_name
+{%- endif %}
 
 
 def test_doubly_nested_models_repeat_the_delimiter(
@@ -119,6 +121,7 @@ def test_ordinary_fields_are_not_flagged_as_secret(
     by_name: dict[str, ConfigVariable],
 ) -> None:
     assert by_name["APP_SERVICE_NAME"].secret is False
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_constraints_reach_the_type_label(by_name: dict[str, ConfigVariable]) -> None:
@@ -126,6 +129,7 @@ def test_constraints_reach_the_type_label(by_name: dict[str, ConfigVariable]) ->
     assert by_name["APP_CACHE__POOL_SIZE"].type_label == "integer, ≥ 1"
     assert by_name["APP_CACHE__TTL_SECONDS"].type_label == "integer, ≥ 1"
     assert by_name["APP_CACHE__CONNECT_TIMEOUT_SECONDS"].type_label == "float, > 0"
+{%- endif %}
 
 
 def test_bounded_integers_render_as_a_range(by_name: dict[str, ConfigVariable]) -> None:
@@ -170,7 +174,9 @@ def test_network_types_render_by_name(by_name: dict[str, ConfigVariable]) -> Non
 {%- if cookiecutter.database == "postgres" %}
     assert by_name["APP_DATABASE__DSN"].type_label == "PostgreSQL URL"
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
     assert by_name["APP_CACHE__DSN"].type_label == "Redis URL"
+{%- endif %}
     assert by_name["APP_PAYMENT__BASE_URL"].type_label == "URL"
 
 
@@ -208,7 +214,9 @@ def test_groups_are_returned_in_declaration_order(
 {%- endif %}
         ("payment",),
         ("payment", "http"),
+{%- if cookiecutter.cache == "redis" %}
         ("cache",),
+{%- endif %}
         ("storage",),
     ]
 
@@ -259,6 +267,7 @@ def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
     assert len(lines) == 41
     assert lines[0].startswith("| Variable |")
 {%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_markdown_rows_carry_the_variable_type_and_default() -> None:
@@ -269,6 +278,7 @@ def test_markdown_rows_carry_the_variable_type_and_default() -> None:
     )
     assert "integer, ≥ 1" in row
     assert "`300`" in row
+{%- endif %}
 
 
 def test_markdown_never_emits_a_raw_newline_inside_a_row() -> None:
@@ -465,7 +475,9 @@ def test_generated_env_example_starts_the_service_with_no_backends(
     assert settings.database is None
 {%- endif %}
     assert settings.payment is None
+{%- if cookiecutter.cache == "redis" %}
     assert settings.cache is None
+{%- endif %}
     assert settings.storage is None
 
 
