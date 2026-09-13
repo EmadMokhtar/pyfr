@@ -295,6 +295,15 @@ def dependency_names(root: Path) -> set[str]:
     return names
 
 
+def extras_of_testcontainers(root: Path) -> set[str]:
+    data = tomllib.loads((root / "pyproject.toml").read_text())
+    for spec in data["dependency-groups"]["dev"]:
+        if isinstance(spec, str) and spec.startswith("testcontainers"):
+            extras = re.match(r"testcontainers(?:\[([^\]]*)\])?", spec).group(1) or ""
+            return {extra for extra in extras.split(",") if extra}
+    raise AssertionError("testcontainers is not a dev dependency")
+
+
 def recipe_names(root: Path) -> set[str]:
     return {
         m.group(1)
@@ -414,10 +423,12 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
     fmt = ruff(root, "format", "--check")
     assert fmt.returncode == 0, fmt.stdout + fmt.stderr
     assert unresolved_first_party_imports(root) == []
-    # testcontainers is needed by exactly the integration tests the chosen
-    # backends keep; with every backend off it has no user.
-    any_on = any(answers[key] != "none" for key in BACKEND)
-    assert ("testcontainers" in dependencies) == any_on
+    # testcontainers stays in every render: test_observability_stack.py
+    # drives the LGTM container through testcontainers.core. Only its
+    # extras follow the backends.
+    extras = {"database": "postgres", "cache": "redis", "object_storage": "minio"}
+    chosen = {extras[key] for key in BACKEND if answers[key] != "none"}
+    assert extras_of_testcontainers(root) == chosen
 
 
 @pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)

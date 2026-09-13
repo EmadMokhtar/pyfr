@@ -128,6 +128,8 @@ dev = [
 {%- endif %}
 {%- if cookiecutter.database == "postgres" or cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
     "testcontainers[{{ ((['postgres'] if cookiecutter.database == 'postgres' else []) + (['redis'] if cookiecutter.cache == 'redis' else []) + (['minio'] if cookiecutter.object_storage == 's3' else [])) | join(',') }}]>=4.15",
+{%- else %}
+    "testcontainers>=4.15",
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
     # Imported at module scope by testcontainers.community.minio (its first
