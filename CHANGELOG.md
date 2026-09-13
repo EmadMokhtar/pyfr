@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.8.0 (2026-09-13)
+
+### Feat
+
+- give a generated project its own github workflows and commitizen (m7 pr 3) (#44)
+
 ## v0.7.0 (2026-09-13)
 
 ### Feat
