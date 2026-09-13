@@ -11,7 +11,7 @@ The precise counterpart to scripts/check_docs_updated.py, which is the
 blunt version of the second check and IS a hard gate. This one names the
 page and the path; that one only knows that source moved and prose did not.
 
-Both stay for now. See docs/contributing.md for what has to be true before
+Both stay for now. See the contributing page for what has to be true before
 these warnings become failures -- the switch is deliberate and not taken
 here, because a large refactor trips path coupling across many pages at
 once, which lands exactly when a team is busiest.
@@ -26,9 +26,9 @@ way check_docs_updated.py does.
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import subprocess
-import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,17 +38,11 @@ import yaml
 
 DOCS_ROOT = Path("docs")
 
-# Excluded from the review-date check, for different reasons each.
-#
-# superpowers/ is an archive of design specs and implementation plans; it
-# is not published (mkdocs.yml excludes it) and it goes out of date by
-# design once a milestone lands.
-#
 # adr/ is history. An accepted decision record does not go stale: it
 # records what was decided, when, and why. Asking someone to re-review one
 # twice a year trains them to ignore the warning, and superseding a
 # decision means writing a NEW record, never editing the old one.
-EXCLUDED_PREFIXES = ("docs/superpowers/", "docs/adr/")
+EXCLUDED_PREFIXES = ("docs/adr/",)
 
 # Six months. Long enough that an actively maintained page is never
 # flagged, short enough that a page nobody has opened in a release cycle
@@ -81,12 +75,19 @@ def parse_frontmatter(text: str) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def load_pages(root: Path = DOCS_ROOT) -> list[Page]:
-    """Every published page, with whatever frontmatter it carries."""
+def load_pages(
+    root: Path = DOCS_ROOT, excluded_prefixes: Sequence[str] = EXCLUDED_PREFIXES
+) -> list[Page]:
+    """Every published page, with whatever frontmatter it carries.
+
+    `excluded_prefixes` defaults to `EXCLUDED_PREFIXES`; the caller may add
+    to it (a generated project's own archive directory, if it has one) via
+    the `--exclude` command-line option.
+    """
     pages: list[Page] = []
     for path in sorted(root.rglob("*.md")):
         as_posix = path.as_posix()
-        if as_posix.startswith(EXCLUDED_PREFIXES):
+        if as_posix.startswith(tuple(excluded_prefixes)):
             continue
         meta = parse_frontmatter(path.read_text(encoding="utf-8"))
         reviewed = meta.get("last_reviewed")
@@ -148,9 +149,16 @@ def uncovered_changes(
 
 
 def changed_files(base: str, head: str) -> set[str]:
-    """Paths changed between `base` and `head`, as git reports them."""
+    """Paths changed between `base` and `head`, as git reports them.
+
+    `--relative` makes the paths relative to the CURRENT directory rather
+    than the repository root, so this script serves a generated project
+    run from its own root and this repository's reference service run
+    from `examples/reference-service/` with the same `covers:` paths --
+    neither carries a prefix the other one does not.
+    """
     completed = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...{head}"],
+        ["git", "diff", "--name-only", "--relative", f"{base}...{head}"],
         capture_output=True,
         text=True,
         check=True,
@@ -163,14 +171,26 @@ def warn(path: str, message: str) -> None:
     print(f"::warning file={path}::{message}")
 
 
-def main(argv: Sequence[str]) -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     """Always returns 0. These checks advise; they never block."""
-    if len(argv) != 3:
-        sys.stderr.write("usage: check_docs_freshness.py <base> <head>\n")
-        return 2
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        metavar="PREFIX",
+        help=(
+            "an extra prefix to exclude from the review-date check, "
+            f"repeatable, added to the default {EXCLUDED_PREFIXES}"
+        ),
+    )
+    parser.add_argument("base", help="the base ref of the range to check")
+    parser.add_argument("head", help="the head ref of the range to check")
+    args = parser.parse_args(argv)
 
-    pages = load_pages()
-    changed = changed_files(argv[1], argv[2])
+    excluded_prefixes = (*EXCLUDED_PREFIXES, *(args.exclude or ()))
+
+    pages = load_pages(excluded_prefixes=excluded_prefixes)
+    changed = changed_files(args.base, args.head)
     today = dt.date.today()
 
     for page in stale_pages(pages, today=today):
@@ -195,4 +215,4 @@ def main(argv: Sequence[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())

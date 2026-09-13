@@ -89,9 +89,11 @@ next-version:
 
 # Documentation hygiene warnings for a pull request range. Never fails --
 # see docs/contributing.md for why, and for what has to be true before
-# these become hard failures.
+# these become hard failures. The script is the reference service's
+# rendered copy: the template owns it (spec §9.1), and this is the one
+# place PyFr's own pages are checked with it.
 docs-freshness base="origin/main" head="HEAD":
-    uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
+    uv run --group docs python examples/reference-service/scripts/check_docs_freshness.py --exclude docs/superpowers/ {{base}} {{head}}
 
 # Everything CI checks at the repository level.
 check: docs-build test regen-check

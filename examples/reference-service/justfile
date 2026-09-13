@@ -300,7 +300,14 @@ docs-examples:
     project=reference-service-docs-examples
     trap 'docker compose -p "$project" down -v' EXIT
     docker compose -p "$project" up -d --wait app redis
-    python3 ../../scripts/check_doc_examples.py ../../docs
+    python3 scripts/check_doc_examples.py docs
+
+# Documentation hygiene warnings for a pull request range: a stale
+# `last_reviewed` date, or a `covers:` path that changed while its page did
+# not. Never fails -- see the contributing page for what has to be true
+# before these become hard failures.
+docs-freshness base="origin/main" head="HEAD":
+    uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
 
 # An interactive psql session against the running compose database.
 psql:

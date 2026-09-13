@@ -248,8 +248,17 @@ jobs:
           # Passed via env rather than interpolated into the script body, so
           # nothing from the event payload can be read as shell.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        # No dependencies: the script is stdlib-only, so this needs no uv sync.
-        run: python3 scripts/check_docs_updated.py "$BASE_SHA" HEAD
+        # The script is the reference service's rendered copy (the template
+        # owns it); the options name PyFr's own trees: a change under the
+        # template body's src/ must touch the root docs, the template's
+        # docs, the README or mkdocs.yml.
+        run: >-
+          python3 examples/reference-service/scripts/check_docs_updated.py
+          --source '{{cookiecutter.project_slug}}/src/'
+          --docs docs/ --docs README.md --docs mkdocs.yml
+          --docs '{{cookiecutter.project_slug}}/docs/'
+          --exclude-docs docs/superpowers/
+          "$BASE_SHA" HEAD
 
   docs-warnings:
     # Advisory only -- review dates and path coupling. Never fails; see
@@ -271,11 +280,12 @@ jobs:
         uses: extractions/setup-just@v4
 
       - name: Install the documentation toolchain
-        # `scripts/check_docs_freshness.py` does `import yaml` directly.
-        # PyYAML is declared as a direct `dev` dependency (pyproject.toml)
-        # precisely so that does not depend on MkDocs happening to pull it
-        # in transitively; `uv sync` installs the default `dev` group
-        # alongside whichever `--group` is named explicitly.
+        # `examples/reference-service/scripts/check_docs_freshness.py` does
+        # `import yaml` directly. PyYAML is declared as a direct `dev`
+        # dependency (pyproject.toml) precisely so that does not depend on
+        # MkDocs happening to pull it in transitively; `uv sync` installs
+        # the default `dev` group alongside whichever `--group` is named
+        # explicitly.
         run: uv sync --group docs
 
       - name: Report documentation freshness
@@ -284,7 +294,8 @@ jobs:
           # nothing from the event payload can be read as shell.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         # Calls the same `just docs-freshness` recipe a developer runs
-        # locally, rather than invoking scripts/check_docs_freshness.py
+        # locally, rather than invoking
+        # examples/reference-service/scripts/check_docs_freshness.py
         # directly -- see the Global Constraint on `just` as the one
         # definition of a gate.
         run: just docs-freshness "$BASE_SHA" HEAD

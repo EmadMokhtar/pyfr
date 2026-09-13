@@ -11,7 +11,7 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from check_docs_freshness import (
     MAX_REVIEW_AGE_DAYS,
