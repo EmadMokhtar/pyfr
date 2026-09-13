@@ -9,21 +9,29 @@ comment into a property (ADR 0014).
 """
 
 from __future__ import annotations
+{%- if cookiecutter.database == "postgres" %}
 
 import re
 from pathlib import Path
+{%- else %}
+
+from pathlib import Path
+{%- endif %}
 
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = PROJECT_ROOT / "compose.yaml"
+{%- if cookiecutter.database == "postgres" %}
 DOCKERFILE_MIGRATIONS = PROJECT_ROOT / "Dockerfile.migrations"
+{%- endif %}
 
 
 def compose_image(service: str) -> str:
     """The `image:` of one compose service, as written."""
     services = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))["services"]
     return str(services[service]["image"])
+{%- if cookiecutter.database == "postgres" %}
 
 
 def dockerfile_base_image(dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
@@ -33,3 +41,4 @@ def dockerfile_base_image(dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
         if match:
             return match.group(1)
     raise ValueError(f"no FROM line in {dockerfile}")
+{%- endif %}

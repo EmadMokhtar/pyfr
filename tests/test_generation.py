@@ -6,8 +6,13 @@ a matrix over the backend combinations.
 
 from __future__ import annotations
 
+import ast
+import re
+import shutil
 import subprocess
 import sys
+import tomllib
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,6 +20,31 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_ANSWERS = ROOT / "tests" / "reference-answers.yaml"
+
+BACKENDS = {
+    "database": ("postgres", "none"),
+    "cache": ("redis", "none"),
+    "object_storage": ("s3", "none"),
+}
+# The eight combinations, as the extra_context dicts pytest-cookies takes.
+COMBINATIONS = [
+    {"database": db, "cache": cache, "object_storage": storage}
+    for db in BACKENDS["database"]
+    for cache in BACKENDS["cache"]
+    for storage in BACKENDS["object_storage"]
+]
+EVERYTHING_ON = COMBINATIONS[0]
+
+
+def combination_id(answers: dict[str, str]) -> str:
+    return "-".join(answers[key] for key in ("database", "cache", "object_storage"))
+
+
+def render(cookies, **answers: str):
+    result = cookies.bake(extra_context=answers)
+    assert result.exit_code == 0, result.exception
+    return result.project_path
+
 
 # The longest package name hooks/pre_gen_project.py accepts. The reference
 # name is 17 characters; every line that spells the package out gets 8
@@ -65,12 +95,12 @@ def files_under(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file())
 
 
-def test_no_template_syntax_survives_the_default_render(cookies) -> None:
-    result = cookies.bake()
-    assert result.exit_code == 0, result.exception
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_no_template_syntax_survives_any_combination(cookies, answers) -> None:
+    root = render(cookies, **answers)
     offenders = []
-    for path in files_under(result.project_path):
-        relative = path.relative_to(result.project_path).as_posix()
+    for path in files_under(root):
+        relative = path.relative_to(root).as_posix()
         # Grafana's own {{ }} legend syntax, copied verbatim on purpose
         # (spec section 7); never rendered, so nothing here to check.
         if relative.startswith("ops/grafana/"):
@@ -84,6 +114,25 @@ def test_no_template_syntax_survives_the_default_render(cookies) -> None:
         if any(marker in content for marker in JINJA_MARKERS):
             offenders.append(relative)
     assert offenders == []
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_every_combination_renders_and_records_its_answers(cookies, answers) -> None:
+    root = render(cookies, **answers)
+    recorded = yaml.safe_load((root / ".pyfr-answers.yml").read_text())
+    assert recorded["_template_version"] == "0.6.0"
+    assert recorded["_template"] == "https://github.com/EmadMokhtar/pyfr"
+    for key, value in answers.items():
+        assert recorded[key] == value
+    assert recorded["package_name"] == "my_service"
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_the_contract_is_the_same_in_every_combination(cookies, answers) -> None:
+    root = render(cookies, **answers)
+    reference = render(cookies, **EVERYTHING_ON)
+    for name in ("openapi.json", "openapi.baseline.json"):
+        assert (root / name).read_bytes() == (reference / name).read_bytes()
 
 
 def test_the_reference_answers_render_the_reference_names(cookies) -> None:
@@ -125,16 +174,10 @@ def test_a_package_name_at_the_cap_is_format_clean(cookies) -> None:
     # ruff from the root's dev group, through its module entry point; it
     # picks the render's own ruff.toml, so this is the check a generated
     # project's `just check` runs.
-    for arguments in (
-        ["format", "--check"],
-        ["check", "--select", "E501"],
+    for completed in (
+        ruff(root, "format", "--check"),
+        ruff(root, "check", "--select", "E501"),
     ):
-        completed = subprocess.run(
-            [sys.executable, "-m", "ruff", *arguments, str(root)],
-            cwd=root,
-            capture_output=True,
-            text=True,
-        )
         assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
@@ -146,3 +189,322 @@ def test_dashboards_are_copied_verbatim(cookies) -> None:
         template_root = ROOT / "{{cookiecutter.project_slug}}"
         source = template_root / "ops" / "grafana" / "dashboards" / name
         assert rendered.read_bytes() == source.read_bytes()
+
+
+PACKAGE = "my_service"
+
+# Per backend: the libraries a render must not import, the ones .importlinter
+# names, the settings group's variable prefix, the compose services, the
+# justfile recipes, the dependencies and the paths the hook deletes. Only
+# .py files, .env.example, .importlinter, compose.yaml, pyproject.toml and
+# the justfile are inspected; prose (README.md, comments) is not.
+BACKEND = {
+    "database": {
+        "libraries": ("sqlalchemy", "asyncpg", "alembic"),
+        "importlinter": ("sqlalchemy", "asyncpg"),
+        "package": "db",
+        "env_prefix": "APP_DATABASE__",
+        "services": ("postgres", "migrate"),
+        "recipes": (
+            "schema-snapshot",
+            "migrate",
+            "migrate-new",
+            "migrate-manifest",
+            "migrate-down",
+            "migrate-version",
+            "migrate-force",
+            "psql",
+        ),
+        "dependencies": (
+            "sqlalchemy",
+            "asyncpg",
+            "alembic",
+            "opentelemetry-instrumentation-sqlalchemy",
+        ),
+        "paths": (
+            "migrations/",
+            "schema.sql",
+            "Dockerfile.migrations",
+            ".sqlfluff",
+            f"src/{PACKAGE}/infrastructure/db/",
+            "tests/unit/test_db_mappers.py",
+            "tests/unit/test_engine.py",
+            "tests/unit/test_migration_files.py",
+            "tests/unit/test_order_repository.py",
+            "tests/integration/test_order_repository.py",
+            "tests/integration/test_db_instrumentation.py",
+            "tests/integration/test_schema_drift.py",
+            "tests/integration/test_schema_gates.py",
+        ),
+    },
+    "cache": {
+        "libraries": ("redis",),
+        "importlinter": ("redis",),
+        "package": "cache",
+        "env_prefix": "APP_CACHE__",
+        "services": ("redis",),
+        "recipes": ("redis-cli",),
+        "dependencies": ("redis", "opentelemetry-instrumentation-redis"),
+        "paths": (
+            f"src/{PACKAGE}/infrastructure/cache/",
+            "tests/unit/test_cached_order_repository.py",
+            "tests/integration/test_cached_order_repository.py",
+            "tests/integration/test_redis_instrumentation.py",
+        ),
+    },
+    "object_storage": {
+        "libraries": ("aioboto3", "botocore", "boto3"),
+        "importlinter": ("aioboto3",),
+        "package": "storage",
+        "env_prefix": "APP_STORAGE__",
+        "services": ("minio", "minio-bootstrap"),
+        "recipes": ("minio-console",),
+        # `minio` is the test-container client in the dev group, not the
+        # adapter's library; it follows the backend all the same.
+        "dependencies": ("aioboto3", "minio"),
+        "paths": (
+            f"src/{PACKAGE}/infrastructure/storage/",
+            "tests/integration/test_receipt_store.py",
+        ),
+    },
+}
+IMPORT = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_][\w.]*)", re.MULTILINE)
+INFRA = re.compile(r"infrastructure\.(db|cache|storage)\b")
+
+
+def python_files(root: Path) -> list[Path]:
+    return [p for p in files_under(root) if p.suffix == ".py"]
+
+
+def imported_top_levels(path: Path) -> set[str]:
+    return {m.group(1).split(".")[0] for m in IMPORT.finditer(path.read_text())}
+
+
+def compose_services(root: Path) -> set[str]:
+    return set(yaml.safe_load((root / "compose.yaml").read_text())["services"])
+
+
+def dependency_names(root: Path) -> set[str]:
+    data = tomllib.loads((root / "pyproject.toml").read_text())
+    names = set()
+    groups = [
+        data["project"]["dependencies"],
+        *data.get("dependency-groups", {}).values(),
+    ]
+    for group in groups:
+        for spec in group:
+            if isinstance(spec, str):
+                names.add(re.split(r"[\[<>=!~; ]", spec, maxsplit=1)[0].lower())
+    return names
+
+
+def extras_of_testcontainers(root: Path) -> set[str]:
+    data = tomllib.loads((root / "pyproject.toml").read_text())
+    for spec in data["dependency-groups"]["dev"]:
+        if isinstance(spec, str) and spec.startswith("testcontainers"):
+            extras = re.match(r"testcontainers(?:\[([^\]]*)\])?", spec).group(1) or ""
+            return {extra for extra in extras.split(",") if extra}
+    raise AssertionError("testcontainers is not a dev dependency")
+
+
+def recipe_names(root: Path) -> set[str]:
+    return {
+        m.group(1)
+        for m in re.finditer(
+            r"^([A-Za-z_][\w-]*)(?:\s+[^:\n]*)?:(?!=)",
+            (root / "justfile").read_text(),
+            re.M,
+        )
+    }
+
+
+def ruff(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    # The root environment's ruff (a dependency of the `dev` group); run in
+    # the render, so ruff picks the render's own ruff.toml.
+    return subprocess.run(
+        [sys.executable, "-m", "ruff", *args, "."],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+
+def module_scope(body: list[ast.stmt]) -> Iterator[ast.stmt]:
+    """The statements that bind at module scope: the body, descending into
+    try/if/with/for blocks (a `try: __version__ = …` binds the module), never
+    into a def or class."""
+    for node in body:
+        yield node
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            continue
+        blocks = [getattr(node, field, []) for field in ("body", "orelse", "finalbody")]
+        for block in blocks + [h.body for h in getattr(node, "handlers", [])]:
+            yield from module_scope(block)
+
+
+def bound_names(target: ast.expr) -> set[str]:
+    """The names an assignment target binds: `a`, `(a, b)`, `[a, *b]`."""
+    return {n.id for n in ast.walk(target) if isinstance(n, ast.Name)}
+
+
+def top_level_names(module: Path) -> set[str]:
+    """Every name a module binds at top level: defs, assignments, type
+    aliases, imports, and the targets of a module-scope `for` or `with`."""
+    names: set[str] = set()
+    for node in module_scope(ast.parse(module.read_text()).body):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                names |= bound_names(target)
+        elif isinstance(node, ast.AnnAssign):
+            names |= bound_names(node.target)
+        elif isinstance(node, ast.TypeAlias):
+            names.add(node.name.id)
+        elif isinstance(node, ast.For | ast.AsyncFor):
+            names |= bound_names(node.target)
+        elif isinstance(node, ast.With | ast.AsyncWith):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    names |= bound_names(item.optional_vars)
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            names.update(a.asname or a.name.split(".")[0] for a in node.names)
+    return names
+
+
+def unresolved_first_party_imports(root: Path) -> list[tuple[str, str, str]]:
+    """(file, module, name) for every first-party `from … import name` that
+    names a module the render lacks or a name that module does not bind. A
+    conditional that prunes a def but not a test's import of it passes ruff
+    and fails only at collection time; this is that check, without pytest.
+    Relative imports (`from . import x`, `from .sibling import x`) are
+    skipped: only absolute paths under the package or `tests` are resolved.
+    """
+    roots = {PACKAGE: root / "src" / PACKAGE, "tests": root / "tests"}
+    failures = []
+    for path in python_files(root):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.ImportFrom) or node.module is None:
+                continue
+            if node.level:  # relative: `from .sibling import x`
+                continue
+            head, *rest = node.module.split(".")
+            if head not in roots:
+                continue
+            location = roots[head].joinpath(*rest)
+            module = location.with_suffix(".py")
+            if not module.is_file():
+                module = location / "__init__.py"
+            bound = top_level_names(module) if module.is_file() else set()
+            for alias in node.names:
+                name = alias.name
+                if name in bound or (location / f"{name}.py").is_file():
+                    continue
+                if (location / name / "__init__.py").is_file():
+                    continue
+                failures.append((path.relative_to(root).as_posix(), node.module, name))
+    return failures
+
+
+def assert_compose_is_self_consistent(root: Path, answers: dict[str, str]) -> None:
+    """compose.yaml beyond its service names.
+
+    The chosen backends' variables reach `app.environment` and no other
+    backend's survive anywhere in the file; every `depends_on` names a
+    service the file defines; every named volume a service mounts is
+    declared under the top-level `volumes`. A conditional that prunes a
+    service but not the lines that point at it renders a file compose
+    refuses to start, and nothing else here reads those lines.
+    """
+    compose_text = (root / "compose.yaml").read_text()
+    compose = yaml.safe_load(compose_text)
+    services = compose["services"]
+    declared_volumes = set(compose.get("volumes") or {})
+    # A mapping (`KEY: value`) or a list of `KEY=value`; either iterates
+    # to strings that start with the variable name.
+    app_environment = services["app"].get("environment") or {}
+    for key, spec in BACKEND.items():
+        on = answers[key] != "none"
+        prefix = spec["env_prefix"]
+        assert (prefix in compose_text) == on, (key, "compose.yaml")
+        if on:
+            assert any(name.startswith(prefix) for name in app_environment), (
+                key,
+                "app.environment",
+            )
+    for name, service in services.items():
+        # `depends_on` is a mapping (`postgres: {condition: …}`) or a list
+        # of names; iterating either yields the names.
+        for dependency in service.get("depends_on") or {}:
+            assert dependency in services, (name, "depends_on", dependency)
+        for mount in service.get("volumes") or []:
+            # Short syntax only (`source:/target[:ro]`). A source that starts
+            # with `/` or `.` is a host path; anything else names a volume.
+            source = mount.split(":", 1)[0]
+            if source.startswith(("/", ".")):
+                continue
+            assert source in declared_volumes, (name, "volumes", source)
+
+
+def assert_invariant(root: Path, answers: dict[str, str]) -> None:
+    services = compose_services(root)
+    dependencies = dependency_names(root)
+    recipes = recipe_names(root)
+    env_example = (root / ".env.example").read_text()
+    importlinter = (root / ".importlinter").read_text()
+    for key, spec in BACKEND.items():
+        on = answers[key] != "none"
+        for path in spec["paths"]:
+            assert (root / path).exists() == on, (key, path, on)
+        for service in spec["services"]:
+            assert (service in services) == on, (key, service, on)
+        for recipe in spec["recipes"]:
+            assert (recipe in recipes) == on, (key, recipe, on)
+        for dependency in spec["dependencies"]:
+            assert (dependency in dependencies) == on, (key, dependency, on)
+        assert (spec["env_prefix"] in env_example) == on, (key, "env")
+        for library in spec["importlinter"]:
+            assert (library in importlinter) == on, (key, library, ".importlinter")
+        if on:
+            continue
+        for path in python_files(root):
+            text = path.read_text()
+            imports = imported_top_levels(path)
+            assert not imports & set(spec["libraries"]), (key, path.relative_to(root))
+            assert not any(
+                m.group(1) == spec["package"] for m in INFRA.finditer(text)
+            ), (key, path.relative_to(root))
+            assert spec["env_prefix"] not in text, (key, path.relative_to(root))
+    assert_compose_is_self_consistent(root, answers)
+    # Cross-cutting: nothing empty, nothing unformatted, nothing unused.
+    for directory in (p for p in root.rglob("*") if p.is_dir()):
+        assert any(directory.iterdir()), (
+            f"empty directory {directory.relative_to(root)}"
+        )
+    # The rendered justfile must parse: a recipe left calling a pruned recipe,
+    # or an unbalanced inline tag, shows up here and nowhere else. `just` is
+    # on PATH in CI (extractions/setup-just) and on every contributor machine
+    # this repository's own justfile assumes; skipped, not failed, elsewhere.
+    if shutil.which("just"):
+        listed = subprocess.run(
+            ["just", "--list", "--justfile", str(root / "justfile")],
+            capture_output=True,
+            text=True,
+        )
+        assert listed.returncode == 0, listed.stdout + listed.stderr
+    check = ruff(root, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
+    fmt = ruff(root, "format", "--check")
+    assert fmt.returncode == 0, fmt.stdout + fmt.stderr
+    assert unresolved_first_party_imports(root) == []
+    # testcontainers stays in every render: test_observability_stack.py
+    # drives the LGTM container through testcontainers.core. Only its
+    # extras follow the backends.
+    extras = {"database": "postgres", "cache": "redis", "object_storage": "minio"}
+    chosen = {extras[key] for key in BACKEND if answers[key] != "none"}
+    assert extras_of_testcontainers(root) == chosen
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_a_render_carries_only_the_backends_it_chose(cookies, answers) -> None:
+    assert_invariant(render(cookies, **answers), answers)

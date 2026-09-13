@@ -23,20 +23,34 @@ would be claiming more than the code delivers.
 from __future__ import annotations
 
 import sys
+{%- if cookiecutter.object_storage == "s3" %}
 from typing import Annotated, Literal
+{%- else %}
+from typing import Literal
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 from urllib.parse import parse_qs, urlsplit
+{%- endif %}
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     HttpUrl,
+{%- if cookiecutter.database == "postgres" %}
     PostgresDsn,
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
     RedisDsn,
+{%- endif %}
     SecretStr,
+{%- if cookiecutter.object_storage == "s3" %}
     StringConstraints,
+{%- endif %}
     ValidationError,
+{%- if cookiecutter.database == "postgres" %}
     field_validator,
+{%- endif %}
     model_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -179,6 +193,7 @@ class OtelSettings(BaseModel):
                 "builds, so on its own this setting does nothing."
             )
         return self
+{%- if cookiecutter.database == "postgres" %}
 
 
 # Parameters libpq accepts and asyncpg does not — see the field_validator
@@ -277,6 +292,7 @@ class DatabaseSettings(BaseModel):
                     f"connection string this application never sees."
                 )
         return dsn
+{%- endif %}
 
 
 class HttpClientSettings(BaseModel):
@@ -342,9 +358,8 @@ class PaymentSettings(BaseModel):
     base_url: HttpUrl = Field(
         description=(
             "The payment provider's base URL. **Leave it unset to run on "
-            "the in-memory gateway, which authorises everything** — the "
-            "same arrangement `APP_DATABASE__DSN` has with the in-memory "
-            "repository. `just up` points it at a local stub."
+            "the in-memory gateway, which authorises everything.** "
+            "`just up` points it at a local stub."
         ),
     )
     api_key: SecretStr | None = Field(
@@ -390,6 +405,7 @@ class PaymentSettings(BaseModel):
         gt=0,
         description="How long the circuit stays open before admitting one probe.",
     )
+{%- if cookiecutter.cache == "redis" %}
 
 
 class CacheSettings(BaseModel):
@@ -402,9 +418,8 @@ class CacheSettings(BaseModel):
     dsn: RedisDsn = Field(
         description=(
             "Where the order cache lives. **Leave it unset to run with no "
-            "cache at all** — the service reads and writes PostgreSQL "
-            "directly, the same supported arrangement `APP_DATABASE__DSN` "
-            "has with the in-memory repository. See "
+            "cache at all** — the service reads and writes the order "
+            "repository directly. See "
             "[`CachedOrderRepository`]"
             "(../explanation/layers.md#what-a-port-buys-the-caching-decorator)."
         ),
@@ -460,6 +475,8 @@ class CacheSettings(BaseModel):
             "trap."
         ),
     )
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 # Amazon's bucket naming rules, the subset that is a pure string check:
@@ -531,6 +548,7 @@ class StorageSettings(BaseModel):
         gt=0,
         description="How long to wait for a response once the request is sent.",
     )
+{%- endif %}
 
 
 class Settings(BaseSettings):
@@ -577,22 +595,26 @@ class Settings(BaseSettings):
     )
     log: LogSettings = Field(default_factory=LogSettings)
     otel: OtelSettings = Field(default_factory=OtelSettings)
+{%- if cookiecutter.database == "postgres" %}
     # Optional on purpose: None selects the in-memory adapter, which is the
     # path a service generated with database=none takes. See container.py.
     database: DatabaseSettings | None = None
+{%- endif %}
     # Optional on purpose: None selects the in-memory gateway, which is
-    # what keeps `just dev` working with no payment provider anywhere —
-    # the same arrangement `database` above has with the in-memory
-    # repository.
+    # what keeps `just dev` working with no payment provider anywhere.
     payment: PaymentSettings | None = None
+{%- if cookiecutter.cache == "redis" %}
     # Optional on purpose: None selects the plain repository with no cache
-    # in front of it, exactly as `database` None selects the in-memory one.
-    # A service generated with cache=none takes this path. See container.py.
+    # in front of it. A service generated with cache=none takes this path.
+    # See container.py.
     cache: CacheSettings | None = None
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     # Optional on purpose: None selects InMemoryReceiptStore, so the receipt
     # endpoint works with no object store anywhere — the same arrangement
     # `payment` has with the in-memory gateway.
     storage: StorageSettings | None = None
+{%- endif %}
 
 
 def load_settings(env_file: str | None = ".env") -> Settings:
@@ -602,9 +624,9 @@ def load_settings(env_file: str | None = ".env") -> Settings:
     except ValidationError as exc:
         # exc.errors(include_input=False), not str(exc) or the bare exc:
         # pydantic's default rendering embeds the VALUE that failed
-        # validation for every field, and for database.dsn that value is
+        # validation for every field, and for a DSN field that value is
         # the connection string with its password in it — verified: a
-        # malformed `APP_DATABASE__DSN=mysql://app:sup3rs3cr3t@...` printed
+        # malformed DSN `mysql://app:sup3rs3cr3t@...` printed
         # `input_value='mysql://app:sup3rs3cr3t@...'` to stderr here, in
         # direct contradiction of this module's own docstring ("a missing
         # or malformed variable stops the process ... with a readable
@@ -614,7 +636,7 @@ def load_settings(env_file: str | None = ".env") -> Settings:
         # confirmed on the installed pydantic (2.13.4) to still identify
         # exactly which setting is wrong and why.
         #
-        # Applied globally, not only to database.dsn: every OTHER field
+        # Applied globally, not only to DSN fields: every OTHER field
         # loses the courtesy of having its bad value echoed back too, which
         # is a real trade-off — a typo in, say, http_port is now named by
         # field and constraint but not shown verbatim. The alternative, an

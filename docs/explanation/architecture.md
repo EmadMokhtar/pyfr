@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-13
 covers:
   - examples/reference-service/src/reference_service/
 ---

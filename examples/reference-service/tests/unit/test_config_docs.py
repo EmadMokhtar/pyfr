@@ -372,13 +372,13 @@ def test_env_example_comments_every_prose_line() -> None:
 def test_env_example_comments_out_variables_with_no_default() -> None:
     """An unset optional variable must not become an empty assignment.
 
-    `APP_DATABASE__DSN=` is not the same as absent: it is a malformed URL,
-    and the service would exit 78 on a file that is supposed to be a
+    `APP_PAYMENT__BASE_URL=` is not the same as absent: it is a malformed
+    URL, and the service would exit 78 on a file that is supposed to be a
     working starting point.
     """
     rendered = render_env_example()
-    assert "# APP_DATABASE__DSN=" in rendered
-    assert "\nAPP_DATABASE__DSN=" not in rendered
+    assert "# APP_PAYMENT__BASE_URL=" in rendered
+    assert "\nAPP_PAYMENT__BASE_URL=" not in rendered
 
 
 def test_env_example_sets_variables_that_have_defaults() -> None:
@@ -435,12 +435,12 @@ def test_generated_env_example_starts_the_service_with_no_backends(
     """The file's header promises a working starting point. Prove it.
 
     Every optional group must stay wholly commented out, defaults included.
-    A single active `APP_DATABASE__POOL_SIZE=10` is enough for
-    pydantic-settings to build DatabaseSettings and reject the missing DSN,
-    stopping the service with exit 78 -- which is exactly what the first
-    generated version of this file did, and no test noticed because the
-    tests only checked which lines were commented, never whether the file
-    loaded.
+    A single active variable with a default -- a pool size, say -- is
+    enough for pydantic-settings to build its group and reject the group's
+    missing required fields, stopping the service with exit 78 -- which is
+    exactly what the first generated version of this file did, and no test
+    noticed because the tests only checked which lines were commented,
+    never whether the file loaded.
     """
     from reference_service.settings import Settings
 

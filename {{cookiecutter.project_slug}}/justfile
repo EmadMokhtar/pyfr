@@ -170,6 +170,7 @@ config-docs-check:
 # `docker compose run --rm app python -m {{ cookiecutter.package_name }}.config_check`.
 config-check:
     uv run python -m {{ cookiecutter.package_name }}.config_check
+{%- if cookiecutter.database == "postgres" %}
 
 # Run this after changing any migration, and commit the result — the snapshot
 # is reviewed like any other source file.
@@ -182,25 +183,27 @@ config-check:
 schema-snapshot:
     UPDATE_SCHEMA_SNAPSHOT=1 uv run pytest -m integration \
         -k test_gate_1_the_committed_schema_matches_the_migrations
+{%- endif %}
 
-# Version collisions and the migration manifest come from the unit tier; the
-# snapshot, reversibility and model-drift gates need a database. The
-# configuration drift check needs neither, and it is not gates-only: its
-# test, `tests/unit/test_config_docs.py::test_committed_outputs_are_current`,
+# Every gate that compares a committed, generated artifact with its source.
+# The configuration drift check needs no database, and it is not gates-only:
+# its test, `tests/unit/test_config_docs.py::test_committed_outputs_are_current`,
 # carries no marker, so it already runs in the default `just test` / `just
 # check` tier too. It is called again here, explicitly, so `just gates` run
 # on its own -- without the rest of the unit tier alongside it -- still
-# catches it, in the same generated-artifact shape as the other five schema
-# gates.
+# catches it, in the same generated-artifact shape as a schema gate.
 #
-# Run all five schema gates, plus the configuration reference drift check.
+# Run the service's schema gates, plus the configuration reference drift check.
 gates:
+{%- if cookiecutter.database == "postgres" %}
     uv run pytest tests/unit/test_migration_files.py
     uv run pytest -m integration -k "schema_gates or schema_drift"
+{%- endif %}
     just config-docs-check
 
 imports:
     uv run lint-imports
+{%- if cookiecutter.database == "postgres" %}
 
 # Uses the migrate service's entrypoint, so the database URL lives in exactly
 # one place — compose.yaml.
@@ -265,6 +268,7 @@ migrate-version:
 # Clear a dirty flag by declaring the true version. Read the warning below before using this.
 migrate-force version:
     docker compose run --rm migrate force {% raw %}{{version}}{% endraw %}
+{%- endif %}
 
 # Run the documentation's marked `curl` examples against a real service.
 docs-examples:
@@ -299,16 +303,21 @@ docs-examples:
     set -euo pipefail
     project={{ cookiecutter.project_slug }}-docs-examples
     trap 'docker compose -p "$project" down -v' EXIT
-    docker compose -p "$project" up -d --wait app redis
+    docker compose -p "$project" up -d --wait app{% if cookiecutter.cache == "redis" %} redis{% endif %}
     python3 ../../scripts/check_doc_examples.py ../../docs
+{%- if cookiecutter.database == "postgres" %}
 
 # An interactive psql session against the running compose database.
 psql:
     docker compose exec postgres psql -U app -d app
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 # An interactive redis-cli session against the running compose cache.
 redis-cli:
     docker compose exec redis redis-cli
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 # The MinIO web console, for looking at what the receipt store actually
 # holds. Log in with minioadmin / minioadmin — local-only credentials from
@@ -316,6 +325,7 @@ redis-cli:
 minio-console:
     @echo "http://localhost:9001 — minioadmin / minioadmin"
     @open http://localhost:9001 2>/dev/null || true
+{%- endif %}
 
 # The project's own git hooks over its own tracked files.
 #
@@ -400,24 +410,28 @@ audit:
 #
 # Takes image references so release.yml can scan what it just built and
 # nightly.yml can scan what was last published.
-scan app="{{ cookiecutter.project_slug }}:ci" migrations="{{ cookiecutter.project_slug }}-migrations:ci":
+scan app="{{ cookiecutter.project_slug }}:ci"{% if cookiecutter.database == "postgres" %} migrations="{{ cookiecutter.project_slug }}-migrations:ci"{% endif %}:
     docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
         --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
         --scanners vuln,secret --no-progress {% raw %}{{app}}{% endraw %}
+{%- if cookiecutter.database == "postgres" %}
     docker compose run --rm trivy image --ignorefile /.trivyignore.yaml \
         --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
         --scanners vuln,secret --no-progress {% raw %}{{migrations}}{% endraw %}
+{%- endif %}
 
 # Write a CycloneDX software bill of materials per image into sbom/
 # (ignored by git). CI uploads them as a workflow artifact; the release
 # attaches them to the GitHub Release. Generated from the built image, so
 # they list the Debian packages as well as the Python ones.
-sbom app="{{ cookiecutter.project_slug }}:ci" migrations="{{ cookiecutter.project_slug }}-migrations:ci":
+sbom app="{{ cookiecutter.project_slug }}:ci"{% if cookiecutter.database == "postgres" %} migrations="{{ cookiecutter.project_slug }}-migrations:ci"{% endif %}:
     mkdir -p sbom
     docker compose run --rm trivy image --format cyclonedx --no-progress \
         --output /sbom/{{ cookiecutter.project_slug }}.cdx.json {% raw %}{{app}}{% endraw %}
+{%- if cookiecutter.database == "postgres" %}
     docker compose run --rm trivy image --format cyclonedx --no-progress \
         --output /sbom/{{ cookiecutter.project_slug }}-migrations.cdx.json {% raw %}{{migrations}}{% endraw %}
+{%- endif %}
 
 # Everything the CI `security` job runs, in the order it runs it. Needs
 # Docker. Separate from `check-all` because its result changes with the
@@ -438,7 +452,9 @@ build-images:
     # `docker-container` builder current (`docker buildx create --use`) --
     # `scan` and `sbom` read the daemon over the socket.
     docker build --load -t {{ cookiecutter.project_slug }}:ci .
+{%- if cookiecutter.database == "postgres" %}
     docker build --load -f Dockerfile.migrations -t {{ cookiecutter.project_slug }}-migrations:ci .
+{%- endif %}
 
 # A buildx builder that can build two platforms at once. The default
 # builder on Docker Desktop uses the `docker` driver, which cannot
@@ -458,8 +474,10 @@ _buildx-builder name="pyfr":
 # 15 s on a cold builder (M6 plan, Verified Fact 8).
 build-multiarch: _buildx-builder
     docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 .
+{%- if cookiecutter.database == "postgres" %}
     docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 \
         -f Dockerfile.migrations .
+{%- endif %}
 
 # Build both platforms of both images and push them under the version
 # given -- and ONLY the version. `latest` is created afterwards by
@@ -483,11 +501,13 @@ publish-images version registry="ghcr.io/{{ cookiecutter.github_org | lower }}" 
         --label "org.opencontainers.image.version={% raw %}{{version}}{% endraw %}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
         -t "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}:{% raw %}{{version}}{% endraw %}" .
+{%- if cookiecutter.database == "postgres" %}
     docker buildx build --builder {% raw %}{{builder}}{% endraw %} --platform linux/amd64,linux/arm64 --push \
         --label "org.opencontainers.image.version={% raw %}{{version}}{% endraw %}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
         -t "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}-migrations:{% raw %}{{version}}{% endraw %}" \
         -f Dockerfile.migrations .
+{%- endif %}
 
 # Scan the two images just pushed under `version`, for BOTH platforms.
 # `scan` above gates the push on the local single-architecture build;
@@ -501,7 +521,7 @@ publish-images version registry="ghcr.io/{{ cookiecutter.github_org | lower }}" 
 scan-published version registry="ghcr.io/{{ cookiecutter.github_org | lower }}":
     #!/usr/bin/env bash
     set -euo pipefail
-    for image in {{ cookiecutter.project_slug }} {{ cookiecutter.project_slug }}-migrations; do
+    for image in {{ cookiecutter.project_slug }}{% if cookiecutter.database == "postgres" %} {{ cookiecutter.project_slug }}-migrations{% endif %}; do
         for platform in linux/amd64 linux/arm64; do
             docker compose run --rm trivy image --platform "$platform" \
                 --ignorefile /.trivyignore.yaml \
@@ -518,9 +538,11 @@ promote-latest version registry="ghcr.io/{{ cookiecutter.github_org | lower }}":
     docker buildx imagetools create \
         -t "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}:latest" \
         "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}:{% raw %}{{version}}{% endraw %}"
+{%- if cookiecutter.database == "postgres" %}
     docker buildx imagetools create \
         -t "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}-migrations:latest" \
         "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}-migrations:{% raw %}{{version}}{% endraw %}"
+{%- endif %}
 
 up:
     docker compose up --build

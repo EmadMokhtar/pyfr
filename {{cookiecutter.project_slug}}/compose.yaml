@@ -1,4 +1,5 @@
 services:
+{%- if cookiecutter.database == "postgres" %}
   postgres:
     image: postgres:18-alpine
     environment:
@@ -28,6 +29,8 @@ services:
       # down` (`docker compose down -v`) removes it, and the next `just up`
       # initialises a fresh 18 cluster.
       - postgres-data:/var/lib/postgresql
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
   # The cache. Not behind a profile: it is small, starts in under a second,
   # and `just up` should exercise the same arrangement production runs.
@@ -59,6 +62,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 
   migrate:
     build:
@@ -86,6 +91,8 @@ services:
       - -database
       - postgres://app:secret@postgres:5432/app?sslmode=disable
     command: ["up"]
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
   # The object store. MinIO speaks the S3 API, so the same adapter that runs
   # here runs against Amazon S3 in production with only endpoint_url
@@ -141,6 +148,7 @@ services:
     command: >
       "mc alias set local http://minio:9000 minioadmin minioadmin &&
        mc mb --ignore-existing local/receipts"
+{%- endif %}
 
   app:
     build: .
@@ -152,16 +160,20 @@ services:
     ports:
       - "{{ cookiecutter.http_port }}:{{ cookiecutter.http_port }}"
     depends_on:
+{%- if cookiecutter.database == "postgres" %}
       # Not just "started": the API must not serve a request against a schema
       # that is not there yet. service_completed_successfully waits for the
       # one-shot migrate container to exit 0, so `just up` is a single command
       # that yields a migrated database and a working API.
       migrate:
         condition: service_completed_successfully
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
       # The bucket must exist before the first receipt is requested. Same
       # arrangement as `migrate`: wait for the one-shot container to exit 0.
       minio-bootstrap:
         condition: service_completed_successfully
+{%- endif %}
       # `payment-stub` has no `profiles:` entry, so plain `docker compose up`
       # already starts it alongside `app` — but starting is not readiness,
       # and without this, `app` could come up and serve its first order
@@ -174,13 +186,17 @@ services:
     environment:
       APP_ENVIRONMENT: production
       APP_LOG__LEVEL: info
+{%- if cookiecutter.database == "postgres" %}
       # Host `postgres` is the compose service name. No driver suffix and no
       # sslmode — see settings.py's DatabaseSettings.dsn.
       APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
       # `redis` is the compose service name above. Set here rather than
       # defaulted, because `just up` should exercise the cached path — an
       # adapter that only runs in tests is an adapter nobody has really run.
       APP_CACHE__DSN: redis://redis:6379/0
+{%- endif %}
       # Defaulted rather than hardcoded so one compose file serves both
       # `just up` (telemetry off) and `just o11y` (telemetry on), which
       # sets these two in its own environment.
@@ -196,6 +212,7 @@ services:
       # real provider — see ops/payment-stub/mappings and Task 15's
       # documentation of what that does and does not prove.
       APP_PAYMENT__BASE_URL: http://payment-stub:8080
+{%- if cookiecutter.object_storage == "s3" %}
       # `minio` is the compose service name above. endpoint_url is the whole
       # of "one adapter for every S3-compatible provider": unset it and the
       # same code talks to Amazon S3.
@@ -203,6 +220,7 @@ services:
       APP_STORAGE__ENDPOINT_URL: http://minio:9000
       APP_STORAGE__ACCESS_KEY_ID: minioadmin
       APP_STORAGE__SECRET_ACCESS_KEY: minioadmin
+{%- endif %}
     # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
     # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
     # (and Docker's) own default kill deadline is 10s, so without raising
@@ -341,7 +359,11 @@ services:
       - ./sbom:/sbom
 
 volumes:
+{%- if cookiecutter.database == "postgres" %}
   postgres-data:
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
   minio-data:
+{%- endif %}
   seed-state:
   trivy-cache:

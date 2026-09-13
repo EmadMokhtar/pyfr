@@ -225,6 +225,11 @@ the project; nothing in M7 reads it.
 
 Two mechanisms, one invariant. Jinja `{% if %}` removes lines *inside* a
 file. The post-generation hook removes *whole* files and directories.
+Block tags stand on their own line in Jinja's left-strip form — `{%- if … %}`
+… `{%- endif %}` — so a tag vanishes with its line and the everything-on
+render stays byte-identical to the example; cookiecutter's environment does
+not trim blocks, and `trim_blocks` would swallow the newline after the
+justfile's inline `{% endraw %}` guards.
 Conditionals are placed at file granularity wherever a whole module belongs
 to one backend, so that line-level `{% if %}` appears only in the files that
 mix backends: `pyproject.toml`, `compose.yaml`, `settings.py`,
@@ -234,16 +239,23 @@ workflows, and the documentation pages that describe more than one backend.
 
 **Invariant, enforced by the generation tests:** in a render with a backend
 off, no file for that backend exists, no empty directory remains, no
-dependency for it remains in `pyproject.toml`, no import of it remains, its
-name (`postgres`, `asyncpg`, `sqlalchemy`, `redis`, `minio`, `aioboto3`,
-`s3`) appears nowhere outside the documentation's "what is deliberately
-excluded" wording, and no `{{` or `{%` survives anywhere.
+dependency for it remains in `pyproject.toml`, no `import` of its libraries
+(`sqlalchemy`, `asyncpg`, `alembic`, `redis`, `aioboto3`, `botocore`) and no
+`infrastructure.<db|cache|storage>` reference remains in any `.py`, no
+`APP_DATABASE__`/`APP_CACHE__`/`APP_STORAGE__` variable remains in
+`.env.example` or any `.py`, no compose service and no recipe of it remains,
+`ruff check` and `ruff format --check` pass on the render (an import a
+conditional left behind fails `F401`), and no `{{` or `{%` survives
+anywhere.
 
 | Prompt = `none` | The hook deletes | `{% if %}` removes lines from |
 |---|---|---|
-| `database` | `migrations/`, `schema.sql`, `Dockerfile.migrations`, `.sqlfluff`, `src/<pkg>/infrastructure/db/`, `tests/unit/test_db_mappers.py`, `test_engine.py`, `test_migration_files.py`, `test_order_repository.py`, `tests/integration/test_order_repository.py`, `test_db_instrumentation.py`, `test_schema_drift.py`, `test_schema_gates.py`, ADR 0004 | `pyproject.toml` (sqlalchemy, asyncpg, alembic, the migrate tooling), `compose.yaml` (postgres, migrate, the migrations build), `settings.py`, `container.py`, `justfile` (`migrate-*`, `schema-snapshot`, `psql`, the schema gates in `gates`), `.importlinter`, `.pre-commit-config.yaml` (sqlfluff), `.trivyignore.yaml` (migrations image entries), `.env.example`, the configuration reference, `ci.yml` (schema and integration jobs), `dependabot.yml`, the runbook's dirty-migration procedure, `add-a-backend.md` |
-| `cache` | `src/<pkg>/infrastructure/cache/`, `tests/unit/test_cached_order_repository.py`, `tests/integration/test_cached_order_repository.py`, `test_redis_instrumentation.py`, ADR 0006 | `pyproject.toml` (redis), `compose.yaml` (redis), `settings.py`, `container.py`, `justfile` (`redis-cli`), `.importlinter`, `.env.example`, the configuration reference, `ci.yml`, the readiness page's cache row, the runbook's cache procedure |
-| `object_storage` | `src/<pkg>/infrastructure/storage/`, `tests/integration/test_receipt_store.py` | `pyproject.toml` (aioboto3), `compose.yaml` (minio, minio-bootstrap), `settings.py`, `container.py` (the S3 branch; the in-memory store remains), `justfile` (`minio-console`), `.importlinter`, `.env.example`, the configuration reference, `ci.yml`, the readiness page's storage row |
+| `database` | `migrations/`, `schema.sql`, `Dockerfile.migrations`, `.sqlfluff`, `src/<pkg>/infrastructure/db/`, `tests/unit/test_db_mappers.py`, `test_engine.py`, `test_migration_files.py`, `test_order_repository.py`, `tests/integration/test_order_repository.py`, `test_db_instrumentation.py`, `test_schema_drift.py`, `test_schema_gates.py` | `pyproject.toml` (sqlalchemy, asyncpg, alembic, the migrate tooling), `compose.yaml` (postgres, migrate, the migrations build), `settings.py`, `container.py`, `justfile` (`migrate-*`, `schema-snapshot`, `psql`, the schema gates in `gates`), `.importlinter`, `.pre-commit-config.yaml` (sqlfluff), `.trivyignore.yaml` (migrations image entries), `.env.example`, the configuration reference, `ci.yml` (schema and integration jobs), `dependabot.yml`, `main.py`, `observability/otel.py` (the SQLAlchemy instrumentor), `observability/metrics.py` (pool metrics), `tests/api/test_errors.py` (one test builds a `PostgresOrderRepository`), `tests/unit/test_container.py`, `tests/unit/test_metrics.py`, `tests/unit/test_settings.py`, `tests/unit/test_config_check.py`, `tests/unit/test_config_docs.py`, `tests/unit/test_compose_images.py`, `tests/integration/conftest.py` |
+| `cache` | `src/<pkg>/infrastructure/cache/`, `tests/unit/test_cached_order_repository.py`, `tests/integration/test_cached_order_repository.py`, `test_redis_instrumentation.py` | `pyproject.toml` (redis), `compose.yaml` (redis), `settings.py`, `container.py`, `justfile` (`redis-cli`), `.importlinter`, `.env.example`, the configuration reference, `ci.yml`, `main.py` (`instrument_redis`), `observability/otel.py`, `tests/unit/test_container.py`, `tests/unit/test_config_docs.py`, `tests/unit/test_compose_images.py`, `tests/integration/conftest.py`, `tests/fakes.py` (`FakeRedis`) |
+| `object_storage` | `src/<pkg>/infrastructure/storage/`, `tests/integration/test_receipt_store.py` | `pyproject.toml` (aioboto3), `compose.yaml` (minio, minio-bootstrap), `settings.py`, `container.py` (the S3 branch; the in-memory store remains), `justfile` (`minio-console`), `.importlinter`, `.env.example`, the configuration reference, `ci.yml`, `tests/unit/test_container.py`, `tests/unit/test_compose_images.py`, `tests/integration/conftest.py` |
+
+`README.md` is not templated in PR 2; PR 4 rewrites it for a generated
+project, and the invariant excludes it until then.
 
 Never pruned: the in-memory adapters, the outbound HTTP client and its
 WireMock stub, the observability stack, the receipt feature, seeding,
@@ -378,7 +390,7 @@ temporary directory.
 `tests/test_generation.py`, parametrised over all eight combinations of
 `database`, `cache` and `object_storage`, asserting for each render:
 
-- The pruning invariant of section 6, in full.
+- The pruning invariant of section 6, as refined there.
 - `pyproject.toml` parses and lists only the chosen backends' dependencies.
 - `compose.yaml` parses and names only the chosen services.
 - `openapi.json` and `openapi.baseline.json` are byte-identical to the
@@ -388,6 +400,8 @@ temporary directory.
 - No `{{` or `{%` in any file.
 - No `.git` directory, no `.venv`, no lock (the hook's side-effect half did
   not run under `PYFR_REGEN`).
+- `ruff check` and `ruff format --check` pass on the render, with the
+  render's own `ruff.toml`.
 
 And, once each: every `pre_gen_project.py` rejection in section 5.2 fires
 with its message and leaves no directory behind; the side-effect half
@@ -445,7 +459,7 @@ Each leaves `main` runnable and the golden diff green.
 | PR | Lands | Prompts live afterwards |
 |---|---|---|
 | 1 — skeleton | `git mv examples/reference-service '{{cookiecutter.project_slug}}'`; `cookiecutter.json` (without `_template_version`, which arrives with `.pyfr-answers.yml`); both hooks with an empty pruning half; the collision pass (section 7); `scripts/regen.py`, `just regen`, `tests/reference-answers.yaml`, `test_golden.py`; the identity, port, organisation and licence substitutions throughout the tree; a `.gitignore` for generated projects; `just adopt` and `adopt.yml` (M7-10); a root `.pre-commit-config.yaml`; `cookiecutter` and `pytest-cookies` in the root `dev` group; the `golden` CI job, with the generation tests in the `docs` job's root `just check`; roadmap "In progress". | identity, `http_port`, `license` |
-| 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`. | all twelve |
+| 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`; `_template_version: 0.6.0` in `cookiecutter.json` until PR 5 wires its bump. | all twelve |
 | 3 — generated `.github/` | Section 8 in full; Commitizen moves (M7-9); the reference service's `.github/` appears as output. | — |
 | 4 — docs split | Section 9 in full; `docs.yml` builds both sites; the hygiene scripts move; root pages rewritten. | — |
 | 5 — done | Full-suite tests and `full-suite.yml`; `_template_version` with the release's regen step; ADR 0017; roadmap **Done**; README status; `v0.7.0`. | — |

@@ -4,6 +4,7 @@
 # Renewing an entry means re-checking whether a fix has shipped -- that is
 # what the date is for. `trivy image --show-suppressed` lists what this
 # file is currently hiding.
+{%- if cookiecutter.database == "postgres" %}
 #
 # All five below are vendored inside the migrate/migrate Go binary. The
 # newest release (v4.20.1, 2026-09-09) still carries them, so no image bump
@@ -33,3 +34,6 @@ vulnerabilities:
     paths: ["usr/local/bin/migrate"]
     statement: "gRPC-Go xDS RBAC and HTTP/2 issues. migrate runs no xDS server. Fixed in grpc 1.82.1; not in any migrate release yet."
     expired_at: 2026-12-10
+{%- else %}
+vulnerabilities: []
+{%- endif %}

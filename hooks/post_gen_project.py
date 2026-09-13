@@ -14,6 +14,7 @@ not receive a half-set-up project reported as a failed one.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,63 @@ LICENCE_FILES = {
     "MPL-2.0": "LICENSE.MPL-2.0",
     "Proprietary": "LICENSE.Proprietary",
 }
+
+DATABASE = "{{ cookiecutter.database }}"
+CACHE = "{{ cookiecutter.cache }}"
+OBJECT_STORAGE = "{{ cookiecutter.object_storage }}"
+PACKAGE = "{{ cookiecutter.package_name }}"
+
+# Whole files and directories that belong to one backend. Jinja removes lines
+# inside mixed files; everything here is deleted outright when its answer is
+# "none". Directories end with "/". tests/test_generation.py carries the same
+# table and asserts that each path exists exactly when its backend is chosen.
+# Only the two declared values can arrive here: cookiecutter refuses an
+# override outside a choice list before any hook runs, so "not none" below
+# always means the backend's own value (tests/test_hooks.py pins that).
+PRUNED: dict[str, list[str]] = {
+    "database": [
+        "migrations/",
+        "schema.sql",
+        "Dockerfile.migrations",
+        ".sqlfluff",
+        f"src/{PACKAGE}/infrastructure/db/",
+        "tests/unit/test_db_mappers.py",
+        "tests/unit/test_engine.py",
+        "tests/unit/test_migration_files.py",
+        "tests/unit/test_order_repository.py",
+        "tests/integration/test_order_repository.py",
+        "tests/integration/test_db_instrumentation.py",
+        "tests/integration/test_schema_drift.py",
+        "tests/integration/test_schema_gates.py",
+    ],
+    "cache": [
+        f"src/{PACKAGE}/infrastructure/cache/",
+        "tests/unit/test_cached_order_repository.py",
+        "tests/integration/test_cached_order_repository.py",
+        "tests/integration/test_redis_instrumentation.py",
+    ],
+    "object_storage": [
+        f"src/{PACKAGE}/infrastructure/storage/",
+        "tests/integration/test_receipt_store.py",
+    ],
+}
+ANSWERS = {"database": DATABASE, "cache": CACHE, "object_storage": OBJECT_STORAGE}
+
+
+def prune_backends(root: Path) -> None:
+    for key, answer in ANSWERS.items():
+        if answer != "none":
+            continue
+        for relative in PRUNED[key]:
+            path = root / relative.rstrip("/")
+            if not path.exists():
+                # The table and the tree have diverged; fail loudly so the
+                # generation tests catch it before a user does.
+                sys.exit(f"pruning: {relative} is missing from the template body")
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
 
 
 def keep_chosen_licence(root: Path) -> None:
@@ -82,6 +140,7 @@ def set_up(root: Path) -> None:
 def main() -> int:
     root = Path.cwd()
     keep_chosen_licence(root)
+    prune_backends(root)
     remove_empty_directories(root)
     if os.environ.get("PYFR_REGEN"):
         return 0

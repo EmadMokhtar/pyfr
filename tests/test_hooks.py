@@ -103,6 +103,61 @@ def test_regen_mode_leaves_no_git_repository(cookies) -> None:
     assert not (result.project_path / "uv.lock").exists()
 
 
+@pytest.mark.parametrize(
+    "answers",
+    [{"database": "mysql"}, {"cache": "memcached"}, {"object_storage": "gcs"}],
+)
+def test_a_backend_answer_outside_its_choices_is_refused_before_any_hook(
+    cookies, answers: dict[str, str]
+) -> None:
+    # cookiecutter validates a choice variable when the override is applied,
+    # before pre_gen_project.py runs, so `database=mysql` can never reach the
+    # Jinja blocks (which would treat it as "not postgres") and the hook's
+    # pruning table (which would treat it as "not none") with two different
+    # meanings. This pins that guard: no project is written at all.
+    result = cookies.bake(extra_context=answers)
+    assert result.exit_code != 0
+    assert result.project_path is None or not result.project_path.exists()
+    assert "choice variable" in str(result.exception)
+
+
+@pytest.mark.parametrize(
+    ("answers", "gone", "kept"),
+    [
+        (
+            {"database": "none"},
+            ("migrations", "schema.sql", "src/my_service/infrastructure/db"),
+            (
+                "src/my_service/infrastructure/memory",
+                "src/my_service/infrastructure/cache",
+            ),
+        ),
+        (
+            {"cache": "none"},
+            ("src/my_service/infrastructure/cache",),
+            ("src/my_service/infrastructure/db",),
+        ),
+        (
+            {"object_storage": "none"},
+            (
+                "src/my_service/infrastructure/storage",
+                "tests/integration/test_receipt_store.py",
+            ),
+            ("src/my_service/infrastructure/memory/receipt_store.py",),
+        ),
+    ],
+)
+def test_the_hook_deletes_an_unchosen_backend_whole(
+    cookies, answers, gone, kept
+) -> None:
+    result = cookies.bake(extra_context=answers)
+    assert result.exit_code == 0, result.exception
+    for path in gone:
+        assert not (result.project_path / path).exists(), path
+    for path in kept:
+        assert (result.project_path / path).exists(), path
+
+
 def test_side_effects_are_best_effort(
     cookies, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capfd
 ) -> None:

@@ -11,11 +11,10 @@ object, keys sorted.
 
 Two layers of masking. `model_dump(mode="json")` renders every
 `SecretStr` as `**********`. That is not enough on its own (M6 plan,
-Verified Fact 7): `APP_DATABASE__DSN` and `APP_CACHE__DSN` are URL
-types, and a URL's password is plain text inside the dumped string.
-`mask` walks the dump and blanks the password of any string that parses
-as a URL carrying credentials -- generic, so a DSN field added later is
-covered without opting in.
+Verified Fact 7): a DSN setting is a URL type, and a URL's password is
+plain text inside the dumped string. `mask` walks the dump and blanks
+the password of any string that parses as a URL carrying credentials --
+generic, so a DSN field added later is covered without opting in.
 """
 
 from __future__ import annotations

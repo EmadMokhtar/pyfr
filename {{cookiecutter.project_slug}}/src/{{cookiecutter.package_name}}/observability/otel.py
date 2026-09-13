@@ -27,8 +27,12 @@ from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExp
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+{%- if cookiecutter.cache == "redis" %}
 from opentelemetry.instrumentation.redis import RedisInstrumentor
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+{%- endif %}
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -45,7 +49,9 @@ from opentelemetry.sdk.trace.export import (
     SpanExporter,
 )
 from opentelemetry.sdk.trace.sampling import ParentBased, Sampler, TraceIdRatioBased
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy.ext.asyncio import AsyncEngine
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.observability.slo import HTTP_DURATION_BUCKET_BOUNDARIES
 from {{ cookiecutter.package_name }}.settings import Settings
@@ -310,6 +316,7 @@ def instrument_fastapi(app: FastAPI, runtime: OtelRuntime) -> None:
         meter_provider=runtime.meter_provider,
         excluded_urls=_UNTRACED_PATHS,
     )
+{%- if cookiecutter.database == "postgres" %}
 
 
 def instrument_database(engine: AsyncEngine, runtime: OtelRuntime) -> None:
@@ -331,6 +338,7 @@ def instrument_database(engine: AsyncEngine, runtime: OtelRuntime) -> None:
     SQLAlchemyInstrumentor().instrument(
         engine=engine.sync_engine, tracer_provider=runtime.tracer_provider
     )
+{%- endif %}
 
 
 def instrument_http_client(client: httpx.AsyncClient, runtime: OtelRuntime) -> None:
@@ -351,6 +359,7 @@ def instrument_http_client(client: httpx.AsyncClient, runtime: OtelRuntime) -> N
     HTTPXClientInstrumentor.instrument_client(
         client, tracer_provider=runtime.tracer_provider
     )
+{%- if cookiecutter.cache == "redis" %}
 
 
 def instrument_redis(runtime: OtelRuntime) -> None:
@@ -404,3 +413,4 @@ def instrument_redis(runtime: OtelRuntime) -> None:
     if instrumentor.is_instrumented_by_opentelemetry:
         return
     instrumentor.instrument(tracer_provider=runtime.tracer_provider)
+{%- endif %}

@@ -56,22 +56,34 @@ def test_a_malformed_url_is_returned_as_is() -> None:
 def test_the_resolved_configuration_masks_every_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+{%- if cookiecutter.database == "postgres" %}
     monkeypatch.setenv("APP_DATABASE__DSN", "postgresql://app:db-pass@db:5432/app")
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
     monkeypatch.setenv("APP_CACHE__DSN", "redis://:cache-pass@cache:6379/0")
+{%- endif %}
     monkeypatch.setenv("APP_PAYMENT__BASE_URL", "http://pay")
     monkeypatch.setenv("APP_PAYMENT__API_KEY", "pay-key")
+{%- if cookiecutter.object_storage == "s3" %}
     monkeypatch.setenv("APP_STORAGE__BUCKET", "receipts")
     monkeypatch.setenv("APP_STORAGE__ACCESS_KEY_ID", "access-id")
     monkeypatch.setenv("APP_STORAGE__SECRET_ACCESS_KEY", "storage-secret")
+{%- endif %}
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     rendered = json.dumps(resolved_configuration(settings))
 
     for secret in ("db-pass", "cache-pass", "pay-key", "access-id", "storage-secret"):
         assert secret not in rendered
+{%- if cookiecutter.database == "postgres" or cookiecutter.object_storage == "s3" %}
     # Everything that is not a secret is still there to read.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert '"bucket": "receipts"' in rendered
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
     assert "@db:5432/app" in rendered
+{%- endif %}
 
 
 def test_main_prints_one_json_object_and_returns_zero(
@@ -88,8 +100,12 @@ def test_main_exits_78_without_echoing_the_bad_value(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The same path the service takes at startup: load_settings exits 78
-    and, by include_input=False, never prints the offending value."""
-    monkeypatch.setenv("APP_DATABASE__DSN", "mysql://app:sup3rs3cr3t@db/app")
+    and, by include_input=False, never prints the offending value.
+
+    `base_url` is an `HttpUrl`, so a `mysql://` value fails on its scheme
+    (`url_scheme`) -- the same rejection a malformed DSN gets -- and the
+    password in it is the thing that must not reach either stream."""
+    monkeypatch.setenv("APP_PAYMENT__BASE_URL", "mysql://app:sup3rs3cr3t@db/app")
 
     with pytest.raises(SystemExit) as exc_info:
         main(env_file=None)

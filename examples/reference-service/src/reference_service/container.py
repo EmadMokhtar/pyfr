@@ -187,16 +187,15 @@ class Container:
     # dispose the pool at shutdown; nothing else reaches for it.
     engine: AsyncEngine | None = None
     # None when no payment provider is configured (the in-memory gateway's
-    # case). Held for the same reason `engine` is: only close_container
-    # reaches for it, to close the pooled connections at shutdown.
+    # case). Held only so close_container can close the pooled connections
+    # at shutdown; nothing else reaches for it.
     http_client: httpx.AsyncClient | None = None
     # None when no cache is configured. Held only so close_container can
     # release the pool at shutdown; nothing else reaches for it.
     redis: Redis | None = None
-    # Always present, never None — unlike engine and http_client, there is
-    # always SOME store, because the in-memory one needs no configuration.
-    # Defaults to it here; build_container below swaps in the S3 adapter
-    # when settings.storage is configured.
+    # Always present, never None — unlike http_client, there is always SOME
+    # store, because the in-memory one needs no configuration. Defaults to
+    # it here; build_container below passes in the store it selected.
     receipts: ReceiptStore = field(default_factory=InMemoryReceiptStore)
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
@@ -347,11 +346,12 @@ def build_container(settings: Settings) -> Container:
 async def close_container(container: Container) -> None:
     """Release resources. Runs after in-flight requests finish.
 
-    Nested `try`/`finally` rather than sequential `if`s: without it, an
-    exception from one close would skip every close after it, leaking
-    pooled connections on exactly the shutdown that also had trouble —
-    the moment a leak is least affordable. Each resource's cleanup is
-    independent of the others' success.
+    Every close after the first sits in the `finally` of the one before
+    it, rather than in a sequence of `if`s: an exception from one close
+    must not skip the closes after it, or pooled connections leak on
+    exactly the shutdown that also had trouble — the moment a leak is
+    least affordable. Each resource's cleanup is independent of the
+    others' success.
     """
     try:
         if container.engine is not None:

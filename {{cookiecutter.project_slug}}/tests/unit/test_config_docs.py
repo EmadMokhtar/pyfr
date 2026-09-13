@@ -44,6 +44,7 @@ def groups() -> list[ConfigGroup]:
 @pytest.fixture(scope="module")
 def by_name(groups: list[ConfigGroup]) -> dict[str, ConfigVariable]:
     return {variable.name: variable for group in groups for variable in group.variables}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 
 def test_walks_every_environment_variable(by_name: dict[str, ConfigVariable]) -> None:
@@ -52,6 +53,7 @@ def test_walks_every_environment_variable(by_name: dict[str, ConfigVariable]) ->
     38 before Task 2 added `APP_LOG__REDACT_FIELDS`.
     """
     assert len(by_name) == 39
+{%- endif %}
 
 
 def test_top_level_fields_carry_no_group_prefix(
@@ -66,7 +68,9 @@ def test_nested_models_use_the_double_underscore_delimiter(
     by_name: dict[str, ConfigVariable],
 ) -> None:
     assert "APP_LOG__LEVEL" in by_name
+{%- if cookiecutter.cache == "redis" %}
     assert "APP_CACHE__TTL_SECONDS" in by_name
+{%- endif %}
 
 
 def test_doubly_nested_models_repeat_the_delimiter(
@@ -74,6 +78,7 @@ def test_doubly_nested_models_repeat_the_delimiter(
 ) -> None:
     """PaymentSettings.http is the only double nesting in the model."""
     assert "APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS" in by_name
+{%- if cookiecutter.database == "postgres" or cookiecutter.object_storage == "s3" %}
 
 
 def test_optional_submodels_are_unwrapped_not_skipped(
@@ -84,8 +89,13 @@ def test_optional_submodels_are_unwrapped_not_skipped(
     A walker that only recurses into bare BaseModel annotations silently
     documents 10 variables instead of 38.
     """
+{%- if cookiecutter.database == "postgres" %}
     assert "APP_DATABASE__DSN" in by_name
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert "APP_STORAGE__BUCKET" in by_name
+{%- endif %}
+{%- endif %}
 
 
 def test_default_factory_fields_do_not_leak_the_undefined_sentinel(
@@ -95,11 +105,13 @@ def test_default_factory_fields_do_not_leak_the_undefined_sentinel(
     levels = by_name["APP_LOG__LEVELS"]
     assert "PydanticUndefined" not in levels.default_label
     assert levels.default_label == "{}"
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_secret_fields_are_flagged(by_name: dict[str, ConfigVariable]) -> None:
     assert by_name["APP_STORAGE__ACCESS_KEY_ID"].secret is True
     assert by_name["APP_STORAGE__SECRET_ACCESS_KEY"].secret is True
+{%- endif %}
 
 
 def test_secret_inside_a_union_is_flagged(by_name: dict[str, ConfigVariable]) -> None:
@@ -115,6 +127,7 @@ def test_ordinary_fields_are_not_flagged_as_secret(
     by_name: dict[str, ConfigVariable],
 ) -> None:
     assert by_name["APP_SERVICE_NAME"].secret is False
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_constraints_reach_the_type_label(by_name: dict[str, ConfigVariable]) -> None:
@@ -122,6 +135,7 @@ def test_constraints_reach_the_type_label(by_name: dict[str, ConfigVariable]) ->
     assert by_name["APP_CACHE__POOL_SIZE"].type_label == "integer, ≥ 1"
     assert by_name["APP_CACHE__TTL_SECONDS"].type_label == "integer, ≥ 1"
     assert by_name["APP_CACHE__CONNECT_TIMEOUT_SECONDS"].type_label == "float, > 0"
+{%- endif %}
 
 
 def test_bounded_integers_render_as_a_range(by_name: dict[str, ConfigVariable]) -> None:
@@ -163,13 +177,20 @@ def test_literals_render_as_alternatives(by_name: dict[str, ConfigVariable]) -> 
 
 
 def test_network_types_render_by_name(by_name: dict[str, ConfigVariable]) -> None:
+{%- if cookiecutter.database == "postgres" %}
     assert by_name["APP_DATABASE__DSN"].type_label == "PostgreSQL URL"
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
     assert by_name["APP_CACHE__DSN"].type_label == "Redis URL"
+{%- endif %}
     assert by_name["APP_PAYMENT__BASE_URL"].type_label == "URL"
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_secret_type_label_says_secret(by_name: dict[str, ConfigVariable]) -> None:
     assert by_name["APP_STORAGE__ACCESS_KEY_ID"].type_label == "secret"
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_required_field_in_an_optional_group_is_marked(
@@ -178,12 +199,17 @@ def test_required_field_in_an_optional_group_is_marked(
     """The rule the hand-written table states for every APP_STORAGE__ field."""
     assert by_name["APP_STORAGE__BUCKET"].required_in_group is True
     assert by_name["APP_STORAGE__REGION"].required_in_group is False
+{%- endif %}
 
 
 def test_optional_groups_are_marked_optional(groups: list[ConfigGroup]) -> None:
     by_path = {group.path: group for group in groups}
+{%- if cookiecutter.object_storage == "s3" %}
     assert by_path[("storage",)].optional is True
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
     assert by_path[("database",)].optional is True
+{%- endif %}
     assert by_path[("log",)].optional is False
 
 
@@ -195,11 +221,17 @@ def test_groups_are_returned_in_declaration_order(
         (),
         ("log",),
         ("otel",),
+{%- if cookiecutter.database == "postgres" %}
         ("database",),
+{%- endif %}
         ("payment",),
         ("payment", "http"),
+{%- if cookiecutter.cache == "redis" %}
         ("cache",),
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
         ("storage",),
+{%- endif %}
     ]
 
 
@@ -239,6 +271,7 @@ def test_no_secret_field_has_a_default(by_name: dict[str, ConfigVariable]) -> No
         if variable.secret and variable.default_label != "unset"
     )
     assert leaked == []
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 
 def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
@@ -247,6 +280,8 @@ def test_markdown_table_has_a_header_and_one_row_per_variable() -> None:
     # header + separator + 39 rows
     assert len(lines) == 41
     assert lines[0].startswith("| Variable |")
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_markdown_rows_carry_the_variable_type_and_default() -> None:
@@ -257,6 +292,7 @@ def test_markdown_rows_carry_the_variable_type_and_default() -> None:
     )
     assert "integer, ≥ 1" in row
     assert "`300`" in row
+{%- endif %}
 
 
 def test_markdown_never_emits_a_raw_newline_inside_a_row() -> None:
@@ -269,6 +305,7 @@ def test_markdown_never_emits_a_raw_newline_inside_a_row() -> None:
     for line in render_markdown_table().splitlines():
         if line.startswith("| `APP_"):
             assert line.rstrip().endswith("|")
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
@@ -278,6 +315,7 @@ def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
         if line.startswith("| `APP_STORAGE__BUCKET`")
     )
     assert "required once any" in row
+{%- endif %}
 
 
 def _columns(row: str) -> list[str]:
@@ -372,13 +410,13 @@ def test_env_example_comments_every_prose_line() -> None:
 def test_env_example_comments_out_variables_with_no_default() -> None:
     """An unset optional variable must not become an empty assignment.
 
-    `APP_DATABASE__DSN=` is not the same as absent: it is a malformed URL,
-    and the service would exit 78 on a file that is supposed to be a
+    `APP_PAYMENT__BASE_URL=` is not the same as absent: it is a malformed
+    URL, and the service would exit 78 on a file that is supposed to be a
     working starting point.
     """
     rendered = render_env_example()
-    assert "# APP_DATABASE__DSN=" in rendered
-    assert "\nAPP_DATABASE__DSN=" not in rendered
+    assert "# APP_PAYMENT__BASE_URL=" in rendered
+    assert "\nAPP_PAYMENT__BASE_URL=" not in rendered
 
 
 def test_env_example_sets_variables_that_have_defaults() -> None:
@@ -435,22 +473,28 @@ def test_generated_env_example_starts_the_service_with_no_backends(
     """The file's header promises a working starting point. Prove it.
 
     Every optional group must stay wholly commented out, defaults included.
-    A single active `APP_DATABASE__POOL_SIZE=10` is enough for
-    pydantic-settings to build DatabaseSettings and reject the missing DSN,
-    stopping the service with exit 78 -- which is exactly what the first
-    generated version of this file did, and no test noticed because the
-    tests only checked which lines were commented, never whether the file
-    loaded.
+    A single active variable with a default -- a pool size, say -- is
+    enough for pydantic-settings to build its group and reject the group's
+    missing required fields, stopping the service with exit 78 -- which is
+    exactly what the first generated version of this file did, and no test
+    noticed because the tests only checked which lines were commented,
+    never whether the file loaded.
     """
     from {{ cookiecutter.package_name }}.settings import Settings
 
     env_file = tmp_path / ".env"
     env_file.write_text(render_env_example(), encoding="utf-8")
     settings = Settings(_env_file=str(env_file))  # type: ignore[call-arg]
+{%- if cookiecutter.database == "postgres" %}
     assert settings.database is None
+{%- endif %}
     assert settings.payment is None
+{%- if cookiecutter.cache == "redis" %}
     assert settings.cache is None
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert settings.storage is None
+{%- endif %}
 
 
 def test_groups_nested_under_an_optional_group_are_optional() -> None:

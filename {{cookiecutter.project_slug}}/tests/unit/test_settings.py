@@ -5,7 +5,9 @@ from pydantic import ValidationError
 
 from {{ cookiecutter.package_name }}.observability.redaction import DEFAULT_REDACT_FIELDS
 from {{ cookiecutter.package_name }}.settings import (
+{%- if cookiecutter.database == "postgres" %}
     EXIT_CONFIG_ERROR,
+{%- endif %}
     Settings,
     load_settings,
 )
@@ -184,6 +186,7 @@ def test_http_port_accepts_the_boundary_values(
 
     monkeypatch.setenv("APP_HTTP_PORT", "65535")
     assert Settings(_env_file=None).http_port == 65535  # type: ignore[call-arg]
+{%- if cookiecutter.database == "postgres" %}
 
 
 def test_database_is_absent_by_default() -> None:
@@ -306,6 +309,7 @@ def test_a_malformed_dsn_s_password_never_reaches_stderr(
     # Still useful, not merely silent: names the field and the constraint.
     assert "dsn" in stderr
     assert "url_scheme" in stderr
+{%- endif %}
 
 
 def test_otel_is_off_by_default() -> None:
@@ -469,13 +473,20 @@ def test_retry_attempts_must_be_at_least_one(
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+{%- if cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 
 
 def test_cache_and_storage_are_absent_by_default() -> None:
     """Both dependencies are optional, exactly as database and payment are."""
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
+{%- if cookiecutter.cache == "redis" %}
     assert settings.cache is None
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     assert settings.storage is None
+{%- endif %}
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_cache_settings_are_read_from_the_environment(
@@ -489,6 +500,8 @@ def test_cache_settings_are_read_from_the_environment(
     # Defaulted, not required: a cache that needs five variables set before it
     # works is a cache nobody turns on.
     assert settings.cache.pool_size == 10
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 
 def test_a_cache_timeout_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -499,6 +512,8 @@ def test_a_cache_timeout_must_be_positive(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("APP_CACHE__OPERATION_TIMEOUT_SECONDS", "0")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_storage_settings_require_a_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -532,6 +547,7 @@ def test_storage_credentials_are_secrets(monkeypatch: pytest.MonkeyPatch) -> Non
     assert settings.storage is not None
     assert "sup3rs3cr3t" not in repr(settings.storage)
     assert settings.storage.secret_access_key.get_secret_value() == "sup3rs3cr3t"
+{%- endif %}
 
 
 def test_redact_fields_parse_from_a_json_array_and_replace_the_default(

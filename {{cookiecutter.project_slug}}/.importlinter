@@ -18,13 +18,19 @@ forbidden_modules =
     {{ cookiecutter.package_name }}.main
     fastapi
     starlette
+{%- if cookiecutter.database == "postgres" %}
     sqlalchemy
     asyncpg
+{%- endif %}
     opentelemetry
     httpx
     stamina
+{%- if cookiecutter.cache == "redis" %}
     redis
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     aioboto3
+{%- endif %}
 
 [importlinter:contract:services-independence]
 name = Services import neither api nor infrastructure
@@ -38,10 +44,16 @@ forbidden_modules =
     {{ cookiecutter.package_name }}.main
     fastapi
     starlette
+{%- if cookiecutter.database == "postgres" %}
     sqlalchemy
     asyncpg
+{%- endif %}
     opentelemetry
     httpx
     stamina
+{%- if cookiecutter.cache == "redis" %}
     redis
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     aioboto3
+{%- endif %}

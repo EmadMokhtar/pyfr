@@ -15,17 +15,24 @@ from dataclasses import dataclass, field
 
 import httpx
 import structlog
+{%- if cookiecutter.cache == "redis" %}
 from redis.asyncio import Redis
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+{%- endif %}
 
 from {{ cookiecutter.package_name }}.domain.payments import PaymentGateway
 from {{ cookiecutter.package_name }}.domain.receipts import ReceiptStore
 from {{ cookiecutter.package_name }}.domain.repositories import OrderRepository
+{%- if cookiecutter.cache == "redis" %}
 from {{ cookiecutter.package_name }}.infrastructure.cache.client import build_redis_client
 from {{ cookiecutter.package_name }}.infrastructure.cache.order_repository import (
     CachedOrderRepository,
 )
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
     build_engine,
     build_sessionmaker,
@@ -33,6 +40,7 @@ from {{ cookiecutter.package_name }}.infrastructure.db.engine import (
 from {{ cookiecutter.package_name }}.infrastructure.db.order_repository import (
     PostgresOrderRepository,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.infrastructure.http.breaker import CircuitBreaker
 from {{ cookiecutter.package_name }}.infrastructure.http.client import build_http_client
 from {{ cookiecutter.package_name }}.infrastructure.http.payment_gateway import (
@@ -47,6 +55,7 @@ from {{ cookiecutter.package_name }}.infrastructure.memory.payment_gateway impor
 from {{ cookiecutter.package_name }}.infrastructure.memory.receipt_store import (
     InMemoryReceiptStore,
 )
+{%- if cookiecutter.object_storage == "s3" %}
 from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
@@ -54,6 +63,7 @@ from {{ cookiecutter.package_name }}.infrastructure.storage.client import (
 from {{ cookiecutter.package_name }}.infrastructure.storage.receipt_store import (
     S3ReceiptStore,
 )
+{%- endif %}
 from {{ cookiecutter.package_name }}.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]
@@ -183,20 +193,23 @@ class Container:
     settings: Settings
     orders: OrderRepository
     payments: PaymentGateway
+{%- if cookiecutter.database == "postgres" %}
     # None when no database is configured. Held only so close_container can
     # dispose the pool at shutdown; nothing else reaches for it.
     engine: AsyncEngine | None = None
+{%- endif %}
     # None when no payment provider is configured (the in-memory gateway's
-    # case). Held for the same reason `engine` is: only close_container
-    # reaches for it, to close the pooled connections at shutdown.
+    # case). Held only so close_container can close the pooled connections
+    # at shutdown; nothing else reaches for it.
     http_client: httpx.AsyncClient | None = None
+{%- if cookiecutter.cache == "redis" %}
     # None when no cache is configured. Held only so close_container can
     # release the pool at shutdown; nothing else reaches for it.
     redis: Redis | None = None
-    # Always present, never None — unlike engine and http_client, there is
-    # always SOME store, because the in-memory one needs no configuration.
-    # Defaults to it here; build_container below swaps in the S3 adapter
-    # when settings.storage is configured.
+{%- endif %}
+    # Always present, never None — unlike http_client, there is always SOME
+    # store, because the in-memory one needs no configuration. Defaults to
+    # it here; build_container below passes in the store it selected.
     receipts: ReceiptStore = field(default_factory=InMemoryReceiptStore)
     readiness: ReadinessRegistry = field(default_factory=ReadinessRegistry)
     started: bool = False
@@ -233,6 +246,7 @@ def build_container(settings: Settings) -> Container:
             wait_initial_seconds=settings.payment.retry_initial_wait_seconds,
             wait_max_seconds=settings.payment.retry_max_wait_seconds,
         )
+{%- if cookiecutter.database == "postgres" %}
 
     engine: AsyncEngine | None = None
     orders: OrderRepository
@@ -243,6 +257,11 @@ def build_container(settings: Settings) -> Container:
     else:
         engine = build_engine(settings.database)
         orders = PostgresOrderRepository(build_sessionmaker(engine))
+{%- else %}
+
+    orders: OrderRepository = InMemoryOrderRepository()
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
     # The cache wraps whatever was selected above and satisfies the same
     # port, so this is the ONLY place in the application that knows a cache
@@ -251,8 +270,10 @@ def build_container(settings: Settings) -> Container:
     if settings.cache is not None:
         redis = build_redis_client(settings.cache)
         orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
+{%- endif %}
 
     receipts: ReceiptStore = InMemoryReceiptStore()
+{%- if cookiecutter.object_storage == "s3" %}
     s3_store: S3ReceiptStore | None = None
     if settings.storage is not None:
         storage_settings = settings.storage
@@ -262,16 +283,22 @@ def build_container(settings: Settings) -> Container:
             storage_settings,
         )
         receipts = s3_store
+{%- endif %}
 
     container = Container(
         settings=settings,
         orders=orders,
         payments=payments,
+{%- if cookiecutter.database == "postgres" %}
         engine=engine,
+{%- endif %}
         http_client=http_client,
+{%- if cookiecutter.cache == "redis" %}
         redis=redis,
+{%- endif %}
         receipts=receipts,
     )
+{%- if cookiecutter.database == "postgres" %}
 
     if engine is not None:
 
@@ -288,6 +315,8 @@ def build_container(settings: Settings) -> Container:
                 await connection.execute(text("SELECT 1"))
 
         container.readiness.register("database", database_is_reachable)
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
     if redis is not None:
         cache_client = redis
@@ -303,6 +332,8 @@ def build_container(settings: Settings) -> Container:
         # balancer over a degradation it was built to survive. Reporting it
         # gives an operator the signal without the outage.
         container.readiness.register_informational("cache", cache_is_reachable)
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
     # Both halves of the condition are checked on purpose, even though
     # `s3_store` is non-None only when `settings.storage` is. That coupling
@@ -336,6 +367,7 @@ def build_container(settings: Settings) -> Container:
                 await s3.head_bucket(Bucket=bucket)
 
         container.readiness.register_informational("storage", storage_is_reachable)
+{%- endif %}
 
     # Deliberately no readiness check registered for the payment provider.
     # /readyz removing this pod from load balancing because someone else's
@@ -347,12 +379,14 @@ def build_container(settings: Settings) -> Container:
 async def close_container(container: Container) -> None:
     """Release resources. Runs after in-flight requests finish.
 
-    Nested `try`/`finally` rather than sequential `if`s: without it, an
-    exception from one close would skip every close after it, leaking
-    pooled connections on exactly the shutdown that also had trouble —
-    the moment a leak is least affordable. Each resource's cleanup is
-    independent of the others' success.
+    Every close after the first sits in the `finally` of the one before
+    it, rather than in a sequence of `if`s: an exception from one close
+    must not skip the closes after it, or pooled connections leak on
+    exactly the shutdown that also had trouble — the moment a leak is
+    least affordable. Each resource's cleanup is independent of the
+    others' success.
     """
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" %}
     try:
         if container.engine is not None:
             # Closes every pooled connection. Without this, shutdown leaves
@@ -372,3 +406,30 @@ async def close_container(container: Container) -> None:
                 # down. Redis.from_pool means this owns the pool and
                 # disconnects it.
                 await container.redis.aclose()
+{%- elif cookiecutter.database == "postgres" %}
+    try:
+        if container.engine is not None:
+            # Closes every pooled connection. Without this, shutdown leaves
+            # connections open until the server times them out, and a rolling
+            # deployment can exhaust the database's connection limit with the
+            # sockets of pods that have already stopped serving.
+            await container.engine.dispose()
+    finally:
+        if container.http_client is not None:
+            await container.http_client.aclose()
+{%- elif cookiecutter.cache == "redis" %}
+    try:
+        if container.http_client is not None:
+            await container.http_client.aclose()
+    finally:
+        if container.redis is not None:
+            # aclose(), not close(): the sync name is deprecated in
+            # redis-py 5+ and warns, which filterwarnings=["error"]
+            # turns into a failure in any test that shuts a container
+            # down. Redis.from_pool means this owns the pool and
+            # disconnects it.
+            await container.redis.aclose()
+{%- else %}
+    if container.http_client is not None:
+        await container.http_client.aclose()
+{%- endif %}
