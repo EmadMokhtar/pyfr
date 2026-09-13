@@ -304,7 +304,7 @@ to be. One pin, in one file Dependabot updates, is the whole point — see
 
 ## One-time repository settings
 
-Nine settings live in the GitHub interface, not in this repository, so they
+Eight settings live in the GitHub interface, not in this repository, so they
 are easy to miss when standing up a fork.
 
 - **Settings → Pages → Source = "GitHub Actions".** Without it the `Docs`
@@ -333,9 +333,9 @@ are easy to miss when standing up a fork.
   a token whose owner is exempt. Create a fine-grained personal access
   token as the admin (repository access: this repository only; Contents:
   read and write) and store it as the repository secret `RELEASE_TOKEN`.
-  The token that matters is the one passed to `actions/checkout`, not the
-  one used later for `gh release create`: `git push` uses the credentials
-  `checkout` wired into the local git config. Renew it before it expires;
+  The workflows hand it to their push step alone, through that step's
+  environment — the checkout keeps no credential, so nothing the job runs
+  before the push can read it. Renew it before it expires;
   the failure mode when it lapses is the same `GH013` at the push step.
 - **`adopt.yml` pushes to `main`** with the same `RELEASE_TOKEN`, for the
   same reason.

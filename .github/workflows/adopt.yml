@@ -33,7 +33,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # No credential is left in the checkout for `uv sync` and `just
+          # adopt` to read; the push step below gets the token through its
+          # own environment (see release.yml's checkout step for why).
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -50,6 +53,8 @@ jobs:
         run: just adopt
 
       - name: Commit and push the template change
+        env:
+          PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           if git diff --quiet -- '{{cookiecutter.project_slug}}'; then
             echo "Nothing to adopt: the template already matches."
@@ -66,5 +71,6 @@ jobs:
           # if one did, the rebase conflicts and this step fails, and the
           # recovery is `just adopt` by hand (docs/contributing.md,
           # "Dependabot and the template").
-          git pull --rebase origin main
-          git push
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git pull --rebase "$remote" main
+          git push "$remote" HEAD:main

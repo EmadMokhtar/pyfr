@@ -59,27 +59,15 @@ jobs:
           # cz reads every commit since the last tag, and needs the tags
           # themselves to know where that is.
           fetch-depth: 0
-          # This is the token `git push` uses later in this job, because
-          # it is the token the checkout step wires into the local git
-          # config -- replacing it here, not in the `gh release create`
-          # step, is what decides whether the push lands.
-          #
-          # The `main` ruleset requires a pull request and exempts only
-          # the repository admin; on a user-owned repository GitHub does
-          # not let the Actions app be exempted, so the default
-          # GITHUB_TOKEN's push is refused (GH013) and every release
-          # failed at this step until RELEASE_TOKEN existed. RELEASE_TOKEN
-          # is a fine-grained personal access token of the admin (Contents:
-          # read and write on this repository), kept as a repository
-          # secret; the `||` falls back to the default token when the
-          # secret is absent, so a fork without it still runs this far.
-          # See docs/contributing.md, "One-time repository settings".
-          #
-          # A push made with that token, unlike one made with
-          # GITHUB_TOKEN, DOES start other workflows: ci.yml and docs.yml
-          # run again on the bump commit (harmless), and this workflow
-          # runs again and stops at the `bump:` guard above.
-          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # No credential is left in the checkout. By default this action
+          # writes its token into .git/config, where every later step --
+          # `uv sync`, `just`, Commitizen, anything a dependency's install
+          # hook runs -- could read it. That is tolerable for GITHUB_TOKEN,
+          # which dies with the job; it is not for the long-lived token the
+          # push step below needs, so that token is handed to that one step
+          # only, through its environment. The public repository needs no
+          # credential to be cloned.
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -232,12 +220,30 @@ jobs:
         # bump` created a lightweight tag, `git push --follow-tags origin
         # main` exited 0 but `git ls-remote --tags origin` showed the tag
         # had never arrived.
+        #
+        # The push uses RELEASE_TOKEN, not the workflow token. The `main`
+        # ruleset requires a pull request and exempts only the repository
+        # admin; on a user-owned repository GitHub does not let the Actions
+        # app be exempted, so the default token's push is refused (GH013)
+        # and every release failed here until the secret existed.
+        # RELEASE_TOKEN is a fine-grained personal access token of the
+        # admin (Contents: read and write on this repository), kept as a
+        # repository secret and reaching only this step; the `||` falls
+        # back to the workflow token where the secret is absent, so a fork
+        # without it runs this far. See docs/contributing.md, "One-time
+        # repository settings". A push made with that token, unlike one
+        # made with GITHUB_TOKEN, DOES start other workflows: ci.yml and
+        # docs.yml run again on the bump commit (harmless), and this
+        # workflow runs again and stops at the `bump:` guard above.
+        env:
+          PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           if [ "${{ steps.bump.outputs.mode }}" = "bootstrap" ]; then
-            git push origin "v${{ steps.bump.outputs.version }}"
+            git push "$remote" "v${{ steps.bump.outputs.version }}"
           else
-            git push origin main
-            git push origin "v${{ steps.bump.outputs.version }}"
+            git push "$remote" HEAD:main
+            git push "$remote" "v${{ steps.bump.outputs.version }}"
           fi
 
       - name: Publish the GitHub Release
