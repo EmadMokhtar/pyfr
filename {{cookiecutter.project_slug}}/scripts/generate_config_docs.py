@@ -62,7 +62,7 @@ class ConfigVariable:
     description: str
     secret: bool
     # True when the field has no default AND its group is optional -- the
-    # "unset, required once any APP_STORAGE__* variable is set" case. A
+    # "unset, required once any APP_PAYMENT__* variable is set" case. A
     # required field in a non-optional group is simply required.
     required_in_group: bool
 
