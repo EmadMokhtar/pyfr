@@ -601,14 +601,12 @@ class Settings(BaseSettings):
     database: DatabaseSettings | None = None
 {%- endif %}
     # Optional on purpose: None selects the in-memory gateway, which is
-    # what keeps `just dev` working with no payment provider anywhere —
-    # the same arrangement `database` above has with the in-memory
-    # repository.
+    # what keeps `just dev` working with no payment provider anywhere.
     payment: PaymentSettings | None = None
 {%- if cookiecutter.cache == "redis" %}
     # Optional on purpose: None selects the plain repository with no cache
-    # in front of it, exactly as `database` None selects the in-memory one.
-    # A service generated with cache=none takes this path. See container.py.
+    # in front of it. A service generated with cache=none takes this path.
+    # See container.py.
     cache: CacheSettings | None = None
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}

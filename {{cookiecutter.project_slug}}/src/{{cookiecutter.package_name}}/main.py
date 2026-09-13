@@ -77,17 +77,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Everything from here down is inside the try, including the
         # instrumentation block below and `container.started = True` —
         # not only the `yield`. `build_container` above has, by this
-        # point, already opened `container.engine` and/or
-        # `container.http_client` when either is configured, so if
-        # `instrument_database`, `instrument_http_client`, `instrument_redis`
-        # or `register_runtime_metrics` raises, those resources are already
-        # open and need the same `close_container` cleanup a normal
-        # shutdown gets. Before this comment, the block below sat OUTSIDE
-        # this try, so a failure inside it skipped `close_container`
-        # entirely and leaked whichever of the two was already open —
-        # `try`/`finally` runs its `finally` on an exception raised
-        # anywhere in the `try`, including before the first `yield`, so
-        # moving the block in is sufficient; nothing else has to change.
+        # point, already opened every pooled resource the settings
+        # configure, `container.http_client` included, so if any
+        # instrumentation call below or `register_runtime_metrics`
+        # raises, those resources are already open and need the same
+        # `close_container` cleanup a normal shutdown gets. Before this
+        # comment, the block below sat OUTSIDE this try, so a failure
+        # inside it skipped `close_container` entirely and leaked
+        # whatever was already open — `try`/`finally` runs its `finally`
+        # on an exception raised anywhere in the `try`, including before
+        # the first `yield`, so moving the block in is sufficient; nothing
+        # else has to change.
         try:
             if otel_runtime is not None:
 {%- if cookiecutter.database == "postgres" %}
@@ -104,12 +104,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     # client and nothing to instrument.
                     instrument_http_client(container.http_client, otel_runtime)
 {%- if cookiecutter.cache == "redis" %}
-                # Unconditional, unlike the two calls above: RedisInstrumentor
-                # is a GLOBAL instrumentor (see its docstring), so it takes
-                # only the runtime and not a specific client. Instrumenting a
-                # library nothing uses costs nothing; gating this on
-                # `container.redis is not None` would buy nothing either, so
-                # the condition would only be one more place to forget.
+                # Unconditional, unlike `instrument_http_client` just above:
+                # RedisInstrumentor is a GLOBAL instrumentor (see its
+                # docstring), so it takes only the runtime and not a specific
+                # client. Instrumenting a library nothing uses costs nothing;
+                # gating this on `container.redis is not None` would buy
+                # nothing either, so the condition would only be one more
+                # place to forget.
                 instrument_redis(otel_runtime)
 {%- endif %}
                 # Here, not in create_app: the probe task needs a running

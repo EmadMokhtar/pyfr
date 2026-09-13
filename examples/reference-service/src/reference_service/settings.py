@@ -579,13 +579,11 @@ class Settings(BaseSettings):
     # path a service generated with database=none takes. See container.py.
     database: DatabaseSettings | None = None
     # Optional on purpose: None selects the in-memory gateway, which is
-    # what keeps `just dev` working with no payment provider anywhere —
-    # the same arrangement `database` above has with the in-memory
-    # repository.
+    # what keeps `just dev` working with no payment provider anywhere.
     payment: PaymentSettings | None = None
     # Optional on purpose: None selects the plain repository with no cache
-    # in front of it, exactly as `database` None selects the in-memory one.
-    # A service generated with cache=none takes this path. See container.py.
+    # in front of it. A service generated with cache=none takes this path.
+    # See container.py.
     cache: CacheSettings | None = None
     # Optional on purpose: None selects InMemoryReceiptStore, so the receipt
     # endpoint works with no object store anywhere — the same arrangement
