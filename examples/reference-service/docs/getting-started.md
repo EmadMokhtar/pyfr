@@ -221,7 +221,8 @@ rule](explanation/layers.md) at work.
 
     With no database configured, the service stores orders in memory, on
     purpose. Restart `just dev` and the order is gone — `just seed` puts the
-    five fixed ones back. `just up` runs PostgreSQL behind the same
+    five fixed ones back.
+    `just up` runs PostgreSQL behind the same
     interface, and nothing above the storage layer changes when it does.
 
 ## Run the checks

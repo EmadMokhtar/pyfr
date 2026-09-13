@@ -14,6 +14,8 @@ that work.
 
 !!! note "Worked examples in the codebase"
 
+{%- if cookiecutter.cache == "redis" %}
+
     Three real adapters follow the structure below exactly, and are worth
     reading beside it: `infrastructure/db/order_repository.py`
     (`PostgresOrderRepository`, an ordinary adapter over SQLAlchemy — the
@@ -27,6 +29,16 @@ that work.
     buys](../explanation/layers.md#what-a-port-buys-the-caching-decorator)
     for why that shape is worth understanding even if the backend you are
     adding is not a cache).
+{%- else %}
+
+    Two real adapters follow the structure below exactly, and are worth
+    reading beside it: `infrastructure/db/order_repository.py`
+    (`PostgresOrderRepository`, an ordinary adapter over SQLAlchemy — the
+    version of this guide to copy from for a plain storage port), and
+    `infrastructure/storage/receipt_store.py` (`S3ReceiptStore`, the same
+    shape over `aioboto3`, and the worked example of "one adapter per
+    S3-compatible provider" rather than one adapter per vendor).
+{%- endif %}
 
 ## What you are actually writing
 

@@ -77,7 +77,8 @@ docker pull ghcr.io/emadmokhtar/reference-service:latest
 
 Each image carries three OCI labels. `org.opencontainers.image.source` is a
 static `LABEL` in each Dockerfile; it is what makes GHCR link the package to
-this repository. `org.opencontainers.image.version` and
+this repository.
+`org.opencontainers.image.version` and
 `org.opencontainers.image.revision` are added by `just publish-images`, because
 the version and the commit are only known at publish time.
 
@@ -112,7 +113,8 @@ Total: 1 (HIGH: 1, CRITICAL: 0)
 
 The heading above the table names the target: the operating-system layer
 (`reference-service:ci (debian 13.6)`), a Python package set, or a single
-binary such as `usr/local/bin/migrate`. `Status` is always `fixed` in a
+binary such as `usr/local/bin/migrate`.
+`Status` is always `fixed` in a
 failing scan, and that is by construction. The recipe runs with
 `--ignore-unfixed`: a finding for which no fixed version exists yet is left out
 of the report entirely, because nothing a pull request does can resolve it.
@@ -138,7 +140,8 @@ bump weekly on its own; a red scan is the reason not to wait a week. For a
 Debian package in the operating-system layer, a rebuild against the current
 base image is usually enough — the `python:3.13-slim-trixie` tag moves as
 Debian publishes fixes, so `docker pull python:3.13-slim-trixie` and then
-`just security` again. For the Go binary inside the migrations image, only a
+`just security` again.
+For the Go binary inside the migrations image, only a
 new `migrate/migrate` release can carry the fix; Dependabot's `docker` entry
 proposes it when one exists.
 
@@ -227,7 +230,7 @@ five ecosystems this repository has:
 | `uv` | `uv.lock` and the pins in `pyproject.toml`. |
 | `github-actions` | The `uses:` versions in every workflow. |
 | `docker` | The `FROM` lines in `Dockerfile` and `Dockerfile.migrations`. |
-| `docker-compose` | Every `image:` in `compose.yaml` — PostgreSQL, Redis, MinIO, `mc`, WireMock, `otel-lgtm` and Trivy. |
+| `docker-compose` | Every `image:` in `compose.yaml` — every configured backend, WireMock, `otel-lgtm` and Trivy. |
 | `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
@@ -271,8 +274,9 @@ small in what it can do:
   anything this service runs. Removing pip removed the findings, and a tool
   nobody should run inside a production container.
 - **Distribution security updates applied at build time.** The runtime stage
-  runs `apt-get upgrade` before anything else, and the migrations image runs
-  `apk upgrade`. The official `python:slim` and `migrate/migrate` tags are
+  runs `apt-get upgrade` before anything else.
+  The migrations image runs `apk upgrade`.
+  The official `python:slim` and `migrate/migrate` tags are
   rebuilt on their own projects' schedules, not the distribution's, so a base
   tag can carry packages whose fixes have been in Debian or Alpine for weeks
   — the scan gate's first run on a pull request found twelve fixed findings

@@ -89,6 +89,7 @@ M4 adds two more adapters, and one of them is a different shape from the
 rest. `infrastructure/storage/` is an ordinary adapter: `S3ReceiptStore`
 satisfies the `ReceiptStore` port over `aioboto3`, the same way
 `PostgresOrderRepository` satisfies `OrderRepository` over SQLAlchemy.
+{%- if cookiecutter.cache == "redis" %}
 `infrastructure/cache/` is not beside the repository it works with — it
 wraps it. `CachedOrderRepository` satisfies `OrderRepository` and holds
 *another* `OrderRepository` inside it, so a cache is added by wrapping in
@@ -96,6 +97,7 @@ wraps it. `CachedOrderRepository` satisfies `OrderRepository` and holds
 layer ever learns a cache exists. See [what a port buys](layers.md#what-a-port-buys-the-caching-decorator)
 for why that is the clearest demonstration of the port pattern in this
 codebase.
+{%- endif %}
 
 **`api/`** holds the only code that knows HTTP exists: routes, request and
 response schemas, middleware, and the mapping from domain errors to status

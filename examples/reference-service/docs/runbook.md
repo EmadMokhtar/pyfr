@@ -9,9 +9,9 @@ covers:
 
 # Runbook
 
-Seven procedures, for seven things that go wrong. Each says what you will
-see, how to confirm it, and what to do. The first five are about a running
-service; the last two are about a red check on a pull request.
+Procedures for the things that go wrong. Each says what you will see, how to
+confirm it, and what to do. Most are about a running service; the last two
+are about a red check on a pull request.
 
 **Before anything else:** capture the correlation identifier from the
 failing request. Every log line carries it, and filtering on it hands you
@@ -115,8 +115,10 @@ Prints the current version and whether the database is marked dirty.
 
 ## A dependency is down
 
-**Symptom.** The symptom differs by dependency, which is the point of this section:
-only one of the four leaves the load balancer.
+**Symptom.** The symptom differs by dependency, which is the point of this
+section.
+Only the database leaves the load balancer; every other dependency fails
+open.
 
 | Dependency | Symptom |
 | --- | --- |
@@ -131,11 +133,13 @@ only one of the four leaves the load balancer.
 curl -s localhost:8000/readyz | jq
 ```
 
-`checks` is the gating result (database only). `dependencies` reports the
-cache and object store without gating on either. Each appears there only
-when it is configured — a dependency's field is present whether that
-dependency is up or down, but a service running with neither `APP_CACHE__*`
-nor `APP_STORAGE__*` set returns `dependencies: {}`.
+`checks` is the gating result (database only).
+
+`dependencies` reports the cache without gating on it — a service running
+with no `APP_CACHE__*` set omits it from that object entirely.
+
+`dependencies` reports the object store without gating on it — a service
+running with no `APP_STORAGE__*` set omits it from that object entirely.
 
 **Act, per dependency.**
 
@@ -143,9 +147,9 @@ nor `APP_STORAGE__*` set returns `dependencies: {}`.
   cannot reach it. Check the database itself — connectivity, disk,
   replica lag — not the application.
 - **Redis down:** nothing to do at the application layer. The cache
-  fails open by design; PostgreSQL is already answering every request
-  correctly. Fix Redis on its own timeline and watch the cache-hit-rate
-  panel in the meantime.
+  fails open by design; the order repository beneath it is already
+  answering every request correctly. Fix Redis on its own timeline and
+  watch the cache-hit-rate panel in the meantime.
 - **S3 / MinIO down:** check the object store. Only receipts are
   affected; orders keep placing normally.
 - **Payment gateway degraded:** check the gateway's own status. The
@@ -297,7 +301,8 @@ Dependabot has a failing check.
    change at once here: `.trivyignore.yaml` entries pinned to findings the
    new version *did* fix are no longer needed and can be dropped, and a
    finding the new version *introduced* may need a new entry, with its own
-   reason and expiry. The five entries the file carries today all belong to
+   reason and expiry.
+   The five entries the file carries today all belong to
    the `migrate/migrate` binary, so a bump of `Dockerfile.migrations`'s
    `FROM` line is exactly this case.
 

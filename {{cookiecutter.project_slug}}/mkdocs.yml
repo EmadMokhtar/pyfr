@@ -92,9 +92,13 @@ nav:
   - Decisions:
       - Overview: adr/README.md
       - 0001 Four-layer dependency rule: adr/0001-four-layer-dependency-rule.md
+{%- if cookiecutter.database == "postgres" %}
       - 0004 golang-migrate owns the schema: adr/0004-golang-migrate-owns-the-schema.md
+{%- endif %}
       - 0005 In-memory adapters are a supported configuration: adr/0005-in-memory-adapters-are-a-supported-configuration.md
+{%- if cookiecutter.cache == "redis" %}
       - 0006 The cache is fail-open, always: adr/0006-the-cache-is-fail-open-always.md
+{%- endif %}
       - 0007 Emit OpenTelemetry and stop there: adr/0007-emit-opentelemetry-and-stop.md
       - 0008 Standard output is the source of truth for logs: adr/0008-standard-output-is-the-source-of-truth-for-logs.md
       - 0009 RFC 9457 Problem Details for every error: adr/0009-rfc-9457-problem-details-for-every-error.md

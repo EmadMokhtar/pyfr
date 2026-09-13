@@ -24,10 +24,19 @@ actually working rather than assumed to.
 
 ## What is traced, and what is not
 
-HTTP requests, SQL statements, outbound calls to the payment provider, and
-**Redis commands** all produce spans. `GET /orders/{id}/receipt`'s calls to
-object storage do **not** — say this plainly, because a reader who assumes
-otherwise will go looking for an S3 span that does not exist.
+HTTP requests and outbound calls to the payment provider produce spans.
+{%- if cookiecutter.database == "postgres" %}
+So do SQL statements.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
+So do **Redis commands**.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+`GET /orders/{id}/receipt`'s calls to object storage do **not** — say this
+plainly, because a reader who assumes otherwise will go looking for an S3
+span that does not exist.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 The gap is not an oversight. `opentelemetry-instrumentation-botocore` was
 added, pointed at a real MinIO container, and measured: `ListBuckets`,
@@ -40,9 +49,13 @@ _make_api_call`) with async equivalents the instrumentor's hooks never see —
 anyway would be worse than not shipping it: a trace search or a dashboard
 built against it would read as "S3 calls are always fast" instead of "S3
 calls are not observed", and the first of those is actively misleading. The
-dependency was removed rather than left in place doing nothing; see
+dependency was removed rather than left in place doing nothing.
+{%- if cookiecutter.cache == "redis" %}
+See
 `instrument_redis` in `src/{{ cookiecutter.package_name }}/observability/otel.py` for the
 full reasoning kept beside the code it explains.
+{%- endif %}
+{%- endif %}
 
 ## Turning it on
 
@@ -59,35 +72,54 @@ Telemetry is **off by default**, and the default costs nothing: with
 `APP_OTEL__ENABLED` false the process builds no providers, imports no
 exporter, opens no socket and starts no background task.
 
-## Readiness reports the cache and the store, and gates on neither
+## Readiness reports optional dependencies, and gates on none
 
 `/readyz` carries two tiers: `checks`, which decides its status code, and
-`dependencies`, which is reported and never does. The database is the only
-entry in `checks`. The cache and the object store are informational —
-`dependencies` says whether each is reachable, but neither can turn a 200
-into a 503.
+`dependencies`, which is reported and never does.
+{%- if cookiecutter.database == "postgres" %}
+The database is the only entry in `checks`.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
+The cache is informational only.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+The object store is informational only.
+{%- endif %}
+`dependencies` says whether each configured one is reachable, but none of
+them can turn a 200 into a 503.
+{%- if cookiecutter.cache == "redis" %}
 
 The reasoning is worth having here rather than only in the HTTP reference,
 because it is an observability decision as much as an API one: Redis is
 shared across every pod and this cache fails open, so gating on it would make
 every pod report itself unready in the same second — turning a degradation
-the service is built to survive into a total, self-inflicted outage. Losing
-the object store breaks one endpoint, so pulling all traffic off a pod to
-protect that one slice would cost more than it saves. See
-[the full readiness reference](http-api.md#get-readyz-readiness) for the
+the service is built to survive into a total, self-inflicted outage.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+
+Losing the object store breaks one endpoint, so pulling all traffic off a pod
+to protect that one slice would cost more than it saves.
+{%- endif %}
+
+See [the full readiness reference](http-api.md#get-readyz-readiness) for the
 response shapes.
 
 ## The three dashboards
 
 | Dashboard | Identifier | The question it answers |
 | --- | --- | --- |
+{%- if cookiecutter.cache == "redis" %}
 | Service health | `pyfr-service-health` | Is the service serving? Request rate, error rate and latency percentiles by route, plus the saturation signals — database pool usage and event loop lag — and Redis command latency. |
+{%- else %}
+| Service health | `pyfr-service-health` | Is the service serving? Request rate, error rate and latency percentiles by route, plus the saturation signals — database pool usage and event loop lag. |
+{%- endif %}
 | SLI and SLO | `pyfr-slo` | Are we meeting the objective, and how fast is the budget being spent? |
 | Runtime | `pyfr-runtime` | Is the process itself healthy? Memory, threads, file descriptors, processor time and garbage collection. |
 
 Saturation sits beside rate and errors deliberately. A connection pool at its
 ceiling is a queue, and a queue is latency that has not been served yet — it
 moves minutes before the error rate does.
+{%- if cookiecutter.cache == "redis" %}
 
 ### The Redis panel shows latency, not pool usage
 
@@ -112,13 +144,14 @@ What the panel draws instead: the `grafana/otel-lgtm` image runs a
 span-metrics connector by default, which turns every span into a latency
 histogram. Redis command spans are named after the raw command —
 `GET`, `SET`, `DEL`, the three `CachedOrderRepository` issues — so the panel
-queries `traces_spanmetrics_latency_bucket` filtered to those three span
+queries `traces_spanmetrics_latency`, filtered to those three span
 names. It is a real, useful signal — the span is how you notice a "fast"
 cache read that is actually costing 40 milliseconds, which is exactly the
 kind of problem a fail-open cache hides from every other signal, because the
 request still succeeds and no error rate moves. It answers "is Redis slow",
 not "is the Redis pool full", and the panel title says so rather than
 implying otherwise.
+{%- endif %}
 
 ## How the three signals join up
 
@@ -189,9 +222,9 @@ Both indicators get all three.
 Every number lives in `src/{{ cookiecutter.package_name }}/observability/slo.py`.
 
 Changing the latency threshold means changing it in **two** places that must
-agree: the histogram bucket boundary in that module, and the `le=` matcher in
+agree: the histogram boundary in that module, and the `le=` matcher in
 `ops/prometheus/rules/slo.yml`. This is not optional bookkeeping. Prometheus
-can only count requests faster than a bucket boundary that exists, so a
+can only count requests faster than a boundary that exists, so a
 threshold with no matching boundary makes the latency indicator not merely
 inaccurate but uncomputable — and silently, because an empty PromQL result is
 not an error.

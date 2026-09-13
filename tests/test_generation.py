@@ -488,6 +488,28 @@ WORKFLOW_BACKEND_WORDS = {
     "cache": ("redis",),
     "object_storage": ("minio", "s3"),
 }
+
+# Pages that document what the render HAS: a word of a pruned backend in
+# them is a section that should have been conditional. Comparative prose
+# elsewhere (an ADR weighing PostgreSQL against an in-memory store) is
+# deliberately not policed.
+DOCS_BACKEND_PAGES = (
+    "docs/index.md",
+    "docs/getting-started.md",
+    "docs/runbook.md",
+    "docs/reference/commands.md",
+    "docs/reference/configuration.md",
+    "docs/reference/observability.md",
+    "docs/reference/supply-chain.md",
+    "docs/guides/run-in-a-container.md",
+    "docs/glossary.md",
+    "mkdocs.yml",
+)
+DOCS_BACKEND_WORDS = {
+    "database": ("postgres", "migrat", "schema.sql", "golang-migrate"),
+    "cache": ("redis",),
+    "object_storage": ("minio", " s3", "bucket"),
+}
 JUST_CALL = re.compile(r"\bjust\s+([a-z][a-z0-9-]*)")
 DEPENDABOT_ECOSYSTEMS = [
     "uv",
@@ -571,6 +593,13 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
         for dependency in spec["dependencies"]:
             assert (dependency in dependencies) == on, (key, dependency, on)
         assert (spec["env_prefix"] in env_example) == on, (key, "env")
+        configuration = (root / "docs" / "reference" / "configuration.md").read_text()
+        assert (spec["env_prefix"] in configuration) == on, (key, "configuration.md")
+        if not on:
+            for page in DOCS_BACKEND_PAGES:
+                text = (root / page).read_text().lower()
+                for word in DOCS_BACKEND_WORDS[key]:
+                    assert word not in text, (key, page, word)
         for library in spec["importlinter"]:
             assert (library in importlinter) == on, (key, library, ".importlinter")
         if on:

@@ -2,7 +2,9 @@
 last_reviewed: 2026-09-13
 covers:
   - Dockerfile
+{%- if cookiecutter.database == "postgres" %}
   - Dockerfile.migrations
+{%- endif %}
   - .trivyignore.yaml
   - .github/dependabot.yml
   - .github/workflows/release.yml
@@ -23,11 +25,27 @@ where a sentence says otherwise.
 | Command | What it does | Where it runs |
 | --- | --- | --- |
 | `just audit` | [pip-audit](https://github.com/pypa/pip-audit) over every pinned version in `uv.lock`, against the PyPI advisory database. Nothing is resolved or installed: `uv export` writes the lock as a fully hashed requirements file, and pip-audit reads it with `--disable-pip --require-hashes`. | Every pull request, in CI's `security` job; every night, in `nightly.yml`. |
+{%- if cookiecutter.database == "postgres" %}
 | `just scan` | [Trivy](https://trivy.dev/) over both images, for known vulnerabilities and embedded secrets. Fails on any HIGH or CRITICAL finding that has a fix. | Every pull request, on the freshly built images (`security`); on release, before the push (`release.yml`); every night, on the `latest` tag actually published. |
+{%- else %}
+| `just scan` | [Trivy](https://trivy.dev/) over the image, for known vulnerabilities and embedded secrets. Fails on any HIGH or CRITICAL finding that has a fix. | Every pull request, on the freshly built image (`security`); on release, before the push (`release.yml`); every night, on the `latest` tag actually published. |
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 | `just scan-published VERSION` | The same scan over the two images just pushed under `VERSION`, for **both** platforms — the exact digests people will pull. | Release only, after the push and before `latest` is created. |
+{%- else %}
+| `just scan-published VERSION` | The same scan over the image just pushed under `VERSION`, for **both** platforms — the exact digests people will pull. | Release only, after the push and before `latest` is created. |
+{%- endif %}
 | `just sbom` | A [CycloneDX](https://cyclonedx.org/) software bill of materials per image, into `sbom/`. | Every pull request, from the local build, uploaded as the `sbom` workflow artifact; on release, from the published image reference after the push, attached to the GitHub Release. |
+{%- if cookiecutter.database == "postgres" %}
 | `just build-multiarch` | Both images for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
+{%- else %}
+| `just build-multiarch` | The image for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 | `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given — and only the version. | Release only, in `release.yml`'s `publish-images` job. |
+{%- else %}
+| `just publish-images` | The image, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given — and only the version. | Release only, in `release.yml`'s `publish-images` job. |
+{%- endif %}
 | `just promote-latest VERSION` | Point `latest` at the version's already-pushed index, without rebuilding. | Release only, after `scan-published` has passed. |
 | `just security` | `build-images`, then `audit`, `scan` and `sbom` — the same recipes as CI's `security` job, in the same order. Needs Docker. | Locally, by hand. |
 
@@ -48,13 +66,20 @@ named volume keeps it, so later runs take seconds — until `just down`, which
 removes the `trivy-cache` volume with the others.
 
 ## The images
+{%- if cookiecutter.database == "postgres" %}
 
 `release.yml` pushes two images on every release:
+{%- else %}
+
+`release.yml` pushes one image on every release:
+{%- endif %}
 
 | Image | What it is |
 | --- | --- |
 | `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}` | The service — the two-stage build in `Dockerfile`. |
+{%- if cookiecutter.database == "postgres" %}
 | `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
+{%- endif %}
 
 Each carries two tags: `vX.Y.Z`, the **repository's** version — the same
 string as the git tag and the GitHub Release — and `latest`, which moves with
@@ -74,18 +99,28 @@ architecture.
 ```bash
 docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:latest
 ```
+{%- if cookiecutter.database == "postgres" %}
 
 Each image carries three OCI labels. `org.opencontainers.image.source` is a
 static `LABEL` in each Dockerfile; it is what makes GHCR link the package to
-this repository. `org.opencontainers.image.version` and
+this repository.
+{%- else %}
+
+The image carries three OCI labels. `org.opencontainers.image.source` is a
+static `LABEL` in the Dockerfile; it is what makes GHCR link the package to
+this repository.
+{%- endif %}
+`org.opencontainers.image.version` and
 `org.opencontainers.image.revision` are added by `just publish-images`, because
 the version and the commit are only known at publish time.
+{%- if cookiecutter.database == "postgres" %}
 
 The migrations image is not a service. It runs once, before the new
 application version takes traffic — as a Kubernetes init container or a
 pre-deployment job — with the database URL supplied at run time, never baked
 in. [Run in a container](../guides/run-in-a-container.md#pull-the-published-images-instead-of-building)
 shows the command.
+{%- endif %}
 
 Two things to know before relying on the registry. The first push creates
 private packages; making them public is a one-time setting listed in
@@ -97,6 +132,8 @@ points at from one day to the next.
 ## Reading a scan failure
 
 A failed `just scan` prints, per image, a `Total:` line and a table:
+
+{%- if cookiecutter.database == "postgres" %}
 
 ```
 usr/local/bin/migrate (gobinary)
@@ -112,7 +149,25 @@ Total: 1 (HIGH: 1, CRITICAL: 0)
 
 The heading above the table names the target: the operating-system layer
 (`{{ cookiecutter.project_slug }}:ci (debian 13.6)`), a Python package set, or a single
-binary such as `usr/local/bin/migrate`. `Status` is always `fixed` in a
+binary such as `usr/local/bin/migrate`.
+{%- else %}
+
+```
+{{ cookiecutter.project_slug }}:ci (debian 13.6)
+================================
+Total: 1 (HIGH: 1, CRITICAL: 0)
+
+┌─────────┬────────────────┬──────────┬────────┬───────────────────┬───────────────┬───────┐
+│ Library │ Vulnerability  │ Severity │ Status │ Installed Version │ Fixed Version │ Title │
+├─────────┼────────────────┼──────────┼────────┼───────────────────┼───────────────┼───────┤
+│ libc6   │ CVE-2026-56854 │ HIGH     │ fixed  │ 2.41-1             │ 2.41-2        │ ...   │
+└─────────┴────────────────┴──────────┴────────┴───────────────────┴───────────────┴───────┘
+```
+
+The heading above the table names the target: the operating-system layer
+(`{{ cookiecutter.project_slug }}:ci (debian 13.6)`) or a Python package set.
+{%- endif %}
+`Status` is always `fixed` in a
 failing scan, and that is by construction. The recipe runs with
 `--ignore-unfixed`: a finding for which no fixed version exists yet is left out
 of the report entirely, because nothing a pull request does can resolve it.
@@ -138,13 +193,18 @@ bump weekly on its own; a red scan is the reason not to wait a week. For a
 Debian package in the operating-system layer, a rebuild against the current
 base image is usually enough — the `python:3.13-slim-trixie` tag moves as
 Debian publishes fixes, so `docker pull python:3.13-slim-trixie` and then
-`just security` again. For the Go binary inside the migrations image, only a
+`just security` again.
+{%- if cookiecutter.database == "postgres" %}
+For the Go binary inside the migrations image, only a
 new `migrate/migrate` release can carry the fix; Dependabot's `docker` entry
 proposes it when one exists.
+{%- endif %}
 
 **Exempt, only through `.trivyignore.yaml`.** When the fix is not reachable —
 the finding is in code the image never executes, and no release carries the
 patch yet — add an entry with all four fields:
+
+{%- if cookiecutter.database == "postgres" %}
 
 ```yaml
 vulnerabilities:
@@ -153,6 +213,16 @@ vulnerabilities:
     statement: "golang.org/x/crypto/ssh authentication bypass. migrate opens no ssh connection here. Fixed in x/crypto 0.55.0; not in any migrate release yet."
     expired_at: 2026-12-10
 ```
+{%- else %}
+
+```yaml
+vulnerabilities:
+  - id: CVE-2026-56854
+    paths: ["usr/lib/x86_64-linux-gnu/libc.so.6"]
+    statement: "glibc issue unreachable from this service's request path. Fixed in glibc 2.41-2; not in the base image yet."
+    expired_at: 2026-12-10
+```
+{%- endif %}
 
 `paths` pins the entry to the one file it is about, so the same CVE appearing
 somewhere else still fails. `statement` says why the finding does not apply,
@@ -166,6 +236,8 @@ allow-list in a recipe or a workflow
 To see what the file is currently hiding — a `Suppressed Vulnerabilities`
 table after the findings, one row per entry with its statement:
 
+{%- if cookiecutter.database == "postgres" %}
+
 ```bash
 docker compose run --rm trivy image --ignorefile /.trivyignore.yaml --show-suppressed {{ cookiecutter.project_slug }}-migrations:ci
 ```
@@ -173,6 +245,15 @@ docker compose run --rm trivy image --ignorefile /.trivyignore.yaml --show-suppr
 The five entries in the file today all belong to the `migrate/migrate` Go
 binary. A Dependabot bump of that base image is the moment to re-scan and drop
 whichever have gone.
+{%- else %}
+
+```bash
+docker compose run --rm trivy image --ignorefile /.trivyignore.yaml --show-suppressed {{ cookiecutter.project_slug }}:ci
+```
+
+The file starts with no entries: nothing in the generated project is exempted
+from a scan until someone adds one.
+{%- endif %}
 
 ## The SBOM
 
@@ -182,7 +263,11 @@ CycloneDX format:
 
 | Where | What |
 | --- | --- |
+{%- if cookiecutter.database == "postgres" %}
 | `sbom/{{ cookiecutter.project_slug }}.cdx.json` and `sbom/{{ cookiecutter.project_slug }}-migrations.cdx.json` | Locally, after `just sbom` or `just security`. The directory is ignored by git. |
+{%- else %}
+| `sbom/{{ cookiecutter.project_slug }}.cdx.json` | Locally, after `just sbom` or `just security`. The directory is ignored by git. |
+{%- endif %}
 | The `sbom` workflow artifact | On every pull request, from the `security` job, generated from the local build. |
 | The release assets | On every release, attached to the GitHub Release by `release.yml`, generated from the published image reference after the push. |
 
@@ -193,8 +278,13 @@ image, `libc6` and `openssl` beside `fastapi` and `pydantic`.
 Which image depends on where it runs. On a pull request it is the
 single-architecture `:ci` image that `just build-images` produces. On a
 release it is generated **after** the push, from the published reference —
+{%- if cookiecutter.database == "postgres" %}
 `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z` and its migrations
 counterpart — so the document's subject is the image people pull, not a
+{%- else %}
+`ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z`
+— so the document's subject is the image people pull, not a
+{%- endif %}
 local build that was never published (`just publish-images` rebuilds through
 the buildx builder, so the local `:ci` image is a different image ID from
 what reaches the registry). For the SBOM Trivy reads the manifest for the
@@ -226,8 +316,12 @@ five ecosystems this repository has:
 | --- | --- |
 | `uv` | `uv.lock` and the pins in `pyproject.toml`. |
 | `github-actions` | The `uses:` versions in every workflow. |
+{%- if cookiecutter.database == "postgres" %}
 | `docker` | The `FROM` lines in `Dockerfile` and `Dockerfile.migrations`. |
-| `docker-compose` | Every `image:` in `compose.yaml` — PostgreSQL, Redis, MinIO, `mc`, WireMock, `otel-lgtm` and Trivy. |
+{%- else %}
+| `docker` | The `FROM` line in `Dockerfile`. |
+{%- endif %}
+| `docker-compose` | Every `image:` in `compose.yaml` — every configured backend, WireMock, `otel-lgtm` and Trivy. |
 | `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
@@ -240,7 +334,11 @@ versions live in `uv.lock` alone: the ruff, uv-lock and Commitizen pre-commit
 hooks are local hooks that run the locked tools, and Commitizen is a dev
 dependency that the `justfile`, `release.yml` and the commit-message hook
 all call through `uv run --locked cz`. Container image pins live in
+{%- if cookiecutter.database == "postgres" %}
 `compose.yaml` and the two Dockerfiles alone: the integration tests and
+{%- else %}
+`compose.yaml` and the Dockerfile alone: the integration tests and
+{%- endif %}
 `just o11y-gates` read their image names from there.
 
 Two literals remain outside Dependabot's reach, knowingly: `pip-audit==2.10.1`
@@ -271,8 +369,15 @@ small in what it can do:
   anything this service runs. Removing pip removed the findings, and a tool
   nobody should run inside a production container.
 - **Distribution security updates applied at build time.** The runtime stage
-  runs `apt-get upgrade` before anything else, and the migrations image runs
-  `apk upgrade`. The official `python:slim` and `migrate/migrate` tags are
+  runs `apt-get upgrade` before anything else.
+{%- if cookiecutter.database == "postgres" %}
+  The migrations image runs `apk upgrade`.
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
+  The official `python:slim` and `migrate/migrate` tags are
+{%- else %}
+  The official `python:slim` tag is
+{%- endif %}
   rebuilt on their own projects' schedules, not the distribution's, so a base
   tag can carry packages whose fixes have been in Debian or Alpine for weeks
   — the scan gate's first run on a pull request found twelve fixed findings

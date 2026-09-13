@@ -2,7 +2,9 @@
 last_reviewed: 2026-09-12
 covers:
   - Dockerfile
+{%- if cookiecutter.database == "postgres" %}
   - Dockerfile.migrations
+{%- endif %}
   - compose.yaml
 ---
 
@@ -52,6 +54,7 @@ Other properties worth knowing:
     safe to run on an older one. If you change one base image, change both.
 
 ## Pull the published images instead of building
+{%- if cookiecutter.database == "postgres" %}
 
 Every release pushes both images to GHCR (the GitHub Container Registry), for
 `linux/amd64` and `linux/arm64`, tagged with the repository's version and
@@ -61,6 +64,16 @@ Every release pushes both images to GHCR (the GitHub Container Registry), for
 docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z
 docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations:vX.Y.Z
 ```
+{%- else %}
+
+Every release pushes the image to GHCR (the GitHub Container Registry), for
+`linux/amd64` and `linux/arm64`, tagged with the repository's version and
+`latest`:
+
+```bash
+docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z
+```
+{%- endif %}
 
 `vX.Y.Z` is a tag from the repository's Releases page — the same string as
 the git tag. Pin it in anything that deploys. `latest` moves with every
@@ -72,6 +85,7 @@ dependency is optional, and unset means in-memory:
 ```bash
 docker run --rm -p 8000:8000 ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z
 ```
+{%- if cookiecutter.database == "postgres" %}
 
 The migrations image is the schema and nothing else, built `FROM
 migrate/migrate` with `migrations/` copied in. Its entrypoint is `migrate`
@@ -88,10 +102,18 @@ docker run --rm ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.pr
 `?sslmode=disable` is a libpq parameter golang-migrate needs against a server
 with no TLS; it belongs on this URL and never in `APP_DATABASE__DSN`, which
 rejects it.
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 
 What the two images are, how they are tagged and labelled, and what they are
 scanned for before the push, is on
 [Supply chain](../reference/supply-chain.md#the-images).
+{%- else %}
+
+What the image is, how it is tagged and labelled, and what it is scanned for
+before the push, is on
+[Supply chain](../reference/supply-chain.md#the-images).
+{%- endif %}
 
 ## Check an environment before starting
 

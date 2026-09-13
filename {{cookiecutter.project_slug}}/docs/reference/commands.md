@@ -34,7 +34,11 @@ Run these from the project root.
 | `just up` | Build the image and start the container stack. Once the API is healthy, a one-shot `seed` container creates five fixed orders through it — see [Getting started](../getting-started.md#start-with-data-in-it). |
 | `just down` | Stop the stack and remove its volumes, the seed's state included. |
 | `just seed` | Create the same five orders against a service on `localhost:${APP_HTTP_PORT}` (8000 by default) — for `just dev`, which the compose one-shot does not reach. Idempotent: the ids it issued are kept in `.seed-state.json` (ignored by git), and only an order that has gone missing is re-created. The compose one-shot and `just seed` keep separate state — a named volume versus `.seed-state.json` — so running `just seed` against the `just up` stack creates a second set of five orders; it is for `just dev`. |
+{%- if cookiecutter.database == "postgres" %}
 | `just build-images` | Build both container images (the service and the migrations runner) for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning. |
+{%- else %}
+| `just build-images` | Build the service's container image for this machine's architecture without starting it, exactly as CI's `security` job and the release workflow do before scanning. |
+{%- endif %}
 
 ## Observability
 
@@ -101,6 +105,7 @@ what to do when one is red.
 
 See [Outbound HTTP calls](../guides/outbound-http.md) for the retry policy,
 the circuit breaker, and what the recorded cassettes do and do not prove.
+{%- if cookiecutter.database == "postgres" %}
 
 ## The database
 
@@ -130,16 +135,29 @@ These need Docker. The schema is owned by
     the partial change by hand, and only then declaring the version that is
     genuinely applied. Running it first, to make the error go away, tells the
     tool a lie it will believe for the rest of the database's life.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
-## The cache and the object store
+## The cache
 
-`just up` starts Redis and MinIO alongside PostgreSQL — neither is behind a
-profile, so the containerised stack always exercises the same cached,
-receipt-storing path production runs.
+`just up` starts Redis alongside the rest of the stack — it is not behind a
+profile, so the containerised stack always exercises the same cached path
+production runs.
 
 | Command | What it does |
 | --- | --- |
 | `just redis-cli` | An interactive `redis-cli` session against the running compose cache. |
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+
+## The object store
+
+`just up` starts MinIO alongside the rest of the stack — it is not behind a
+profile, so the containerised stack always exercises the same receipt-storing
+path production runs.
+
+| Command | What it does |
+| --- | --- |
 | `just minio-console` | Print, and try to open, the MinIO web console at <http://localhost:9001> — log in with the local-only `minioadmin` / `minioadmin` credentials from `compose.yaml`. Use it to look at what the receipt store actually holds. |
 
 The bucket itself is created by a one-shot `minio-bootstrap` container that
@@ -147,17 +165,26 @@ runs `mc mb` once MinIO reports healthy, because MinIO does not create a
 bucket on demand and the application deliberately does not create its own —
 that would need `CreateBucket` permission in production, on top of the
 `GetObject`/`PutObject` the receipt store actually needs. `just up` waits for
-`minio-bootstrap` to exit successfully before starting the API, the same
-arrangement it already has with the migration container.
+`minio-bootstrap` to exit successfully before starting the API.
+{%- endif %}
 
 ## Tests and schema gates
 
 | Command | What it does |
 | --- | --- |
 | `just test` | Unit and API tests. Milliseconds, and needs no Docker. |
+{%- if cookiecutter.database == "postgres" %}
 | `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the real migrate image. |
+{%- else %}
+| `just test-integration` | The container-backed tier. Needs a running Docker daemon; `just test` does not. |
+{%- endif %}
 | `just test-all` | Both tiers. |
+{%- if cookiecutter.database == "postgres" %}
 | `just gates` | All five schema governance gates, plus `config-docs-check`. |
+{%- else %}
+| `just gates` | `config-docs-check`. |
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 
 The five schema gates are the snapshot (`schema.sql` still matches the
 migrations), reversibility (every `down.sql` truly reverses its `up.sql`),
@@ -168,6 +195,13 @@ drift check, see [Configuration](#configuration) above — runs alongside them
 in the same recipe, which is why editing `.env.example` by hand fails
 `just gates` even though it touches no migration. They run from
 `just check-all`, and CI's own `gates` job calls `just gates` directly.
+{%- else %}
+
+`config-docs-check` — the configuration reference's own drift check, see
+[Configuration](#configuration) above — is what `just gates` runs with no
+database configured. They run from `just check-all`, and CI's own `gates`
+job calls `just gates` directly.
+{%- endif %}
 
 ### Why `just check` ends with a diff check
 

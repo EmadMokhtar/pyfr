@@ -9,9 +9,9 @@ covers:
 
 # Runbook
 
-Seven procedures, for seven things that go wrong. Each says what you will
-see, how to confirm it, and what to do. The first five are about a running
-service; the last two are about a red check on a pull request.
+Procedures for the things that go wrong. Each says what you will see, how to
+confirm it, and what to do. Most are about a running service; the last two
+are about a red check on a pull request.
 
 **Before anything else:** capture the correlation identifier from the
 failing request. Every log line carries it, and filtering on it hands you
@@ -72,6 +72,8 @@ restarting the service. Every variable is listed in
     prints URL passwords in clear — the check exists so that nobody needs
     to.
 
+{%- if cookiecutter.database == "postgres" %}
+
 ## A migration is dirty
 
 **Symptom.** The `migrate` container exits non-zero. `app` depends on it
@@ -112,17 +114,31 @@ Prints the current version and whether the database is marked dirty.
     about the state of the schema, and a wrong claim is worse than the
     dirty flag it replaces. See [ADR 0004](adr/0004-golang-migrate-owns-the-schema.md)
     for why golang-migrate owns the schema at all.
+{%- endif %}
 
 ## A dependency is down
 
-**Symptom.** The symptom differs by dependency, which is the point of this section:
-only one of the four leaves the load balancer.
+**Symptom.** The symptom differs by dependency, which is the point of this
+section.
+{%- if cookiecutter.database == "postgres" %}
+Only the database leaves the load balancer; every other dependency fails
+open.
+{%- else %}
+Every dependency here fails open — none of them takes an instance out of
+load balancing.
+{%- endif %}
 
 | Dependency | Symptom |
 | --- | --- |
+{%- if cookiecutter.database == "postgres" %}
 | PostgreSQL | `/readyz` returns 503 and the instance leaves load balancing. It is the only gating dependency — [ADR 0011](adr/0011-readyz-reports-optional-dependencies-without-gating.md). |
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 | Redis (cache) | Requests still succeed. Cache hit rate falls to zero and latency rises. This is by design — [ADR 0006](adr/0006-the-cache-is-fail-open-always.md). |
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 | S3 / MinIO (receipts) | Only `GET /api/v1/orders/{order_id}/receipt` fails. No order-placing request is affected. |
+{%- endif %}
 | Payment gateway | The circuit breaker opens after `APP_PAYMENT__BREAKER_FAILURE_THRESHOLD` consecutive failures (default 5). Order placement then fails fast with a 503 instead of hanging. |
 
 **Confirm.**
@@ -130,34 +146,50 @@ only one of the four leaves the load balancer.
 ```bash
 curl -s localhost:8000/readyz | jq
 ```
+{%- if cookiecutter.database == "postgres" %}
 
-`checks` is the gating result (database only). `dependencies` reports the
-cache and object store without gating on either. Each appears there only
-when it is configured — a dependency's field is present whether that
-dependency is up or down, but a service running with neither `APP_CACHE__*`
-nor `APP_STORAGE__*` set returns `dependencies: {}`.
+`checks` is the gating result (database only).
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
+
+`dependencies` reports the cache without gating on it — a service running
+with no `APP_CACHE__*` set omits it from that object entirely.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+
+`dependencies` reports the object store without gating on it — a service
+running with no `APP_STORAGE__*` set omits it from that object entirely.
+{%- endif %}
 
 **Act, per dependency.**
+{%- if cookiecutter.database == "postgres" %}
 
 - **PostgreSQL down:** this is a real outage for every instance that
   cannot reach it. Check the database itself — connectivity, disk,
   replica lag — not the application.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 - **Redis down:** nothing to do at the application layer. The cache
-  fails open by design; PostgreSQL is already answering every request
-  correctly. Fix Redis on its own timeline and watch the cache-hit-rate
-  panel in the meantime.
+  fails open by design; the order repository beneath it is already
+  answering every request correctly. Fix Redis on its own timeline and
+  watch the cache-hit-rate panel in the meantime.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 - **S3 / MinIO down:** check the object store. Only receipts are
   affected; orders keep placing normally.
+{%- endif %}
 - **Payment gateway degraded:** check the gateway's own status. The
   breaker self-heals — it admits one probe after
   `APP_PAYMENT__BREAKER_RESET_AFTER_SECONDS` (default 30s) and closes
   again if that probe succeeds.
+{%- if cookiecutter.cache == "redis" %}
 
 !!! danger "Do not"
     Do not restart instances because Redis is down. They are healthy,
     and a rolling restart during a cache outage adds a cold-start
     stampede to an incident that was, until that restart, entirely
     survivable.
+{%- endif %}
 
 ## A burn-rate alert is firing
 
@@ -198,6 +230,7 @@ and follow it through the logs; if a dependency is implicated, go to
 
 **Symptom.** A release is bad and forward-fixing is slower than
 reverting.
+{%- if cookiecutter.database == "postgres" %}
 
 **Confirm.** Establish whether the release included a migration — before touching any image:
 
@@ -228,6 +261,10 @@ expected version.
     Do not roll an image back without checking for a migration first.
     This is the mistake that turns a bad release into an outage, which
     is why the check is the first step here, not a caveat at the end.
+{%- else %}
+
+**Act.** Roll the application image back.
+{%- endif %}
 
 ## `security` is red on a pull request
 
@@ -238,9 +275,17 @@ the step name says which one.
 
 | Step | What it means |
 | --- | --- |
+{%- if cookiecutter.database == "postgres" %}
 | Build the images | A plain build failure in one of the two Dockerfiles. Nothing to do with advisories. |
+{%- else %}
+| Build the image | A plain build failure in the Dockerfile. Nothing to do with advisories. |
+{%- endif %}
 | Audit the lock | pip-audit found an advisory against a version pinned in `uv.lock`. |
+{%- if cookiecutter.database == "postgres" %}
 | Scan the images | Trivy found a HIGH or CRITICAL vulnerability with a fix available, or an embedded secret, in one of the two images. |
+{%- else %}
+| Scan the image | Trivy found a HIGH or CRITICAL vulnerability with a fix available, or an embedded secret, in the image. |
+{%- endif %}
 | Write the software bills of materials | Trivy could not write the SBOM — almost always a problem with the image or the Docker socket, not with a dependency. |
 
 Reproduce locally with `just security`, which runs the same recipes in the
@@ -297,9 +342,12 @@ Dependabot has a failing check.
    change at once here: `.trivyignore.yaml` entries pinned to findings the
    new version *did* fix are no longer needed and can be dropped, and a
    finding the new version *introduced* may need a new entry, with its own
-   reason and expiry. The five entries the file carries today all belong to
+   reason and expiry.
+{%- if cookiecutter.database == "postgres" %}
+   The five entries the file carries today all belong to
    the `migrate/migrate` binary, so a bump of `Dockerfile.migrations`'s
    `FROM` line is exactly this case.
+{%- endif %}
 
 !!! danger "Do not"
     Do not close a red Dependabot pull request to make it go away. Closing
