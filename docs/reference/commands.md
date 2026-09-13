@@ -85,6 +85,8 @@ this service reads. Hand-editing `.env.example` or the table in
 | `just publish-images VERSION` | Build both platforms of both images and push them to GHCR under `VERSION` only. Run by `release.yml` after `scan` has passed on the same commit's images; not something to run by hand against `ghcr.io`. |
 | `just scan-published VERSION` | The scan again, over the two images just pushed under `VERSION`, for both platforms. Release only. |
 | `just promote-latest VERSION` | Point `latest` at the pushed `VERSION` index without rebuilding. Release only, after `scan-published`. |
+| `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag. Read-only. |
+| `just next-version` | Preview the version the next release would choose. Read-only — the release itself runs in the project's `release.yml`. |
 
 The repository root has its own `just audit`, over the documentation
 toolchain's lock — see [The documentation site](#the-documentation-site)

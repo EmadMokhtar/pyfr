@@ -105,6 +105,12 @@ dev = [
     "ruff>=0.7",
     "import-linter>=2.1",
     "pre-commit>=4.0",
+    # Decides this project's version and writes its changelog at a release
+    # (.github/workflows/release.yml), and checks every commit message
+    # (.pre-commit-config.yaml). Pinned exactly, and pinned HERE only: the
+    # version that numbers each release must be one version, in one file
+    # Dependabot updates. Every caller runs it through `uv run --locked cz`.
+    "commitizen==4.18.0",
     # Alembic is NOT a migration tool in this project — golang-migrate owns the
     # schema (spec D12), and there is deliberately no alembic/ directory and no
     # alembic_version table. It is installed for exactly one job: its
@@ -161,6 +167,26 @@ constraint-dependencies = [
     "opentelemetry-semantic-conventions>=0.65b0",
     "opentelemetry-util-http>=0.65b0",
 ]
+
+[tool.commitizen]
+# The release workflow runs `cz bump` with this table: it reads the
+# Conventional Commits since the last tag, decides the bump, writes
+# CHANGELOG.md and tags. `just changelog` and `just next-version` preview
+# both without changing anything.
+name = "cz_conventional_commits"
+# Writes BOTH [project].version above and the matching [[package]] entry in
+# uv.lock. `pep621` writes only the first, which leaves the lock file stale
+# and fails the uv-lock hook -- inside the release workflow, after the tag
+# has already been pushed.
+version_provider = "uv"
+tag_format = "v$version"
+update_changelog_on_bump = true
+changelog_file = "CHANGELOG.md"
+# Pre-1.0: a breaking change bumps the MINOR number (0.1.0 -> 0.2.0)
+# rather than jumping to 1.0.0. Semver puts no compatibility promise on
+# the major number below 1.0.0, and 1.0.0 should be a deliberate decision
+# about stability, not a side effect of the first `feat!:`.
+major_version_zero = true
 
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers --strict-config -m 'not integration and not contract'"

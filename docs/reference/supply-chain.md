@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-13
 covers:
   - examples/reference-service/Dockerfile
   - examples/reference-service/Dockerfile.migrations
@@ -247,6 +247,10 @@ dependency that the root `justfile`, `release.yml` and the commit-message hook
 all call through `uv run --locked --group dev cz`. Container image pins live in
 `compose.yaml` and the two Dockerfiles alone: the integration tests and
 `just o11y-gates` read their image names from there.
+
+A generated project repeats the arrangement inside its own tree: its
+`pyproject.toml` pins Commitizen, and its `justfile`, `release.yml` and
+commit-message hook all call `uv run --locked cz`.
 
 Two literals remain outside Dependabot's reach, knowingly: `pip-audit==2.10.1`
 in both justfiles — its advisory data is fetched live, so a stale binary still

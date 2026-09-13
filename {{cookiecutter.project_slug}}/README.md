@@ -23,7 +23,7 @@ the service starts and serves correctly with none of them configured.
 
 ```bash
 uv sync                    # or: just install
-uv run pre-commit install  # one-time: wires up the lint hooks
+uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
 just dev                   # http://localhost:{{ cookiecutter.http_port }}/docs — in-memory repository
 ```
 
@@ -74,6 +74,8 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just publish-images VERSION` | Push both platforms of both images to GHCR under `VERSION` — run by the release workflow, not by hand |
 | `just scan-published VERSION` | Scan the pushed images for both platforms — release workflow only |
 | `just promote-latest VERSION` | Point `latest` at the scanned `VERSION` — release workflow only |
+| `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag — read-only |
+| `just next-version` | Preview the version the next release would choose — read-only; the release itself runs in CI (`.github/workflows/release.yml`) |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
 | `just test-contract` | The contract tier: Schemathesis conformance testing over ASGI. The drift check runs in `just test` / `just check` instead — see [Contract governance](#contract-governance) |
 | `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |

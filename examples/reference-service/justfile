@@ -524,6 +524,19 @@ promote-latest version registry="ghcr.io/emadmokhtar":
         -t "{{registry}}/reference-service-migrations:latest" \
         "{{registry}}/reference-service-migrations:{{version}}"
 
+# Preview the changelog entry the next release will write. Read-only.
+changelog:
+    uv run --locked cz changelog --dry-run --incremental
+
+# Preview the version the next release will choose, without doing it.
+next-version:
+    # The release itself runs in CI (.github/workflows/release.yml); this is
+    # for answering "what will merging this produce?" before merging.
+    # `--yes` answers Commitizen's "Is this the first tag created?" -- asked
+    # only before the first release, when no tag exists yet -- which would
+    # otherwise stop the dry run outside a terminal.
+    uv run --locked cz bump --dry-run --yes
+
 up:
     docker compose up --build
 

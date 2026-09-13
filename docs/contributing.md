@@ -379,6 +379,13 @@ installs it on first use, which makes the first commit slower than it needs
 to be. One pin, in one file Dependabot updates, is the whole point — see
 [ADR 0014](adr/0014-dependabot-and-one-pin-per-tool.md).
 
+A generated project carries its own Commitizen (spec M7-9): `commitizen`
+in its `dev` group, a `[tool.commitizen]` table in its `pyproject.toml`,
+the same commit-message hook, and `just changelog` / `just next-version`.
+Its version, tags and releases are its own; the root's copy decides PyFr's
+releases only. In this repository the example's copy is rendered output,
+and the root's hook is the one that checks your messages.
+
 ## One-time repository settings
 
 Eight settings live in the GitHub interface, not in this repository, so they

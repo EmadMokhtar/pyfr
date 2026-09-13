@@ -191,6 +191,28 @@ def test_dashboards_are_copied_verbatim(cookies) -> None:
         assert rendered.read_bytes() == source.read_bytes()
 
 
+def test_a_render_owns_its_commitizen(cookies) -> None:
+    # M7-9: a generated project has its own version, tags and release
+    # workflow, so the tool that decides its version is in its own lock.
+    root = render(cookies)
+    table = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["commitizen"]
+    assert table["version_provider"] == "uv"
+    assert table["tag_format"] == "v$version"
+    assert table["update_changelog_on_bump"] is True
+    assert table["major_version_zero"] is True
+    assert "commitizen" in dependency_names(root)
+    hooks = yaml.safe_load((root / ".pre-commit-config.yaml").read_text())
+    assert "commit-msg" in hooks["default_install_hook_types"]
+    local = next(repo for repo in hooks["repos"] if repo["repo"] == "local")
+    commitizen = next(hook for hook in local["hooks"] if hook["id"] == "commitizen")
+    assert commitizen["stages"] == ["commit-msg"]
+    assert (
+        commitizen["entry"]
+        == "uv run --locked cz check --allow-abort --commit-msg-file"
+    )
+    assert {"changelog", "next-version"} <= recipe_names(root)
+
+
 PACKAGE = "my_service"
 
 # Per backend: the libraries a render must not import, the ones .importlinter
