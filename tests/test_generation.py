@@ -258,7 +258,9 @@ BACKEND = {
         "env_prefix": "APP_STORAGE__",
         "services": ("minio", "minio-bootstrap"),
         "recipes": ("minio-console",),
-        "dependencies": ("aioboto3",),
+        # `minio` is the test-container client in the dev group, not the
+        # adapter's library; it follows the backend all the same.
+        "dependencies": ("aioboto3", "minio"),
         "paths": (
             f"src/{PACKAGE}/infrastructure/storage/",
             "tests/integration/test_receipt_store.py",
@@ -339,16 +341,31 @@ def module_scope(body: list[ast.stmt]) -> Iterator[ast.stmt]:
             yield from module_scope(block)
 
 
+def bound_names(target: ast.expr) -> set[str]:
+    """The names an assignment target binds: `a`, `(a, b)`, `[a, *b]`."""
+    return {n.id for n in ast.walk(target) if isinstance(n, ast.Name)}
+
+
 def top_level_names(module: Path) -> set[str]:
-    """Every name a module binds at top level: defs, assignments, imports."""
+    """Every name a module binds at top level: defs, assignments, type
+    aliases, imports, and the targets of a module-scope `for` or `with`."""
     names: set[str] = set()
     for node in module_scope(ast.parse(module.read_text()).body):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             names.add(node.name)
-        elif isinstance(node, ast.Assign | ast.AnnAssign):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                names.update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                names |= bound_names(target)
+        elif isinstance(node, ast.AnnAssign):
+            names |= bound_names(node.target)
+        elif isinstance(node, ast.TypeAlias):
+            names.add(node.name.id)
+        elif isinstance(node, ast.For | ast.AsyncFor):
+            names |= bound_names(node.target)
+        elif isinstance(node, ast.With | ast.AsyncWith):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    names |= bound_names(item.optional_vars)
         elif isinstance(node, ast.Import | ast.ImportFrom):
             names.update(a.asname or a.name.split(".")[0] for a in node.names)
     return names
@@ -359,12 +376,16 @@ def unresolved_first_party_imports(root: Path) -> list[tuple[str, str, str]]:
     names a module the render lacks or a name that module does not bind. A
     conditional that prunes a def but not a test's import of it passes ruff
     and fails only at collection time; this is that check, without pytest.
+    Relative imports (`from . import x`, `from .sibling import x`) are
+    skipped: only absolute paths under the package or `tests` are resolved.
     """
     roots = {PACKAGE: root / "src" / PACKAGE, "tests": root / "tests"}
     failures = []
     for path in python_files(root):
         for node in ast.walk(ast.parse(path.read_text())):
             if not isinstance(node, ast.ImportFrom) or node.module is None:
+                continue
+            if node.level:  # relative: `from .sibling import x`
                 continue
             head, *rest = node.module.split(".")
             if head not in roots:
