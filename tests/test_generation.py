@@ -56,16 +56,18 @@ CAP_PACKAGE_NAME = "abcde_fghij_klmno_pqrst_u"
 JINJA_MARKERS = (b"{{", b"{%")
 
 # Markers that must never survive a render, in ANY file (grafana excepted):
-# an unrendered cookiecutter variable, or a {% raw %}/{% endraw %}/{% if %}/
-# {% endif %} tag Jinja failed to consume. Checking for these -- rather than
-# for bare {{ / {% -- is what lets the four files below still be checked for
-# real Jinja bugs instead of being skipped outright.
+# an unrendered cookiecutter variable, a {% raw %}/{% endraw %}/{% if %}/
+# {% endif %} tag Jinja failed to consume, or a left-strip {%- tag Jinja
+# failed to consume. Checking for these -- rather than for bare {{ / {% --
+# is what lets the four files below still be checked for real Jinja bugs
+# instead of being skipped outright.
 ALWAYS_FORBIDDEN_MARKERS = (
     b"{{ cookiecutter",
     b"{% raw",
     b"{% endraw",
     b"{% if",
     b"{% endif",
+    b"{%-",
 )
 
 # Files where a literal {{ }} / {% %} is someone else's syntax, not ours,
@@ -114,6 +116,11 @@ def test_no_template_syntax_survives_any_combination(cookies, answers) -> None:
             offenders.append(relative)
             continue
         if relative in RAW_GUARDED_FILES:
+            if relative.startswith(".github/workflows/"):
+                # Every {{ in a workflow file must be GitHub Actions'
+                # own ${{ }} expression syntax, not a cookiecutter
+                # variable that escaped rendering.
+                assert content.count(b"{{") == content.count(b"${{"), relative
             continue
         if any(marker in content for marker in JINJA_MARKERS):
             offenders.append(relative)

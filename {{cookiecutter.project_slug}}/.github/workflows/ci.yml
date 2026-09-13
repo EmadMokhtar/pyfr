@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Every job reads the repository and nothing else; a job that needs more
+# declares it itself.
+permissions:
+  contents: read
+
 # One run per branch. Cancelling in-flight runs is safe here in a way it
 # is not for release.yml: nothing is published, so a cancelled run leaves
 # nothing half-done.

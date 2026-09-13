@@ -20,7 +20,9 @@ name, and is made in the template by hand.
 
 Action pins go the other way: Dependabot's github-actions updates land in
 the root's .github/workflows only, so --adopt copies each bumped `uses:`
-ref from there into the template's workflows.
+ref from there into the template's workflows. The example's own
+`.github/workflows/` never reaches `adopt()`: Dependabot does not read
+it, and its `uses:` lines repeat, which `adopt()` would refuse.
 
 The render runs with PYFR_REGEN set, so the post-generation hook prunes and
 stops: no git init, no uv sync, no network. uv.lock is the one file outside
@@ -55,6 +57,8 @@ EXCLUDED = frozenset({"uv.lock"})
 # through --adopt (spec section 8, amended in PR 3).
 ROOT_WORKFLOWS = ROOT / ".github" / "workflows"
 TEMPLATE_WORKFLOWS = TEMPLATE_BODY / ".github" / "workflows"
+# A SHA pin's trailing `# vN` comment is not compared or rewritten; the
+# repository pins by tag.
 USES = re.compile(
     r"^(?P<head>\s*-?\s*uses:\s*)(?P<action>[\w.-]+/[\w./-]+)@"
     r"(?P<ref>[^\s#]+)(?P<tail>.*)$"
