@@ -31,11 +31,12 @@ updates:
     commit-message:
       prefix: "ci(deps)"
     labels: ["dependencies"]
-
 {%- if cookiecutter.database == "postgres" %}
+
   # Dockerfile and Dockerfile.migrations: the file fetcher matches any
   # name containing "dockerfile".
 {%- else %}
+
   # The Dockerfile.
 {%- endif %}
   - package-ecosystem: "docker"

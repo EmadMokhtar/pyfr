@@ -31,6 +31,7 @@ updates:
     commit-message:
       prefix: "ci(deps)"
     labels: ["dependencies"]
+
   # Dockerfile and Dockerfile.migrations: the file fetcher matches any
   # name containing "dockerfile".
   - package-ecosystem: "docker"
