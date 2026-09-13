@@ -103,6 +103,43 @@ def test_regen_mode_leaves_no_git_repository(cookies) -> None:
     assert not (result.project_path / "uv.lock").exists()
 
 
+@pytest.mark.parametrize(
+    ("answers", "gone", "kept"),
+    [
+        (
+            {"database": "none"},
+            ("migrations", "schema.sql", "src/my_service/infrastructure/db"),
+            (
+                "src/my_service/infrastructure/memory",
+                "src/my_service/infrastructure/cache",
+            ),
+        ),
+        (
+            {"cache": "none"},
+            ("src/my_service/infrastructure/cache",),
+            ("src/my_service/infrastructure/db",),
+        ),
+        (
+            {"object_storage": "none"},
+            (
+                "src/my_service/infrastructure/storage",
+                "tests/integration/test_receipt_store.py",
+            ),
+            ("src/my_service/infrastructure/memory/receipt_store.py",),
+        ),
+    ],
+)
+def test_the_hook_deletes_an_unchosen_backend_whole(
+    cookies, answers, gone, kept
+) -> None:
+    result = cookies.bake(extra_context=answers)
+    assert result.exit_code == 0, result.exception
+    for path in gone:
+        assert not (result.project_path / path).exists(), path
+    for path in kept:
+        assert (result.project_path / path).exists(), path
+
+
 def test_side_effects_are_best_effort(
     cookies, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capfd
 ) -> None:

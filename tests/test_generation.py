@@ -6,8 +6,10 @@ a matrix over the backend combinations.
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -169,16 +171,10 @@ def test_a_package_name_at_the_cap_is_format_clean(cookies) -> None:
     # ruff from the root's dev group, through its module entry point; it
     # picks the render's own ruff.toml, so this is the check a generated
     # project's `just check` runs.
-    for arguments in (
-        ["format", "--check"],
-        ["check", "--select", "E501"],
+    for completed in (
+        ruff(root, "format", "--check"),
+        ruff(root, "check", "--select", "E501"),
     ):
-        completed = subprocess.run(
-            [sys.executable, "-m", "ruff", *arguments, str(root)],
-            cwd=root,
-            capture_output=True,
-            text=True,
-        )
         assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
@@ -190,3 +186,179 @@ def test_dashboards_are_copied_verbatim(cookies) -> None:
         template_root = ROOT / "{{cookiecutter.project_slug}}"
         source = template_root / "ops" / "grafana" / "dashboards" / name
         assert rendered.read_bytes() == source.read_bytes()
+
+
+PACKAGE = "my_service"
+
+# Per backend: the libraries a render must not import, the ones .importlinter
+# names, the settings group's variable prefix, the compose services, the
+# justfile recipes, the dependencies and the paths the hook deletes. Only
+# .py files, .env.example, .importlinter, compose.yaml, pyproject.toml and
+# the justfile are inspected; prose (README.md, comments) is not.
+BACKEND = {
+    "database": {
+        "libraries": ("sqlalchemy", "asyncpg", "alembic"),
+        "importlinter": ("sqlalchemy", "asyncpg"),
+        "package": "db",
+        "env_prefix": "APP_DATABASE__",
+        "services": ("postgres", "migrate"),
+        "recipes": (
+            "schema-snapshot",
+            "migrate",
+            "migrate-new",
+            "migrate-manifest",
+            "migrate-down",
+            "migrate-version",
+            "migrate-force",
+            "psql",
+        ),
+        "dependencies": (
+            "sqlalchemy",
+            "asyncpg",
+            "alembic",
+            "opentelemetry-instrumentation-sqlalchemy",
+        ),
+        "paths": (
+            "migrations/",
+            "schema.sql",
+            "Dockerfile.migrations",
+            ".sqlfluff",
+            f"src/{PACKAGE}/infrastructure/db/",
+            "tests/unit/test_db_mappers.py",
+            "tests/unit/test_engine.py",
+            "tests/unit/test_migration_files.py",
+            "tests/unit/test_order_repository.py",
+            "tests/integration/test_order_repository.py",
+            "tests/integration/test_db_instrumentation.py",
+            "tests/integration/test_schema_drift.py",
+            "tests/integration/test_schema_gates.py",
+        ),
+    },
+    "cache": {
+        "libraries": ("redis",),
+        "importlinter": ("redis",),
+        "package": "cache",
+        "env_prefix": "APP_CACHE__",
+        "services": ("redis",),
+        "recipes": ("redis-cli",),
+        "dependencies": ("redis", "opentelemetry-instrumentation-redis"),
+        "paths": (
+            f"src/{PACKAGE}/infrastructure/cache/",
+            "tests/unit/test_cached_order_repository.py",
+            "tests/integration/test_cached_order_repository.py",
+            "tests/integration/test_redis_instrumentation.py",
+        ),
+    },
+    "object_storage": {
+        "libraries": ("aioboto3", "botocore", "boto3"),
+        "importlinter": ("aioboto3",),
+        "package": "storage",
+        "env_prefix": "APP_STORAGE__",
+        "services": ("minio", "minio-bootstrap"),
+        "recipes": ("minio-console",),
+        "dependencies": ("aioboto3",),
+        "paths": (
+            f"src/{PACKAGE}/infrastructure/storage/",
+            "tests/integration/test_receipt_store.py",
+        ),
+    },
+}
+IMPORT = re.compile(r"^\s*(?:from|import)\s+([A-Za-z_][\w.]*)", re.MULTILINE)
+INFRA = re.compile(r"infrastructure\.(db|cache|storage)\b")
+
+
+def python_files(root: Path) -> list[Path]:
+    return [p for p in files_under(root) if p.suffix == ".py"]
+
+
+def imported_top_levels(path: Path) -> set[str]:
+    return {m.group(1).split(".")[0] for m in IMPORT.finditer(path.read_text())}
+
+
+def compose_services(root: Path) -> set[str]:
+    return set(yaml.safe_load((root / "compose.yaml").read_text())["services"])
+
+
+def dependency_names(root: Path) -> set[str]:
+    data = tomllib.loads((root / "pyproject.toml").read_text())
+    names = set()
+    groups = [
+        data["project"]["dependencies"],
+        *data.get("dependency-groups", {}).values(),
+    ]
+    for group in groups:
+        for spec in group:
+            if isinstance(spec, str):
+                names.add(re.split(r"[\[<>=!~; ]", spec, maxsplit=1)[0].lower())
+    return names
+
+
+def recipe_names(root: Path) -> set[str]:
+    return {
+        m.group(1)
+        for m in re.finditer(
+            r"^([A-Za-z_][\w-]*)(?:\s+[^:\n]*)?:(?!=)",
+            (root / "justfile").read_text(),
+            re.M,
+        )
+    }
+
+
+def ruff(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    # The root environment's ruff (a dependency of the `dev` group); run in
+    # the render, so ruff picks the render's own ruff.toml.
+    return subprocess.run(
+        [sys.executable, "-m", "ruff", *args, "."],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+
+def assert_invariant(root: Path, answers: dict[str, str]) -> None:
+    services = compose_services(root)
+    dependencies = dependency_names(root)
+    recipes = recipe_names(root)
+    env_example = (root / ".env.example").read_text()
+    importlinter = (root / ".importlinter").read_text()
+    for key, spec in BACKEND.items():
+        on = answers[key] != "none"
+        for path in spec["paths"]:
+            assert (root / path).exists() == on, (key, path, on)
+        for service in spec["services"]:
+            assert (service in services) == on, (key, service, on)
+        for recipe in spec["recipes"]:
+            assert (recipe in recipes) == on, (key, recipe, on)
+        for dependency in spec["dependencies"]:
+            assert (dependency in dependencies) == on, (key, dependency, on)
+        assert (spec["env_prefix"] in env_example) == on, (key, "env")
+        for library in spec["importlinter"]:
+            assert (library in importlinter) == on, (key, library, ".importlinter")
+        if on:
+            continue
+        for path in python_files(root):
+            text = path.read_text()
+            imports = imported_top_levels(path)
+            assert not imports & set(spec["libraries"]), (key, path.relative_to(root))
+            assert not any(
+                m.group(1) == spec["package"] for m in INFRA.finditer(text)
+            ), (key, path.relative_to(root))
+            assert spec["env_prefix"] not in text, (key, path.relative_to(root))
+    # Cross-cutting: nothing empty, nothing unformatted, nothing unused.
+    for directory in (p for p in root.rglob("*") if p.is_dir()):
+        assert any(directory.iterdir()), (
+            f"empty directory {directory.relative_to(root)}"
+        )
+    check = ruff(root, "check")
+    assert check.returncode == 0, check.stdout + check.stderr
+    fmt = ruff(root, "format", "--check")
+    assert fmt.returncode == 0, fmt.stdout + fmt.stderr
+    # testcontainers is needed by exactly the integration tests the chosen
+    # backends keep; with every backend off it has no user.
+    any_on = any(answers[key] != "none" for key in BACKEND)
+    assert ("testcontainers" in dependencies) == any_on
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_a_render_carries_only_the_backends_it_chose(cookies, answers) -> None:
+    assert_invariant(render(cookies, **answers), answers)
