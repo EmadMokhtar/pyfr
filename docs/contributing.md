@@ -410,8 +410,14 @@ and the root's hook is the one that checks your messages.
 
 ## One-time repository settings
 
-Eight settings live in the GitHub interface, not in this repository, so they
-are easy to miss when standing up a fork.
+Seven settings live in the GitHub interface, not in this repository, so they
+are easy to miss when standing up a fork. The repository's default
+workflow-token permission is *not* one of them: every workflow that writes
+declares the permission it needs in its own `permissions:` key, which
+GitHub honours whatever the repository default says — a project generated
+from this template released from a fresh repository left at the default
+"Read repository contents" setting, pushing its tag and publishing its
+images with the workflow token alone.
 
 - **Settings → Pages → Source = "GitHub Actions".** Without it the `Docs`
   workflow's build job succeeds while its deploy job fails with an opaque
@@ -420,16 +426,6 @@ are easy to miss when standing up a fork.
   escape hatch.
 - **Squash-merge as the merge strategy**, since the commit convention above
   assumes the pull request title becomes the commit on `main`.
-- **Settings → Actions → General → Workflow permissions → "Read and write
-  permissions".** The `Release` workflow (`.github/workflows/release.yml`)
-  pushes a tag (and, after the first release, a bump commit carrying the
-  version, the changelog and the promoted API contract baseline) back to
-  `main`.
-  With the default read-only permission, that push fails with a 403 error —
-  and it fails *after* `cz bump` has already created the commit and tag in
-  the runner's local checkout, so the run looks like it did most of the work
-  before dying on something that reads like a permissions typo rather than a
-  missing setting.
 - **A `RELEASE_TOKEN` secret, so the release push lands.** The `main`
   ruleset requires a pull request and exempts only the repository admin.
   The default `GITHUB_TOKEN` is not exempt, so `release.yml`'s push of the
