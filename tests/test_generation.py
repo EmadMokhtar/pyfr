@@ -384,6 +384,46 @@ def unresolved_first_party_imports(root: Path) -> list[tuple[str, str, str]]:
     return failures
 
 
+def assert_compose_is_self_consistent(root: Path, answers: dict[str, str]) -> None:
+    """compose.yaml beyond its service names.
+
+    The chosen backends' variables reach `app.environment` and no other
+    backend's survive anywhere in the file; every `depends_on` names a
+    service the file defines; every named volume a service mounts is
+    declared under the top-level `volumes`. A conditional that prunes a
+    service but not the lines that point at it renders a file compose
+    refuses to start, and nothing else here reads those lines.
+    """
+    compose_text = (root / "compose.yaml").read_text()
+    compose = yaml.safe_load(compose_text)
+    services = compose["services"]
+    declared_volumes = set(compose.get("volumes") or {})
+    # A mapping (`KEY: value`) or a list of `KEY=value`; either iterates
+    # to strings that start with the variable name.
+    app_environment = services["app"].get("environment") or {}
+    for key, spec in BACKEND.items():
+        on = answers[key] != "none"
+        prefix = spec["env_prefix"]
+        assert (prefix in compose_text) == on, (key, "compose.yaml")
+        if on:
+            assert any(name.startswith(prefix) for name in app_environment), (
+                key,
+                "app.environment",
+            )
+    for name, service in services.items():
+        # `depends_on` is a mapping (`postgres: {condition: …}`) or a list
+        # of names; iterating either yields the names.
+        for dependency in service.get("depends_on") or {}:
+            assert dependency in services, (name, "depends_on", dependency)
+        for mount in service.get("volumes") or []:
+            # Short syntax only (`source:/target[:ro]`). A source that starts
+            # with `/` or `.` is a host path; anything else names a volume.
+            source = mount.split(":", 1)[0]
+            if source.startswith(("/", ".")):
+                continue
+            assert source in declared_volumes, (name, "volumes", source)
+
+
 def assert_invariant(root: Path, answers: dict[str, str]) -> None:
     services = compose_services(root)
     dependencies = dependency_names(root)
@@ -413,6 +453,7 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
                 m.group(1) == spec["package"] for m in INFRA.finditer(text)
             ), (key, path.relative_to(root))
             assert spec["env_prefix"] not in text, (key, path.relative_to(root))
+    assert_compose_is_self_consistent(root, answers)
     # Cross-cutting: nothing empty, nothing unformatted, nothing unused.
     for directory in (p for p in root.rglob("*") if p.is_dir()):
         assert any(directory.iterdir()), (
