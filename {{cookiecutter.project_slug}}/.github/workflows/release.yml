@@ -1,19 +1,18 @@
 name: Release
 
-# Releases the REPOSITORY, not the reference service. One version, one
-# CHANGELOG.md, one tag series -- see the M5 plan's Global Constraints.
-# The reference service is an example nobody deploys; it stays at 0.1.0
-# and publishes nothing. Image publishing arrives in M6.
+# Releases this service: one version, one CHANGELOG.md, one tag series,
+# and the container images published under that version (README,
+# "Supply chain").
 #
 # This workflow has two modes, chosen at runtime by whether any tag exists
 # yet (see the "Bump the version and write the changelog" step below):
 #   - bootstrap: cuts the very first release, when there is no tag for
 #     `cz bump` to work from at all.
 #   - bump: every release after that, using Commitizen exactly as normal.
-# The bootstrap mode exists only because this repository starts with zero
-# tags. Once the first release has run, every later run takes the `bump`
-# path, and the bootstrap branch is dead code that stays dead -- see that
-# step's comment for the empirical reasons it cannot be deleted anyway.
+# The bootstrap mode exists because a project generated from PyFr starts
+# at 0.1.0 with zero tags. Once the first release has run, every later run
+# takes the `bump` path -- see that step's comment for the empirical
+# reasons Commitizen cannot cut the first release itself.
 
 on:
   push:
@@ -57,8 +56,10 @@ jobs:
     # THIS run cut a release -- see "Decide whether that tag still needs
     # its images" below.
     outputs:
+{%- raw %}
       publish: ${{ steps.images.outputs.publish }}
       version: ${{ steps.images.outputs.version }}
+{%- endraw %}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -81,7 +82,7 @@ jobs:
           enable-cache: true
 
       - name: Install just
-        # For `just regen` in the bump step. This puts a binary on the
+        # For `just contract-release` in the bump step. This puts a binary on the
         # runner's PATH and writes nothing into the checkout, so it does
         # not fall foul of the "nothing writes before the bump" rule that
         # step's comment explains.
@@ -97,24 +98,22 @@ jobs:
 
       - name: Bump the version and write the changelog
         id: bump
-        # Commitizen comes from the root uv.lock -- the one place its
-        # version lives (ADR 0014) -- so the tool deciding the version
-        # here is the tool the commit-msg hook ran on every message it
-        # reads.
+        # Commitizen comes from uv.lock -- the one place its version
+        # lives -- so the tool deciding the version here is the tool the
+        # commit-msg hook ran on every message it reads.
         #
         # `cz bump` commits with `git commit -a`, which stages every
         # tracked modification in the tree -- so nothing may write into
         # the working tree before this step BY ACCIDENT. There is
         # deliberately no `uv sync` above for that reason, and `uv run
         # --locked` is safe here: it refuses to rewrite uv.lock rather than
-        # updating it, and `.venv/` is untracked and ignored (M6 plan,
-        # Verified Fact 12). The one deliberate write is the
-        # contract-baseline promotion inside the else branch below -- the
-        # template body's baseline, and the example `just regen` renders
-        # from it -- which relies on exactly this behaviour to ride along
-        # in the bump commit.
+        # updating it, and `.venv/` is untracked and ignored. The one
+        # deliberate write is the
+        # contract-baseline promotion inside the else branch below, which
+        # relies on exactly this behaviour to ride along in the bump
+        # commit.
         #
-        # This repository starts with no git tags at all, and `cz bump`
+        # A generated project starts with no git tags at all, and `cz bump`
         # cannot cut the first release under that condition -- verified,
         # not guessed:
         #   - `cz bump --dry-run` with zero tags crashes with EOFError: it
@@ -122,7 +121,7 @@ jobs:
         #     and there is no terminal in CI to answer it.
         #   - `cz bump --yes` suppresses that prompt but still fails, exit
         #     code 16, "No tag found to do an incremental changelog" --
-        #     because this repository's `update_changelog_on_bump = true`
+        #     because `update_changelog_on_bump = true` in pyproject.toml
         #     needs a base tag to diff against for its incremental step,
         #     and there isn't one yet.
         #   - Both failures are atomic: no tag, no commit, no file change.
@@ -130,18 +129,41 @@ jobs:
         #     happens if nothing else handles this case.
         #
         # So: branch on whether any tag exists. With none, skip `cz bump`
-        # entirely and hand-tag the current commit with the version
-        # already on disk -- CHANGELOG.md already describes that version
-        # (Task 10 generated it from the pre-existing commit history), so
-        # there is nothing to bump and nothing to rewrite. With a tag
-        # already in place, run `cz bump` exactly as normal; it is fully
-        # reliable once it has a base to work from.
+        # entirely and hand-tag the version already on disk -- 0.1.0 as
+        # generated -- so there is nothing to bump; the GitHub Release
+        # below gets an empty notes section for it, and the first `cz
+        # bump` after it creates CHANGELOG.md. The one thing the bootstrap
+        # does write is the API contract baseline, and only when the API
+        # changed before this first release; that promotion is committed
+        # and the tag points at that commit. With a tag already in place,
+        # run `cz bump` exactly as normal; it is fully reliable once it
+        # has a base to work from. Either branch says in `committed`
+        # whether it moved HEAD, so the push step knows what to push.
         run: |
           if [ -z "$(git tag -l)" ]; then
             echo "No tags found: bootstrapping the first release."
 
-            version=$(uv run --locked --group dev cz version --project)
+            version=$(uv run --locked cz version --project)
             tag="v${version}"
+
+            # The contract gate reads commit markers over the window since
+            # the last tag, and that window starts here from now on. An
+            # API change made before this first release -- marked
+            # breaking in a commit this tag will contain -- must therefore
+            # be in the baseline the tag ships, or every pull request
+            # after it reports that change as an unannounced break. A
+            # freshly generated baseline already equals openapi.json, and
+            # then nothing is written; otherwise the promotion is
+            # committed here, with a `bump:` subject so the run this push
+            # starts stops at the guard above.
+            just contract-release
+            if git diff --quiet -- openapi.baseline.json; then
+              echo "committed=false" >> "$GITHUB_OUTPUT"
+            else
+              git commit -q -m "bump: promote the api contract baseline for ${tag}" \
+                -- openapi.baseline.json
+              echo "committed=true" >> "$GITHUB_OUTPUT"
+            fi
 
             # A plain (lightweight) tag: cz's own tags carry no message
             # either, via this same config (tag_format = "v$version",
@@ -159,29 +181,16 @@ jobs:
             # window since the last tag -- so the baseline and the tag
             # must move together, or the gate goes red on the first pull
             # request after a release and stays red until someone
-            # promotes by hand. Steady-state only: the bootstrap branch
-            # above makes no commit, so its baseline was promoted on the
-            # branch that introduced this workflow instead.
-            #
-            # In PyFr's own repository the baseline lives in the template
-            # body and examples/reference-service/ is rendered from it
-            # (ADR 0017), so the promotion happens there and `just regen`
-            # carries it into the example. Promoting inside the example
-            # instead -- `just contract-release` there -- would leave the
-            # example's baseline ahead of the template's, and the `golden`
-            # job red from the next pull request on. A generated project
-            # runs `just contract-release` in its own tree. `just regen`
-            # runs through `uv run --group dev`, whose sync writes only
-            # the untracked `.venv/`.
+            # promotes by hand. The bootstrap branch above promotes it
+            # too, with a commit of its own when the baseline moved.
             #
             # If cz then decides there is nothing to release (exit 3 or
             # 21 below), these writes are discarded with the runner:
             # nothing is committed and nothing is pushed.
-            cp '{{cookiecutter.project_slug}}/openapi.json' '{{cookiecutter.project_slug}}/openapi.baseline.json'
-            just regen
+            just contract-release
 
             set +e
-            uv run --locked --group dev cz bump --yes --changelog
+            uv run --locked cz bump --yes --changelog
             status=$?
             set -e
 
@@ -204,16 +213,17 @@ jobs:
 
             echo "mode=bump" >> "$GITHUB_OUTPUT"
             echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "version=$(uv run --locked --group dev cz version --project)" \
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(uv run --locked cz version --project)" \
               >> "$GITHUB_OUTPUT"
           fi
 
       - name: Push the release
         if: steps.bump.outputs.released == 'true'
-        # The bootstrap branch above never touches the working tree or
-        # history -- only a new tag exists locally -- so only the tag
-        # needs to reach origin. The steady-state `cz bump` branch made a
-        # bump commit too, so both the commit and its tag need pushing.
+        # The steady-state `cz bump` branch always made a bump commit;
+        # the bootstrap branch made one only if it had a baseline to
+        # promote. `committed` says whether HEAD moved, and the tag is
+        # pushed by name either way.
         #
         # Both branches push the tag by name explicitly rather than via
         # `--follow-tags`, because `--follow-tags` only pushes *annotated*
@@ -227,30 +237,29 @@ jobs:
         # main` exited 0 but `git ls-remote --tags origin` showed the tag
         # had never arrived.
         #
-        # The push uses RELEASE_TOKEN, not the workflow token. The `main`
-        # ruleset requires a pull request and exempts only the repository
-        # admin; on a user-owned repository GitHub does not let the Actions
-        # app be exempted, so the default token's push is refused (GH013)
-        # and every release failed here until the secret existed.
-        # RELEASE_TOKEN is a fine-grained personal access token of the
-        # admin (Contents: read and write on this repository), kept as a
-        # repository secret and reaching only this step; the `||` falls
-        # back to the workflow token where the secret is absent, so a fork
-        # without it runs this far. See docs/contributing.md, "One-time
-        # repository settings". A push made with that token, unlike one
-        # made with GITHUB_TOKEN, DOES start other workflows: ci.yml and
-        # docs.yml run again on the bump commit (harmless), and this
+        # The push uses RELEASE_TOKEN when that secret exists and the
+        # workflow token otherwise. The workflow token is enough on a
+        # repository whose `main` accepts a direct push from Actions. A
+        # ruleset that requires a pull request on `main` refuses that push
+        # (GH013) -- and on a user-owned repository GitHub does not let
+        # the Actions app be exempted -- so add a fine-grained personal
+        # access token of an exempt admin (this repository only; Contents:
+        # read and write) as the `RELEASE_TOKEN` secret (README,
+        # "Continuous integration and releases"). It reaches only this
+        # step, through its environment. A push made with RELEASE_TOKEN,
+        # unlike one made with GITHUB_TOKEN, DOES start other workflows:
+        # ci.yml runs again on the bump commit (harmless), and this
         # workflow runs again and stops at the `bump:` guard above.
+{%- raw %}
         env:
           PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if [ "${{ steps.bump.outputs.mode }}" = "bootstrap" ]; then
-            git push "$remote" "v${{ steps.bump.outputs.version }}"
-          else
+          if [ "${{ steps.bump.outputs.committed }}" = "true" ]; then
             git push "$remote" HEAD:main
-            git push "$remote" "v${{ steps.bump.outputs.version }}"
           fi
+          git push "$remote" "v${{ steps.bump.outputs.version }}"
+{%- endraw %}
 
       - name: Publish the GitHub Release
         id: publish
@@ -265,10 +274,12 @@ jobs:
         # otherwise the most recent tag on `main`), and creates the
         # release only if that tag has none yet. The tag it settles on is
         # also what the images probe below asks the registry about.
+{%- raw %}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASED: ${{ steps.bump.outputs.released }}
           VERSION: ${{ steps.bump.outputs.version }}
+{%- endraw %}
         # --notes-from-tag would use the tag message; `cz changelog`'s own
         # rendering of this version's commits is better prose.
         #
@@ -294,17 +305,19 @@ jobs:
             echo "Release $tag already exists; nothing to do."
             exit 0
           fi
-          uv run --locked --group dev cz changelog "$tag" \
+          uv run --locked cz changelog "$tag" \
             --dry-run > release-notes.md
           gh release create "$tag" \
             --title "$tag" \
             --notes-file release-notes.md
 
+{%- raw %}
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+{%- endraw %}
 
       - name: Decide whether that tag still needs its images
         id: images
@@ -320,18 +333,24 @@ jobs:
         # repaired with "Re-run failed jobs", which keeps this job's
         # outputs.) `docker manifest inspect` needs the login above for a
         # package that is still private, and `packages: read` for the
-        # token to be allowed to look. The two image names are literals,
-        # as everywhere in this root workflow.
+        # token to be allowed to look.
+{%- raw %}
         env:
           TAG: ${{ steps.publish.outputs.tag }}
+{%- endraw %}
         run: |
           if [ -z "$TAG" ]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           publish=false
-          for image in reference-service reference-service-migrations; do
-            reference="ghcr.io/emadmokhtar/$image:$TAG"
+          for image in \
+            {{ cookiecutter.project_slug }} \
+{%- if cookiecutter.database == "postgres" %}
+            {{ cookiecutter.project_slug }}-migrations \
+{%- endif %}
+          ; do
+            reference="ghcr.io/{{ cookiecutter.github_org | lower }}/$image:$TAG"
             if docker manifest inspect "$reference" >/dev/null 2>&1; then
               echo "$reference is in the registry."
             else
@@ -343,8 +362,8 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
   publish-images:
-    # Both images, both architectures, tagged with the REPOSITORY version
-    # just released and, once verified, `latest` (ADR 0015). In order:
+    # Every image, both architectures, tagged with the version
+    # just released and, once verified, `latest`. In order:
     # build the single-architecture images and scan them, so a fixed HIGH
     # or CRITICAL finding stops the push before anything leaves the
     # runner; push both platforms under the version tag only; scan the
@@ -362,7 +381,7 @@ jobs:
     # builder the CURRENT one, and on Docker >= 23 `docker build` is
     # `docker buildx build` on the current builder -- so `just
     # build-images` would build inside that container builder and never
-    # load `reference-service:ci` into the daemon, and `just scan` would
+    # load `{{ cookiecutter.project_slug }}:ci` into the daemon, and `just scan` would
     # find no such image. The `pyfr` builder `publish-images` needs is
     # created by the recipe itself (`_buildx-builder`), never made
     # current, and `docker buildx` is preinstalled on ubuntu-latest. QEMU
@@ -373,9 +392,7 @@ jobs:
     permissions:
       contents: write   # gh release upload
       packages: write   # ghcr.io push; includes pull, which the SBOM step needs
-    defaults:
-      run:
-        working-directory: examples/reference-service
+{%- raw %}
     env:
       VERSION: v${{ needs.release.outputs.version }}
       # Registry credentials for the post-push scan and SBOM steps below,
@@ -394,12 +411,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+{%- endraw %}
       - uses: extractions/setup-just@v4
-      - name: Build both images
+      - name: Build the images
         run: just build-images
-      - name: Scan both images
+      - name: Scan the images
         run: just scan
-      - name: Push both images for both architectures under the version tag
+      - name: Push the images for both architectures under the version tag
         run: just publish-images "$VERSION"
       - name: Scan the pushed images for both architectures
         run: just scan-published "$VERSION"
@@ -414,14 +432,23 @@ jobs:
         # the same lockfile and Debian package versions.
         run: >-
           just sbom
-          "ghcr.io/emadmokhtar/reference-service:$VERSION"
-          "ghcr.io/emadmokhtar/reference-service-migrations:$VERSION"
+          "ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:$VERSION"
+{%- if cookiecutter.database == "postgres" %}
+          "ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations:$VERSION"
+{%- endif %}
       - name: Point latest at the scanned version
         run: just promote-latest "$VERSION"
       - name: Attach the SBOMs to the release
+{%- raw %}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+{%- endraw %}
         # `--clobber` so "re-run failed jobs" after a failed upload does
-        # not die on "asset already exists" when one of the two files had
-        # already made it up.
-        run: gh release upload --clobber "$VERSION" sbom/reference-service.cdx.json sbom/reference-service-migrations.cdx.json
+        # not die on "asset already exists" when a file had already made it
+        # up.
+        run: >-
+          gh release upload --clobber "$VERSION"
+          sbom/{{ cookiecutter.project_slug }}.cdx.json
+{%- if cookiecutter.database == "postgres" %}
+          sbom/{{ cookiecutter.project_slug }}-migrations.cdx.json
+{%- endif %}

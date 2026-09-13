@@ -56,24 +56,27 @@ CAP_PACKAGE_NAME = "abcde_fghij_klmno_pqrst_u"
 JINJA_MARKERS = (b"{{", b"{%")
 
 # Markers that must never survive a render, in ANY file (grafana excepted):
-# an unrendered cookiecutter variable, or a {% raw %}/{% endraw %}/{% if %}/
-# {% endif %} tag Jinja failed to consume. Checking for these -- rather than
-# for bare {{ / {% -- is what lets the four files below still be checked for
-# real Jinja bugs instead of being skipped outright.
+# an unrendered cookiecutter variable, a {% raw %}/{% endraw %}/{% if %}/
+# {% endif %} tag Jinja failed to consume, or a left-strip {%- tag Jinja
+# failed to consume. Checking for these -- rather than for bare {{ / {% --
+# is what lets the four files below still be checked for real Jinja bugs
+# instead of being skipped outright.
 ALWAYS_FORBIDDEN_MARKERS = (
     b"{{ cookiecutter",
     b"{% raw",
     b"{% endraw",
     b"{% if",
     b"{% endif",
+    b"{%-",
 )
 
 # Files where a literal {{ }} / {% %} is someone else's syntax, not ours,
 # and is guarded with {% raw %} so Jinja leaves it alone: golang-migrate's
 # CLI placeholders and the buildx/trivy recipes' own {{name}} interpolation
 # (justfile), Prometheus's alert-label templating (slo.yml), sqlfluff's
-# comment naming its own template markers (.sqlfluff), and a raw PromQL
-# query string (test_observability_stack.py). None of these are cookiecutter
+# comment naming its own template markers (.sqlfluff), a raw PromQL query
+# string (test_observability_stack.py), and GitHub Actions' `${{ }}`
+# expressions (the three workflows). None of these are cookiecutter
 # collisions. They are still checked for ALWAYS_FORBIDDEN_MARKERS above --
 # only their own raw-guarded braces are excused, not real Jinja mistakes.
 RAW_GUARDED_FILES = frozenset(
@@ -82,6 +85,9 @@ RAW_GUARDED_FILES = frozenset(
         "ops/prometheus/rules/slo.yml",
         ".sqlfluff",
         "tests/integration/test_observability_stack.py",
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly.yml",
+        ".github/workflows/release.yml",
     }
 )
 
@@ -110,6 +116,11 @@ def test_no_template_syntax_survives_any_combination(cookies, answers) -> None:
             offenders.append(relative)
             continue
         if relative in RAW_GUARDED_FILES:
+            if relative.startswith(".github/workflows/"):
+                # Every {{ in a workflow file must be GitHub Actions'
+                # own ${{ }} expression syntax, not a cookiecutter
+                # variable that escaped rendering.
+                assert content.count(b"{{") == content.count(b"${{"), relative
             continue
         if any(marker in content for marker in JINJA_MARKERS):
             offenders.append(relative)
@@ -189,6 +200,28 @@ def test_dashboards_are_copied_verbatim(cookies) -> None:
         template_root = ROOT / "{{cookiecutter.project_slug}}"
         source = template_root / "ops" / "grafana" / "dashboards" / name
         assert rendered.read_bytes() == source.read_bytes()
+
+
+def test_a_render_owns_its_commitizen(cookies) -> None:
+    # M7-9: a generated project has its own version, tags and release
+    # workflow, so the tool that decides its version is in its own lock.
+    root = render(cookies)
+    table = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["commitizen"]
+    assert table["version_provider"] == "uv"
+    assert table["tag_format"] == "v$version"
+    assert table["update_changelog_on_bump"] is True
+    assert table["major_version_zero"] is True
+    assert "commitizen" in dependency_names(root)
+    hooks = yaml.safe_load((root / ".pre-commit-config.yaml").read_text())
+    assert "commit-msg" in hooks["default_install_hook_types"]
+    local = next(repo for repo in hooks["repos"] if repo["repo"] == "local")
+    commitizen = next(hook for hook in local["hooks"] if hook["id"] == "commitizen")
+    assert commitizen["stages"] == ["commit-msg"]
+    assert (
+        commitizen["entry"]
+        == "uv run --locked cz check --allow-abort --commit-msg-file"
+    )
+    assert {"changelog", "next-version"} <= recipe_names(root)
 
 
 PACKAGE = "my_service"
@@ -446,6 +479,81 @@ def assert_compose_is_self_consistent(root: Path, answers: dict[str, str]) -> No
             assert source in declared_volumes, (name, "volumes", source)
 
 
+# A word that must not survive in .github/ when its backend is off. Matched
+# case-insensitively over the whole file, comments included: a comment that
+# names a container the render does not have is the M7 PR 2 rule broken.
+# "schema" is not here because "schemathesis" carries it in every render.
+WORKFLOW_BACKEND_WORDS = {
+    "database": ("postgres", "migrat"),
+    "cache": ("redis",),
+    "object_storage": ("minio", "s3"),
+}
+JUST_CALL = re.compile(r"\bjust\s+([a-z][a-z0-9-]*)")
+DEPENDABOT_ECOSYSTEMS = [
+    "uv",
+    "github-actions",
+    "docker",
+    "docker-compose",
+    "pre-commit",
+]
+
+
+def workflow_files(root: Path) -> list[Path]:
+    return sorted((root / ".github").rglob("*.yml"))
+
+
+def run_scripts(document: dict) -> Iterator[str]:
+    """Every `run:` value in a parsed workflow, shell comment lines removed."""
+    for job in document.get("jobs", {}).values():
+        for step in job.get("steps", []):
+            script = step.get("run")
+            if script:
+                yield "\n".join(
+                    line
+                    for line in script.splitlines()
+                    if not line.lstrip().startswith("#")
+                )
+
+
+def assert_workflows_are_coherent(root: Path, answers: dict[str, str]) -> None:
+    # The rendered workflows never run in this repository (GitHub runs
+    # workflows from a repository's root only), so this is their only
+    # gate before a generated project pushes them: the YAML parses, a
+    # pruned backend leaves no word behind, every `just` recipe a step
+    # calls exists in this render's justfile, and Dependabot's schedule
+    # names the five ecosystems.
+    recipes = recipe_names(root)
+    for path in workflow_files(root):
+        relative = path.relative_to(root).as_posix()
+        text = path.read_text()
+        document = yaml.safe_load(text)
+        assert isinstance(document, dict), relative
+        for key, words in WORKFLOW_BACKEND_WORDS.items():
+            if answers[key] == "none":
+                for word in words:
+                    assert word not in text.lower(), (relative, word)
+        if relative == ".github/dependabot.yml":
+            updates = document["updates"]
+            assert [u["package-ecosystem"] for u in updates] == DEPENDABOT_ECOSYSTEMS
+            assert all(u["directory"] == "/" for u in updates), relative
+            continue
+        for script in run_scripts(document):
+            for recipe in JUST_CALL.findall(script):
+                assert recipe in recipes, (relative, recipe)
+    # Deliberately checked last: with only some of ci.yml/nightly.yml/
+    # release.yml/dependabot.yml present, the per-file checks above must
+    # still run against whatever files do exist before this assertion ends
+    # the test, so a broken word or a broken `just` call is caught even
+    # while the file set is incomplete.
+    present = {p.relative_to(root).as_posix() for p in workflow_files(root)}
+    assert present >= {
+        ".github/workflows/ci.yml",
+        ".github/workflows/nightly.yml",
+        ".github/workflows/release.yml",
+        ".github/dependabot.yml",
+    }, present
+
+
 def assert_invariant(root: Path, answers: dict[str, str]) -> None:
     services = compose_services(root)
     dependencies = dependency_names(root)
@@ -476,6 +584,7 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
             ), (key, path.relative_to(root))
             assert spec["env_prefix"] not in text, (key, path.relative_to(root))
     assert_compose_is_self_consistent(root, answers)
+    assert_workflows_are_coherent(root, answers)
     # Cross-cutting: nothing empty, nothing unformatted, nothing unused.
     for directory in (p for p in root.rglob("*") if p.is_dir()):
         assert any(directory.iterdir()), (

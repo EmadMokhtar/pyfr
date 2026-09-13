@@ -1,6 +1,7 @@
-# pre-commit only installs the git hook types it is told to; `pre-commit
-# install` with no arguments wires up the `pre-commit` stage.
-default_install_hook_types: [pre-commit]
+# pre-commit only installs the git hook types it is told to. Without this,
+# `pre-commit install` wires up the `pre-commit` stage only -- the commitizen
+# hook below runs at the `commit-msg` stage and would never fire.
+default_install_hook_types: [pre-commit, commit-msg]
 
 repos:
   # ruff and uv run from the environment uv.lock pins -- the ONE place
@@ -29,6 +30,14 @@ repos:
         language: system
         pass_filenames: false
         files: ^(pyproject\.toml|uv\.lock)$
+      # Every commit message must be a Conventional Commit: the release
+      # workflow derives the version and the changelog from them. Commitizen
+      # comes from uv.lock, the one place its version lives.
+      - id: commitizen
+        name: commitizen check
+        entry: uv run --locked cz check --allow-abort --commit-msg-file
+        language: system
+        stages: [commit-msg]
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1

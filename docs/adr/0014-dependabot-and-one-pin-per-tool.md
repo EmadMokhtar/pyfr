@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-13
 ---
 
 # 0014. Dependabot, and one pin per tool
@@ -66,5 +66,10 @@ pull request
 carries the `no-docs-needed` label, because a version bump is exactly
 the internal-only change `ci.yml`'s docs-freshness job has that label
 for.
+
+- A generated project (M7) pins its own Commitizen in its own
+  `pyproject.toml`, exactly as this root does, and its own Dependabot keeps
+  that pin current: one pin per tool holds per repository, not across the
+  template and what it generates.
 
 Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

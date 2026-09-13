@@ -85,6 +85,8 @@ this service reads. Hand-editing `.env.example` or the table in
 | `just publish-images VERSION` | Build both platforms of both images and push them to GHCR under `VERSION` only. Run by `release.yml` after `scan` has passed on the same commit's images; not something to run by hand against `ghcr.io`. |
 | `just scan-published VERSION` | The scan again, over the two images just pushed under `VERSION`, for both platforms. Release only. |
 | `just promote-latest VERSION` | Point `latest` at the pushed `VERSION` index without rebuilding. Release only, after `scan-published`. |
+| `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag. Read-only. |
+| `just next-version` | Preview the version the next release would choose. Read-only — the release itself runs in the project's `release.yml`. |
 
 The repository root has its own `just audit`, over the documentation
 toolchain's lock — see [The documentation site](#the-documentation-site)
@@ -229,7 +231,7 @@ Run these from the repository root.
 | `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |
 | `just regen` | Regenerate `examples/reference-service/` from the template with the answers in `tests/reference-answers.yaml`; run this after every change to `{{cookiecutter.project_slug}}/` and commit the result. |
 | `just regen-check` | The golden diff: render and compare, writing nothing. CI's `golden` job. |
-| `just adopt` | Copy Dependabot's edits to the rendered example back into the template, then check; only for line-for-line replacements — anything else fails with the file name and is made in the template by hand. |
+| `just adopt` | Copy Dependabot's edits to the rendered example back into the template, then check; only for line-for-line replacements — anything else fails with the file name and is made in the template by hand. Also copies the root workflows' action pins into the template's workflows and regenerates the example — Dependabot's `github-actions` updates land in `/.github/workflows` only. |
 | `just audit` | pip-audit over the root `uv.lock` — the documentation and release toolchain — with the same flags as the reference service's own `audit`. CI's `security` job runs both. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee). Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml`. |
 | `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails. **This is not CI's `docs-freshness` job** — see [Documentation ships with the change](../contributing.md#documentation-ships-with-the-change) for which script each one runs. |

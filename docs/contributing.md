@@ -61,6 +61,17 @@ The example's `just precommit` steps aside inside this repository — the
 root's `.pre-commit-config.yaml` owns the hooks here, and `just precommit`
 at the root runs them over every tracked file.
 
+The template also ships a generated project's `.github/` — `ci.yml`,
+`nightly.yml`, `release.yml` and `dependabot.yml`. In this repository
+their render at `examples/reference-service/.github/` is output and
+inert: GitHub runs workflows from a repository's root only, and the root's
+own workflows test the example through `working-directory`. Edit them in
+the template. The generation tests parse every render's workflows, check
+that each `just` recipe a step calls exists in that render's justfile,
+and that a pruned backend leaves no word behind in them; `tests/test_regen.py`
+holds every `uses:` ref in the template's workflows equal to the root's.
+The workflows themselves run only in a generated project.
+
 `just security` is the other check worth running before a pull request that
 touches a dependency or a Dockerfile. It builds both images, audits the
 service's lockfile with pip-audit, scans both images with Trivy and writes the
@@ -184,6 +195,17 @@ shape — an inserted hook, a new dependency — fails with the file name,
 and you make it in the template by hand. If `main` is ever red on
 `golden` after a Dependabot merge — `adopt.yml` lost a race with another
 merge, or its rebase conflicted — run `just adopt`, commit and push.
+
+Action versions go the other way. Dependabot's `github-actions` ecosystem
+reads `/.github/workflows` only, so its bumps land in this repository's
+own workflows, and `just adopt` copies each bumped `uses:` ref into the
+template's workflows and regenerates the example. `tests/test_regen.py`
+fails when a template workflow pins an action at a different ref than the
+root does — or uses one the root does not — so every action a generated
+project runs is one Dependabot sees here. Between a `ci(deps)` merge and
+`adopt.yml`'s commit, another pull request's `docs` job can fail that
+test — its merge ref has the new root pins and the old template pins;
+re-run it once the adopted commit is on `main`.
 
 ## Working on the documentation
 
@@ -378,6 +400,13 @@ docs-install` does too, since `dev` is a default group); otherwise `uv run`
 installs it on first use, which makes the first commit slower than it needs
 to be. One pin, in one file Dependabot updates, is the whole point — see
 [ADR 0014](adr/0014-dependabot-and-one-pin-per-tool.md).
+
+A generated project carries its own Commitizen (spec M7-9): `commitizen`
+in its `dev` group, a `[tool.commitizen]` table in its `pyproject.toml`,
+the same commit-message hook, and `just changelog` / `just next-version`.
+Its version, tags and releases are its own; the root's copy decides PyFr's
+releases only. In this repository the example's copy is rendered output,
+and the root's hook is the one that checks your messages.
 
 ## One-time repository settings
 

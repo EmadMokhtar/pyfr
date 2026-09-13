@@ -1,0 +1,81 @@
+# Automated dependency updates. Weekly, one grouped pull request per
+# ecosystem, so a Monday brings at most five pull requests rather than
+# thirty.
+#
+# What is NOT here, and why: any way to update a version literal inside
+# the justfile -- Dependabot has none, which is why every tool version
+# lives in uv.lock, compose.yaml or a Dockerfile instead (the one
+# exception, pip-audit's pin in the `audit` recipe, is commented there).
+version: 2
+
+updates:
+  # uv.lock and the pins in pyproject.toml.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci(deps)"
+    labels: ["dependencies"]
+{%- if cookiecutter.database == "postgres" %}
+
+  # Dockerfile and Dockerfile.migrations: the file fetcher matches any
+  # name containing "dockerfile".
+{%- else %}
+
+  # The Dockerfile.
+{%- endif %}
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies"]
+
+  # compose.yaml. The integration tests and `just o11y-gates` read their
+  # pins from this file, so a bump here IS the bump everywhere.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      compose-images:
+        patterns: ["*"]
+    ignore:
+      # `image: {{ cookiecutter.project_slug }}:compose` is built locally by
+      # `app`; there is nothing on Docker Hub to update it from.
+      - dependency-name: "{{ cookiecutter.project_slug }}"
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies"]
+
+  # The hooks that carry a `rev:`. ruff, uv and Commitizen are local hooks
+  # resolved through uv.lock and need none.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      hooks:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: ["dependencies"]

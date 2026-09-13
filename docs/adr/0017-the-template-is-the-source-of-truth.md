@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-13
 covers:
   - scripts/regen.py
   - tests/reference-answers.yaml
@@ -54,10 +54,12 @@ hand.
   example as an ordinary file diff.
 - The example's `git blame` restarts at this decision; the history of its
   files continues in the template body, where `git mv` carried it.
-- `just adopt` serves two round trips, not one: Dependabot's pin changes,
+- `just adopt` serves three round trips, not one: Dependabot's pin changes,
   and the generated files (`openapi.json`, `.env.example`, the
   configuration reference) whose generators run in the example and whose
-  replaced lines are carried back into the template the same way.
+  replaced lines are carried back into the template the same way; and the
+  root workflows' action pins, which Dependabot can bump only there, are
+  copied into the template's workflows.
 - `ruff`, `mypy` and `import-linter` cannot run on the template body. They
   run on the example on every push, and — from PR 5 — on three sampled
   renders on merge.

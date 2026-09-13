@@ -554,6 +554,27 @@ promote-latest version registry="ghcr.io/{{ cookiecutter.github_org | lower }}":
         "{% raw %}{{registry}}{% endraw %}/{{ cookiecutter.project_slug }}-migrations:{% raw %}{{version}}{% endraw %}"
 {%- endif %}
 
+# Preview the changelog entry the next release will write. Read-only.
+changelog:
+    uv run --locked cz changelog --dry-run --incremental
+
+# Preview the version the next release will choose, without doing it.
+#
+# The release itself runs in CI (.github/workflows/release.yml); this is for
+# answering "what will merging this produce?" before merging. Before the
+# first release there is no tag for Commitizen to count from -- `cz bump
+# --dry-run` then asks whether this is the first tag and, told yes, exits
+# 21 for "nothing to bump" -- so that state is answered here instead: the
+# workflow's first run tags the version on disk as it is.
+next-version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -z "$(git tag -l)" ]; then
+        echo "No tag yet: the first release tags v$(uv run --locked cz version --project) as it is, without a bump."
+        exit 0
+    fi
+    uv run --locked cz bump --dry-run
+
 up:
     docker compose up --build
 

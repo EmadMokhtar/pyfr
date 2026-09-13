@@ -9,12 +9,20 @@ tests/reference-answers.yaml (spec M7-1). Three modes:
   regen.py            render and sync the render into the example
   regen.py --check    render and compare; exit 1 on any difference
   regen.py --adopt    copy each line changed in the example back into the
-                      template file that renders it, then check
+                      template file that renders it, then check; then
+                      copy the root workflows' action pins into the
+                      template's workflows and regenerate
 
 `--adopt` exists for Dependabot (spec M7-10): it edits the rendered example
 because it cannot parse Jinja. A pin line never contains Jinja, so the
 replacement is literal; any other shape of change is refused with the file
 name, and is made in the template by hand.
+
+Action pins go the other way: Dependabot's github-actions updates land in
+the root's .github/workflows only, so --adopt copies each bumped `uses:`
+ref from there into the template's workflows. The example's own
+`.github/workflows/` never reaches `adopt()`: Dependabot does not read
+it, and its `uses:` lines repeat, which `adopt()` would refuse.
 
 The render runs with PYFR_REGEN set, so the post-generation hook prunes and
 stops: no git init, no uv sync, no network. uv.lock is the one file outside
@@ -26,6 +34,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -42,6 +51,18 @@ ANSWERS_FILE = ROOT / "tests" / "reference-answers.yaml"
 
 # Resolver output, not template content (spec M7-4).
 EXCLUDED = frozenset({"uv.lock"})
+
+# Dependabot's github-actions ecosystem reads /.github/workflows only, so its
+# bumps land in the root's workflows; the template's workflows follow them
+# through --adopt (spec section 8, amended in PR 3).
+ROOT_WORKFLOWS = ROOT / ".github" / "workflows"
+TEMPLATE_WORKFLOWS = TEMPLATE_BODY / ".github" / "workflows"
+# A SHA pin's trailing `# vN` comment is not compared or rewritten; the
+# repository pins by tag.
+USES = re.compile(
+    r"^(?P<head>\s*-?\s*uses:\s*)(?P<action>[\w.-]+/[\w./-]+)@"
+    r"(?P<ref>[^\s#]+)(?P<tail>.*)$"
+)
 
 # The post-generation hook keeps the chosen LICENSE.<choice> as LICENSE, so
 # that one rendered path maps back to a template path the answers decide.
@@ -225,6 +246,52 @@ def line_runs(lines: list[str], block: list[str]) -> list[int]:
     ]
 
 
+def action_pins(workflows: Path) -> dict[str, str]:
+    """`owner/repo` -> ref for every `uses:` line in the directory's *.yml."""
+    pins: dict[str, str] = {}
+    for path in sorted(workflows.glob("*.yml")):
+        for line in path.read_text().splitlines():
+            match = USES.match(line)
+            if match is None:
+                continue
+            action, ref = match["action"], match["ref"]
+            if pins.setdefault(action, ref) != ref:
+                raise AdoptError(
+                    f"{action} is pinned at both {pins[action]} and {ref} "
+                    f"under {workflows}; pin it once"
+                )
+    return pins
+
+
+def adopt_action_pins(source: Path, target: Path) -> list[str]:
+    """Rewrite each `uses:` ref under `target` to the ref `source` pins it at.
+
+    Only the ref changes: indentation, the action name and any trailing
+    comment stay. An action `source` does not use is left alone. Returns the
+    names of the files it rewrote.
+    """
+    pins = action_pins(source)
+    changed: list[str] = []
+    for path in sorted(target.glob("*.yml")):
+        lines = path.read_text().splitlines(keepends=True)
+        rewritten: list[str] = []
+        for line in lines:
+            match = USES.match(line.rstrip("\n"))
+            if (
+                match is not None
+                and pins.get(match["action"], match["ref"]) != match["ref"]
+            ):
+                line = (
+                    f"{match['head']}{match['action']}@"
+                    f"{pins[match['action']]}{match['tail']}\n"
+                )
+            rewritten.append(line)
+        if rewritten != lines:
+            path.write_text("".join(rewritten))
+            changed.append(path.name)
+    return changed
+
+
 def report(comparison: Comparison, rendered: Path, example: Path) -> None:
     for name in comparison.missing:
         print(f"missing from the example: {name}")
@@ -267,7 +334,23 @@ def main(argv: list[str] | None = None) -> int:
             again = Path(scratch) / "again"
             again.mkdir()
             rendered = render(ROOT, answers, again)
-        if args.check or args.adopt:
+            comparison = compare(rendered, EXAMPLE)
+            if not comparison.clean:
+                report(comparison, rendered, EXAMPLE)
+                return 1
+            # The other direction: Dependabot bumps the root workflows'
+            # action pins, the template's workflows follow, and the example
+            # is regenerated so the golden diff stays clean.
+            repinned = adopt_action_pins(ROOT_WORKFLOWS, TEMPLATE_WORKFLOWS)
+            for name in repinned:
+                print(f"adopted the root's action pins into .github/workflows/{name}")
+            if repinned:
+                repinned_render = Path(scratch) / "repinned"
+                repinned_render.mkdir()
+                sync(render(ROOT, answers, repinned_render), EXAMPLE)
+            print("examples/reference-service matches the template.")
+            return 0
+        if args.check:
             comparison = compare(rendered, EXAMPLE)
             if comparison.clean:
                 print("examples/reference-service matches the template.")

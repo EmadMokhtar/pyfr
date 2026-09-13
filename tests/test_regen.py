@@ -196,3 +196,69 @@ def test_adopt_refuses_a_line_that_is_not_unique_in_the_template(trees) -> None:
 
     with pytest.raises(regen.AdoptError, match="exactly once"):
         regen.adopt(rendered, example, template_body, ANSWERS)
+
+
+ROOT_WORKFLOWS = ROOT / ".github" / "workflows"
+TEMPLATE_WORKFLOWS = ROOT / "{{cookiecutter.project_slug}}" / ".github" / "workflows"
+
+
+def test_action_pins_reads_every_uses_line(tmp_path: Path) -> None:
+    (tmp_path / "a.yml").write_text(
+        "steps:\n"
+        "  - uses: actions/checkout@v7\n"
+        "  - name: x\n"
+        "    uses: astral-sh/setup-uv@v7  # pinned by Dependabot\n"
+        "    with:\n"
+        "      enable-cache: true\n"
+    )
+    assert regen.action_pins(tmp_path) == {
+        "actions/checkout": "v7",
+        "astral-sh/setup-uv": "v7",
+    }
+
+
+def test_action_pins_refuses_two_refs_for_one_action(tmp_path: Path) -> None:
+    (tmp_path / "a.yml").write_text("- uses: actions/checkout@v7\n")
+    (tmp_path / "b.yml").write_text("- uses: actions/checkout@v6\n")
+    with pytest.raises(regen.AdoptError, match="actions/checkout"):
+        regen.action_pins(tmp_path)
+
+
+def test_adopt_action_pins_rewrites_only_the_ref(tmp_path: Path) -> None:
+    source = tmp_path / "root"
+    target = tmp_path / "template"
+    source.mkdir()
+    target.mkdir()
+    (source / "ci.yml").write_text(
+        "- uses: actions/checkout@v8\n- uses: docker/login-action@v4\n"
+    )
+    (target / "ci.yml").write_text(
+        "      - uses: actions/checkout@v7\n"
+        "      - uses: other/action@v1  # not in the root: left alone\n"
+    )
+    (target / "release.yml").write_text("      - uses: docker/login-action@v4\n")
+    assert regen.adopt_action_pins(source, target) == ["ci.yml"]
+    assert (target / "ci.yml").read_text() == (
+        "      - uses: actions/checkout@v8\n"
+        "      - uses: other/action@v1  # not in the root: left alone\n"
+    )
+    assert (
+        target / "release.yml"
+    ).read_text() == "      - uses: docker/login-action@v4\n"
+    # Idempotent: a second pass changes nothing.
+    assert regen.adopt_action_pins(source, target) == []
+
+
+def test_the_template_workflows_pin_what_the_root_workflows_pin() -> None:
+    # Dependabot's github-actions ecosystem reads /.github/workflows only,
+    # so the template's pins follow the root's through `just adopt`. An
+    # action the root does not use would never be bumped: add it to a root
+    # workflow too, or do not use it in the template.
+    template = regen.action_pins(TEMPLATE_WORKFLOWS)
+    root = regen.action_pins(ROOT_WORKFLOWS)
+    drift = {
+        action: (ref, root.get(action))
+        for action, ref in template.items()
+        if root.get(action) != ref
+    }
+    assert drift == {}

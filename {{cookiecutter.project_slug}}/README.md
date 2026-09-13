@@ -23,7 +23,7 @@ the service starts and serves correctly with none of them configured.
 
 ```bash
 uv sync                    # or: just install
-uv run pre-commit install  # one-time: wires up the lint hooks
+uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
 just dev                   # http://localhost:{{ cookiecutter.http_port }}/docs — in-memory repository
 ```
 
@@ -71,9 +71,11 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
 | `just security` | `build-images`, `audit`, `scan`, `sbom` — what CI's `security` job runs; not part of `check-all` because its result changes with the advisory databases, not the code |
 | `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` with no output — what CI's `build` job runs |
-| `just publish-images VERSION` | Push both platforms of both images to GHCR under `VERSION` — run by the release workflow, not by hand |
+| `just publish-images VERSION` | Push both platforms of both images to GHCR (GitHub Container Registry) under `VERSION` — run by the release workflow, not by hand |
 | `just scan-published VERSION` | Scan the pushed images for both platforms — release workflow only |
 | `just promote-latest VERSION` | Point `latest` at the scanned `VERSION` — release workflow only |
+| `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag — read-only |
+| `just next-version` | Preview the version the next release would choose — read-only; the release itself runs in CI (`.github/workflows/release.yml`) |
 | `just openapi` | Regenerate the committed `openapi.json` from the running app — read the diff before committing it |
 | `just test-contract` | The contract tier: Schemathesis conformance testing over ASGI. The drift check runs in `just test` / `just check` instead — see [Contract governance](#contract-governance) |
 | `just contract-gates` | `test-contract`, then the `oasdiff` breaking-change check against `openapi.baseline.json` — needs Docker |
@@ -396,9 +398,12 @@ never runs; a Dependabot bump of that base image is the moment to re-scan
 and drop them.
 
 On release, the repository's workflow builds and scans the
-single-architecture images first, then builds both images for both
-architectures and pushes `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}` and
-`ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations` under the
+single-architecture images first, then builds every image for both
+architectures and pushes `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}`
+{%- if cookiecutter.database == "postgres" %}
+and `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations`
+{%- endif %}
+under the
 repository's version, scans the pushed digests for both platforms, generates
 the SBOMs from those same references (so their subject is the image people
 pull), and only then points `latest` at that version; the SBOMs are attached
@@ -408,6 +413,47 @@ workflow artifact. Nothing is pushed from a pull request. pip is removed from th
 runtime image — it was the only source of findings there — and the image is
 deliberately not distroless: the start command needs a shell to expand
 `APP_HTTP_PORT`.
+
+## Continuous integration and releases
+
+Three workflows under `.github/workflows/` and a Dependabot schedule ship
+with the project and run from the first push:
+
+| Workflow | Runs | What it does |
+|---|---|---|
+| `ci.yml` | every push to `main` and every pull request | `just check`, `just test-integration`, `just gates`, `just contract-gates` and `just o11y-gates` as separate jobs, so a failure names its gate; a two-architecture build of every image; `just audit`, `just scan` and `just sbom` |
+| `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
+| `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
+
+Until PyFr's next release moves the documentation site into the template,
+the `check` and `gates` jobs stay red: `just test` and `just gates` look
+for `docs/reference/configuration.md` two directories above the project,
+where it lives in PyFr's own repository.
+
+`.github/dependabot.yml` opens one grouped pull request per ecosystem each
+week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
+
+Four settings live in the GitHub interface, not in this repository:
+
+- **Settings → Actions → General → Workflow permissions → "Read and write
+  permissions"**, so `release.yml` can push its tag and bump commit.
+- **A `RELEASE_TOKEN` secret, only if a ruleset on `main` requires a pull
+  request.** The workflow token cannot pass such a ruleset (`GH013`), and
+  on a user-owned repository GitHub does not let the Actions app be
+  exempted; a fine-grained personal access token of an exempt admin (this
+  repository only; Contents: read and write) stored as `RELEASE_TOKEN` is
+  what `release.yml` pushes with. Without such a ruleset, leave the secret
+  out — the workflow falls back to its own token.
+- **Squash-merge as the merge strategy**, so the pull request title — a
+  Conventional Commit — becomes the commit on `main` that Commitizen reads.
+- **After the first release, make each GHCR package public** under the
+  package's own settings; `publish-images` creates them private, and
+  `docker pull` fails for anyone outside the repository until then. The
+  workflow token can push only to packages under the repository's own
+  owner, so the repository must live at
+  `github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}`
+  — or pass another `registry` to `publish-images`, `scan-published` and
+  `promote-latest`.
 
 ## Graceful shutdown and the orchestrator's kill deadline
 
