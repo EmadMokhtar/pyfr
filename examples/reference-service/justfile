@@ -273,27 +273,29 @@ docs-examples:
     # timeout in `--wait` cannot leave the stack running.
     #
     # Its own Compose project, `-p`, and never the default one: `down -v`
-    # removes the project's volumes, and in the default project those are
-    # `postgres-data` and `minio-data` -- the database and receipts of a
-    # `just up` stack a developer may have running. With its own project
-    # the volumes are its own, and `down -v` deletes nothing anyone keeps.
+    # removes the project's volumes, and in the default project those hold
+    # whatever a `just up` stack a developer may have running has kept --
+    # the `volumes:` block at the end of compose.yaml lists them. With its
+    # own project the volumes are its own, and `down -v` deletes nothing
+    # anyone keeps.
     # The host ports are still the same, so this cannot run WHILE `just
     # up` is running -- `up --wait` fails on the port clash, the trap
     # tears down only this project, and nothing of the other is touched.
     #
-    # `up --wait app redis`, naming the services: `up --wait` with no name
-    # also starts the `seed` one-shot, and compose counts a container that
-    # has EXITED -- even with status 0 -- as a failed wait unless some
-    # started service depends on it with service_completed_successfully.
-    # `app` depends on `migrate` and `minio-bootstrap` that way, which is
-    # why they never tripped this; nothing depends on `seed`. Naming `app`
-    # starts exactly its dependency graph, which is the stack the
-    # documented examples need -- none of them relies on seeded data, and
-    # the plan forbids one from doing so, because seeded ids differ per
-    # machine. `redis` is named too: `app` deliberately does not depend on
-    # it (the cache is optional, fail-open), so naming `app` alone would
-    # start the stack without a cache and the examples would exercise the
-    # fail-open path rather than the cached one `just up` runs.
+    # Naming the services on `up --wait`: with no name it also starts the
+    # `seed` one-shot, and compose counts a container that has EXITED --
+    # even with status 0 -- as a failed wait unless some started service
+    # depends on it with service_completed_successfully. Every other
+    # one-shot in compose.yaml is one that `app` depends on in that way,
+    # which is why none of them ever tripped this; nothing depends on
+    # `seed`. Naming `app` starts exactly its dependency graph, which is
+    # the stack the documented examples need -- none of them relies on
+    # seeded data, and the plan forbids one from doing so, because seeded
+    # ids differ per machine.
+    # `redis` is named too: `app` deliberately does not depend on it (the
+    # cache is optional, fail-open), so naming `app` alone would start the
+    # stack without a cache and the examples would exercise the fail-open
+    # path rather than the cached one `just up` runs.
     set -euo pipefail
     project=reference-service-docs-examples
     trap 'docker compose -p "$project" down -v' EXIT
@@ -353,7 +355,8 @@ check: lint typecheck imports test precommit
 # Separate from `check` so the fast loop stays fast and usable without
 # Docker.
 #
-# Everything `check` does, plus the container tier and all five gates.
+# Everything `check` does, plus the container tier and the three gate
+# recipes -- the five jobs CI runs separately, as one local command.
 check-all: check test-integration gates o11y-gates contract-gates
 
 # Audit every pinned dependency in uv.lock against the PyPI advisory
@@ -386,15 +389,16 @@ audit:
     uv export --frozen --all-groups --format requirements.txt --no-emit-project \
         | uvx pip-audit==2.10.1 --requirement /dev/stdin --disable-pip --require-hashes --strict --progress-spinner off
 
-# Scan both images for known vulnerabilities and embedded secrets, failing
-# on any HIGH or CRITICAL finding that has a fix. Trivy runs from the
-# `trivy` compose service -- see compose.yaml for why.
+# Scan every image `build-images` built for known vulnerabilities and
+# embedded secrets, failing on any HIGH or CRITICAL finding that has a
+# fix. Trivy runs from the `trivy` compose service -- see compose.yaml for
+# why.
 #
 # --ignore-unfixed: a finding with no fix is nothing a pull request can
 # act on; it is still visible without the flag. .trivyignore.yaml is the
-# only exemption path, and every entry there expires (ADR 0016). BOTH
-# images, always: v4.19.0 of the migrate base carried a CRITICAL in pgx
-# that a clean application image would have hidden.
+# only exemption path, and every entry there expires (ADR 0016).
+# BOTH images, always: v4.19.0 of the migrate base carried a CRITICAL in
+# pgx that a clean application image would have hidden.
 #
 # Takes image references so release.yml can scan what it just built and
 # nightly.yml can scan what was last published.
@@ -422,7 +426,7 @@ sbom app="reference-service:ci" migrations="reference-service-migrations:ci":
 # advisory databases, not with the code.
 security: build-images audit scan sbom
 
-# Build both container images, exactly as CI does.
+# Build every container image this project ships, exactly as CI does.
 build-images:
     # Two separate `docker build` calls rather than `docker compose build`:
     # the migrations image (Dockerfile.migrations) is `FROM
@@ -432,7 +436,7 @@ build-images:
     # from the other. No `-f Dockerfile` on the first: that is docker's own
     # default, and the second build needs `-f` only because it is not.
     # `--load` is a no-op on the default `docker` driver and is what keeps
-    # this image in the daemon if a developer has made a
+    # the built image in the daemon if a developer has made a
     # `docker-container` builder current (`docker buildx create --use`) --
     # `scan` and `sbom` read the daemon over the socket.
     docker build --load -t reference-service:ci .
@@ -449,7 +453,7 @@ _buildx-builder name="pyfr":
     docker buildx inspect {{name}} >/dev/null 2>&1 \
         || docker buildx create --name {{name}} --driver docker-container
 
-# Build both images for linux/amd64 and linux/arm64 with no output: proof
+# Build every image for linux/amd64 and linux/arm64 with no output: proof
 # that the arm64 side still builds, which is what CI's `build` job is for.
 # Apple Silicon laptops and cloud servers share one image (spec 12); this
 # is the recipe that keeps that true. Under emulation the whole thing took
@@ -459,7 +463,7 @@ build-multiarch: _buildx-builder
     docker buildx build --builder pyfr --platform linux/amd64,linux/arm64 \
         -f Dockerfile.migrations .
 
-# Build both platforms of both images and push them under the version
+# Build both platforms of every image and push them under the version
 # given -- and ONLY the version. `latest` is created afterwards by
 # `promote-latest`, once `scan-published` has passed on the pushed
 # digests, so `latest` never points at an image nobody scanned (ADR 0015).
@@ -469,9 +473,9 @@ build-multiarch: _buildx-builder
 # local images; not something to run by hand against ghcr.io.
 #
 # `org.opencontainers.image.source` is a static LABEL in each Dockerfile;
-# version and revision are only known here. The registry namespace is a
-# literal until M7 makes it a template variable. `builder` exists so the
-# push path can be rehearsed against a local registry with a builder that
+# version and revision are only known here. `registry` defaults to
+# ghcr.io under the `github_org` answer. `builder` exists so the push
+# path can be rehearsed against a local registry with a builder that
 # has host networking (Verified Fact 9): `docker run -d -p 5001:5000
 # registry:3`, a builder created with `--driver-opt network=host` and a
 # buildkitd.toml allowing plain HTTP to localhost:5001, then
@@ -487,15 +491,15 @@ publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-b
         -t "{{registry}}/reference-service-migrations:{{version}}" \
         -f Dockerfile.migrations .
 
-# Scan the two images just pushed under `version`, for BOTH platforms.
+# Scan every image just pushed under `version`, for BOTH platforms.
 # `scan` above gates the push on the local single-architecture build;
 # this is what proves the artifact people will pull -- the exact pushed
 # digest, amd64 and arm64 alike -- carries no fixed HIGH or CRITICAL
 # finding, and it is what `latest` waits for. `--platform` makes Trivy
 # pick that manifest out of the pushed index; without it a remote image
-# is scanned for the host's own architecture only. A loop, unlike `scan`,
-# because two images times two platforms is four otherwise identical
-# commands.
+# is scanned for the host's own architecture only. A loop, unlike `scan`:
+# each image is scanned once per platform, and those runs are otherwise
+# identical commands.
 scan-published version registry="ghcr.io/emadmokhtar":
     #!/usr/bin/env bash
     set -euo pipefail

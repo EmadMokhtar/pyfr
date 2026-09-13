@@ -235,10 +235,11 @@ only_mutate = [
 
 # mutmut runs the suite inside a `mutants/` COPY of the project, and that
 # copy contains source_paths, tests/ and a fixed list of lock files —
-# nothing else. Without these two, M2's tests/unit/test_dashboards.py
-# fails with "mutants/ops/grafana/dashboards not found" and M1's
-# test_migration_files.py cannot find the files it hashes.
+# nothing else. Without `ops`, M2's tests/unit/test_dashboards.py fails
+# with "mutants/ops/grafana/dashboards not found".
 {%- if cookiecutter.database == "postgres" %}
+# Without `migrations`, M1's test_migration_files.py cannot find the files
+# it hashes.
 also_copy = ["ops", "migrations"]
 {%- else %}
 also_copy = ["ops"]

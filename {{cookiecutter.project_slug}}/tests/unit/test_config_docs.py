@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Annotated
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from {{ cookiecutter.package_name }}.observability.redaction import DEFAULT_REDACT_FIELDS
 
@@ -28,6 +28,7 @@ from generate_config_docs import (
     MARKER_END,
     ConfigGroup,
     ConfigVariable,
+    _is_secret,
     _render_type,
     check_outputs,
     render_env_example,
@@ -78,23 +79,25 @@ def test_doubly_nested_models_repeat_the_delimiter(
 ) -> None:
     """PaymentSettings.http is the only double nesting in the model."""
     assert "APP_PAYMENT__HTTP__CONNECT_TIMEOUT_SECONDS" in by_name
-{%- if cookiecutter.database == "postgres" or cookiecutter.object_storage == "s3" %}
 
 
 def test_optional_submodels_are_unwrapped_not_skipped(
     by_name: dict[str, ConfigVariable],
 ) -> None:
-    """Verified Fact 4: `DatabaseSettings | None` must be recursed into.
+    """Verified Fact 4: an `X | None` submodel must be recursed into.
 
     A walker that only recurses into bare BaseModel annotations silently
-    documents 10 variables instead of 38.
+    documents the top-level fields and the always-on groups and nothing
+    behind an optional one -- confidently incomplete, with no error.
+    `PaymentSettings | None` is in every render; the backends' groups are
+    the same shape, so each is checked where it exists.
     """
+    assert "APP_PAYMENT__BASE_URL" in by_name
 {%- if cookiecutter.database == "postgres" %}
     assert "APP_DATABASE__DSN" in by_name
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
     assert "APP_STORAGE__BUCKET" in by_name
-{%- endif %}
 {%- endif %}
 
 
@@ -105,13 +108,18 @@ def test_default_factory_fields_do_not_leak_the_undefined_sentinel(
     levels = by_name["APP_LOG__LEVELS"]
     assert "PydanticUndefined" not in levels.default_label
     assert levels.default_label == "{}"
-{%- if cookiecutter.object_storage == "s3" %}
 
 
-def test_secret_fields_are_flagged(by_name: dict[str, ConfigVariable]) -> None:
-    assert by_name["APP_STORAGE__ACCESS_KEY_ID"].secret is True
-    assert by_name["APP_STORAGE__SECRET_ACCESS_KEY"].secret is True
-{%- endif %}
+# No always-present field is a bare `SecretStr`: `PaymentSettings.api_key`
+# is `SecretStr | None`, and the object-storage credentials exist only in
+# renders that chose that backend. A throwaway model keeps the bare shape
+# pinned in every render; the union shape is pinned on the real model below.
+class _BareSecret(BaseModel):
+    x: SecretStr
+
+
+def test_a_bare_secret_field_is_flagged() -> None:
+    assert _is_secret(_BareSecret.model_fields["x"]) is True
 
 
 def test_secret_inside_a_union_is_flagged(by_name: dict[str, ConfigVariable]) -> None:
@@ -184,22 +192,24 @@ def test_network_types_render_by_name(by_name: dict[str, ConfigVariable]) -> Non
     assert by_name["APP_CACHE__DSN"].type_label == "Redis URL"
 {%- endif %}
     assert by_name["APP_PAYMENT__BASE_URL"].type_label == "URL"
-{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_secret_type_label_says_secret(by_name: dict[str, ConfigVariable]) -> None:
-    assert by_name["APP_STORAGE__ACCESS_KEY_ID"].type_label == "secret"
-{%- endif %}
-{%- if cookiecutter.object_storage == "s3" %}
+    """Verified Fact 3 again, for the label: `SecretStr | None` must render
+    as "secret", not fall through to the bare "string" label.
+    """
+    assert by_name["APP_PAYMENT__API_KEY"].type_label == "secret"
 
 
 def test_required_field_in_an_optional_group_is_marked(
     by_name: dict[str, ConfigVariable],
 ) -> None:
-    """The rule the hand-written table states for every APP_STORAGE__ field."""
-    assert by_name["APP_STORAGE__BUCKET"].required_in_group is True
-    assert by_name["APP_STORAGE__REGION"].required_in_group is False
-{%- endif %}
+    """`base_url` has no default and `payment` is optional, so it is
+    required once any `APP_PAYMENT__*` variable is set. `api_key` has a
+    default, so setting the group does not make it required.
+    """
+    assert by_name["APP_PAYMENT__BASE_URL"].required_in_group is True
+    assert by_name["APP_PAYMENT__API_KEY"].required_in_group is False
 
 
 def test_optional_groups_are_marked_optional(groups: list[ConfigGroup]) -> None:
@@ -305,17 +315,15 @@ def test_markdown_never_emits_a_raw_newline_inside_a_row() -> None:
     for line in render_markdown_table().splitlines():
         if line.startswith("| `APP_"):
             assert line.rstrip().endswith("|")
-{%- if cookiecutter.object_storage == "s3" %}
 
 
 def test_markdown_marks_a_required_field_in_an_optional_group() -> None:
     row = next(
         line
         for line in render_markdown_table().splitlines()
-        if line.startswith("| `APP_STORAGE__BUCKET`")
+        if line.startswith("| `APP_PAYMENT__BASE_URL`")
     )
     assert "required once any" in row
-{%- endif %}
 
 
 def _columns(row: str) -> list[str]:
