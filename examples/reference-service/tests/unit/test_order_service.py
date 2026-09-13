@@ -5,7 +5,10 @@ import pytest
 from pydantic import ValidationError
 from pydantic import ValidationError as PydanticValidationError
 
-from reference_service.domain.errors import OrderNotFoundError, PaymentDeclinedError
+from reference_service.domain.errors import (
+    OrderNotFoundError,
+    PaymentDeclinedError,
+)
 from reference_service.domain.order import OrderId
 from reference_service.infrastructure.errors import PaymentUnavailableError
 from reference_service.services.order import (

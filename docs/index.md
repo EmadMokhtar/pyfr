@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 ---
 
 # PyFr
@@ -16,22 +16,26 @@ placeholders. The [cookiecutter](https://cookiecutter.readthedocs.io/) tool
 asks you questions, substitutes your answers into the skeleton, and writes a
 new repository to disk.
 
-!!! warning "Status: M0–M6 done, M7–M8 to go"
+!!! warning "Status: M0–M6 done, M7 in progress, M8 to go"
 
-    **The template itself does not exist yet.** What exists today is the
-    *reference service* — the complete, running service that the template
-    will later be built from, in
-    [`examples/reference-service/`](https://github.com/EmadMokhtar/pyfr/tree/main/examples/reference-service).
+    **The template is not finished yet.** `{{cookiecutter.project_slug}}/`
+    is the template body, and it is already the source of truth: the
+    *reference service* —
+    [`examples/reference-service/`](https://github.com/EmadMokhtar/pyfr/tree/main/examples/reference-service)
+    — is rendered from it and never edited by hand. Backend prompts and
+    pruning, a generated project's own workflows and documentation site,
+    and the full-suite tests are still to come.
 
-    PyFr is built in three phases. Phase A (milestones M0 to M6) builds that
+    PyFr is built in three phases. Phase A (milestones M0 to M6) built that
     service as ordinary Python, with no template placeholders anywhere. Phase
-    B (M7) converts it into the template. Phase C keeps the two in step
-    forever after. The reason is stated plainly in the design: never debug
-    Jinja and Python at the same time. (Jinja is the placeholder language
-    cookiecutter uses.)
+    B (M7) is converting it into the template, in five pull requests.
+    Phase C keeps the two in step forever after. The reason is stated
+    plainly in the design: never debug Jinja and Python at the same time.
+    (Jinja is the placeholder language cookiecutter uses.)
 
-    M0 through M6 are done. **PyFr becomes a usable template at M7.** See
-    the [roadmap](roadmap.md) for what each milestone delivers.
+    M0 through M6 are done, and M7 is in progress. **PyFr becomes a usable
+    template at the end of M7.** See the [roadmap](roadmap.md) for what each
+    milestone delivers.
 
     Until then you can read the reference service, run it, and copy from it.
     Everything on this site describes code that exists and runs today.

@@ -11,17 +11,15 @@ import datetime as dt
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from check_docs_freshness import (  # noqa: E402
+from check_docs_freshness import (
     MAX_REVIEW_AGE_DAYS,
     Page,
     parse_frontmatter,
     stale_pages,
-    undeclared_pages,
     uncovered_changes,
+    undeclared_pages,
 )
 
 
@@ -96,9 +94,7 @@ def test_undeclared_pages_returns_only_pages_without_review_dates() -> None:
     page_with_date = Page(
         path="docs/with-date.md", last_reviewed=dt.date(2026, 9, 10), covers=[]
     )
-    page_without_date = Page(
-        path="docs/without-date.md", last_reviewed=None, covers=[]
-    )
+    page_without_date = Page(path="docs/without-date.md", last_reviewed=None, covers=[])
     result = undeclared_pages([page_with_date, page_without_date])
     assert [page.path for page in result] == ["docs/without-date.md"]
 

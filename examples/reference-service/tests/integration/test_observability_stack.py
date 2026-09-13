@@ -28,7 +28,10 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from reference_service.main import create_app
-from reference_service.observability.otel import build_providers, instrument_fastapi
+from reference_service.observability.otel import (
+    build_providers,
+    instrument_fastapi,
+)
 from reference_service.settings import Settings
 from tests.compose_images import compose_image
 

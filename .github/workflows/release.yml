@@ -80,10 +80,10 @@ jobs:
           enable-cache: true
 
       - name: Install just
-        # For `just contract-release` in the bump step. This puts a binary
-        # on the runner's PATH and writes nothing into the checkout, so it
-        # does not fall foul of the "nothing writes before the bump" rule
-        # that step's comment explains.
+        # For `just regen` in the bump step. This puts a binary on the
+        # runner's PATH and writes nothing into the checkout, so it does
+        # not fall foul of the "nothing writes before the bump" rule that
+        # step's comment explains.
         uses: extractions/setup-just@v4
 
       - name: Identify the committer
@@ -108,8 +108,10 @@ jobs:
         # --locked` is safe here: it refuses to rewrite uv.lock rather than
         # updating it, and `.venv/` is untracked and ignored (M6 plan,
         # Verified Fact 12). The one deliberate write is the
-        # contract-baseline promotion inside the else branch below, which
-        # relies on exactly this behaviour to ride along in the bump commit.
+        # contract-baseline promotion inside the else branch below -- the
+        # template body's baseline, and the example `just regen` renders
+        # from it -- which relies on exactly this behaviour to ride along
+        # in the bump commit.
         #
         # This repository starts with no git tags at all, and `cz bump`
         # cannot cut the first release under that condition -- verified,
@@ -160,10 +162,22 @@ jobs:
             # above makes no commit, so its baseline was promoted on the
             # branch that introduced this workflow instead.
             #
+            # In PyFr's own repository the baseline lives in the template
+            # body and examples/reference-service/ is rendered from it
+            # (ADR 0017), so the promotion happens there and `just regen`
+            # carries it into the example. Promoting inside the example
+            # instead -- `just contract-release` there -- would leave the
+            # example's baseline ahead of the template's, and the `golden`
+            # job red from the next pull request on. A generated project
+            # runs `just contract-release` in its own tree. `just regen`
+            # runs through `uv run --group dev`, whose sync writes only
+            # the untracked `.venv/`.
+            #
             # If cz then decides there is nothing to release (exit 3 or
-            # 21 below), this write is discarded with the runner: nothing
-            # is committed and nothing is pushed.
-            (cd examples/reference-service && just contract-release)
+            # 21 below), these writes are discarded with the runner:
+            # nothing is committed and nothing is pushed.
+            cp '{{cookiecutter.project_slug}}/openapi.json' '{{cookiecutter.project_slug}}/openapi.baseline.json'
+            just regen
 
             set +e
             uv run --locked --group dev cz bump --yes --changelog
@@ -336,8 +350,8 @@ jobs:
         # the same lockfile and Debian package versions.
         run: >-
           just sbom
-          "ghcr.io/emadmokhtar/pyfr-reference-service:$VERSION"
-          "ghcr.io/emadmokhtar/pyfr-reference-service-migrations:$VERSION"
+          "ghcr.io/emadmokhtar/reference-service:$VERSION"
+          "ghcr.io/emadmokhtar/reference-service-migrations:$VERSION"
       - name: Point latest at the scanned version
         run: just promote-latest "$VERSION"
       - name: Attach the SBOMs to the release

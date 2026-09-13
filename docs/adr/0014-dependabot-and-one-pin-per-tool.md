@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 ---
 
 # 0014. Dependabot, and one pin per tool
@@ -48,10 +48,12 @@ knowingly: `pip-audit==2.10.1`, pinned identically in both the root and
 the reference-service justfiles — its advisory data is fetched live, so a
 stale pinned binary still reports new findings — and the `oasdiff` image
 pinned in `examples/reference-service/scripts/check_contract_compatibility.py`
-as `tufin/oasdiff:v1.31.0`, a pin that predates M6. The ruff hooks carry
-`--project examples/reference-service` until M7 makes the reference
-service standalone. Every Dependabot pull request carries the
-`no-docs-needed` label, because a version bump is exactly the
-internal-only change `ci.yml`'s docs-freshness job has that label for.
+as `tufin/oasdiff:v1.31.0`, a pin that predates M6. ruff is pinned in
+both locks — the root's, for `hooks/`, `scripts/` and `tests/`, and the
+reference service's, which is the template's. Two projects, two locks,
+and Dependabot's `uv` entries move both. Every Dependabot pull request
+carries the `no-docs-needed` label, because a version bump is exactly
+the internal-only change `ci.yml`'s docs-freshness job has that label
+for.
 
 Full reasoning: [the M6 plan's Design section](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/plans/2026-09-11-pyfr-m6-supply-chain.md).

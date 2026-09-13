@@ -1,0 +1,12 @@
+# The answers examples/reference-service/ is rendered from. Everything on;
+# the names the reference service has carried since M0. PR 2 adds the three
+# backend answers when their prompts exist.
+project_name: Reference Service
+project_slug: reference-service
+package_name: reference_service
+description: The PyFr reference service.
+author_name: Emad Mokhtar
+author_email: 311636+EmadMokhtar@users.noreply.github.com
+github_org: EmadMokhtar
+http_port: "8000"
+license: MPL-2.0

@@ -1,4 +1,5 @@
-# Repository-level commands. These operate on the documentation site.
+# Repository-level commands: the documentation site, the root's own tests,
+# and the template's regeneration loop (regen, regen-check, adopt).
 #
 # The reference service has its own justfile with its own recipes; run those
 # from examples/reference-service/. The two projects are never synced
@@ -32,6 +33,35 @@ links:
 test:
     uv run --group dev pytest tests/
 
+# The repository's git hooks over every tracked file. The reference service's
+# own precommit recipe skips itself when it finds it is nested inside this
+# repository; this recipe is the one that covers that tree here.
+precommit:
+    uv run --group dev pre-commit run --all-files
+
+# Regenerate examples/reference-service from the template with the answers in
+# tests/reference-answers.yaml. The template is the source of truth; run this
+# after every change to {{cookiecutter.project_slug}}/ and commit the result.
+regen:
+    uv run --group dev python scripts/regen.py
+
+# The golden diff: render and compare, writing nothing. CI's `golden` job.
+regen-check:
+    uv run --group dev python scripts/regen.py --check
+
+# Copy Dependabot's edits to the rendered example back into the template,
+# then check. Only for line-for-line replacements (a pin bump); anything else
+# fails with the file name and is made in the template by hand.
+adopt:
+    uv run --group dev python scripts/regen.py --adopt
+
+# ruff over the root's own Python -- hooks/, scripts/, tests/. ruff.toml's
+# extend-exclude keeps it out of the template body; the example is linted
+# with its own ruff.toml, by its own `just lint`.
+lint:
+    uv run --group dev ruff check .
+    uv run --group dev ruff format --check .
+
 # Audit the documentation and release toolchain's lock the same way the
 # reference service audits its own -- see that justfile's `audit` for the
 # flags. Two locks, two audits, one CI job.
@@ -64,4 +94,4 @@ docs-freshness base="origin/main" head="HEAD":
     uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
 
 # Everything CI checks at the repository level.
-check: docs-build test
+check: docs-build test regen-check

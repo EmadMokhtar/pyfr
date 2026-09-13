@@ -1,0 +1,11 @@
+.venv
+.git
+.pytest_cache
+.mypy_cache
+.ruff_cache
+__pycache__
+tests
+*.md
+# pyproject.toml declares readme = "README.md", so the build needs this one.
+!README.md
+.env

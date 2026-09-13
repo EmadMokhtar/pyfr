@@ -1,0 +1,47 @@
+[importlinter]
+root_package = {{ cookiecutter.package_name }}
+# Load-bearing: required whenever a `forbidden` contract's forbidden_modules
+# list names a third-party package (fastapi, starlette below). Without this,
+# lint-imports refuses to run at all rather than silently skipping the check.
+include_external_packages = True
+
+[importlinter:contract:domain-independence]
+name = Domain imports no other layer and no web or database framework
+type = forbidden
+source_modules =
+    {{ cookiecutter.package_name }}.domain
+forbidden_modules =
+    {{ cookiecutter.package_name }}.api
+    {{ cookiecutter.package_name }}.services
+    {{ cookiecutter.package_name }}.infrastructure
+    {{ cookiecutter.package_name }}.container
+    {{ cookiecutter.package_name }}.main
+    fastapi
+    starlette
+    sqlalchemy
+    asyncpg
+    opentelemetry
+    httpx
+    stamina
+    redis
+    aioboto3
+
+[importlinter:contract:services-independence]
+name = Services import neither api nor infrastructure
+type = forbidden
+source_modules =
+    {{ cookiecutter.package_name }}.services
+forbidden_modules =
+    {{ cookiecutter.package_name }}.api
+    {{ cookiecutter.package_name }}.infrastructure
+    {{ cookiecutter.package_name }}.container
+    {{ cookiecutter.package_name }}.main
+    fastapi
+    starlette
+    sqlalchemy
+    asyncpg
+    opentelemetry
+    httpx
+    stamina
+    redis
+    aioboto3

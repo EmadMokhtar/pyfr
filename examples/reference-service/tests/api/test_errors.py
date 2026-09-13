@@ -9,7 +9,10 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
 from reference_service.api.errors import register_error_handlers, status_for
-from reference_service.api.middleware import CORRELATION_HEADER, CorrelationIdMiddleware
+from reference_service.api.middleware import (
+    CORRELATION_HEADER,
+    CorrelationIdMiddleware,
+)
 from reference_service.domain.errors import DomainError, OrderNotFoundError
 from reference_service.domain.order import OrderId
 from reference_service.main import create_app
@@ -360,8 +363,14 @@ def test_a_corrupted_persisted_order_is_a_500_not_a_422_and_does_not_leak(
         OrderLine,
         total_of,
     )
-    from reference_service.infrastructure.db.mappers import line_values, order_values
-    from reference_service.infrastructure.db.models import OrderLineRow, OrderRow
+    from reference_service.infrastructure.db.mappers import (
+        line_values,
+        order_values,
+    )
+    from reference_service.infrastructure.db.models import (
+        OrderLineRow,
+        OrderRow,
+    )
     from reference_service.infrastructure.db.order_repository import (
         PostgresOrderRepository,
     )

@@ -89,7 +89,9 @@ jobs:
         working-directory: .
         run: just audit
       - name: Scan the published images
-        # The two `ghcr.io/emadmokhtar/...` references are literals until
-        # M7 makes the registry namespace a template variable, exactly
-        # like the `registry` default in the justfile's `publish-images`.
-        run: just scan ghcr.io/emadmokhtar/pyfr-reference-service:latest ghcr.io/emadmokhtar/pyfr-reference-service-migrations:latest
+        # The two `ghcr.io/emadmokhtar/...` references are literals by
+        # design: this is PyFr's own workflow, scanning PyFr's own images.
+        # The template's justfile renders the namespace from the answers
+        # (`{{ cookiecutter.github_org }}`); this root workflow is not
+        # rendered and stays a literal.
+        run: just scan ghcr.io/emadmokhtar/reference-service:latest ghcr.io/emadmokhtar/reference-service-migrations:latest

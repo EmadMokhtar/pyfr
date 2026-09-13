@@ -1,0 +1,57 @@
+# The root's own Python: hooks/, scripts/ and tests/. The same rules as the
+# reference service's ruff.toml, so a file reads the same on either side of
+# the template boundary. ruff picks the nearest ruff.toml per file, so the
+# root's hooks lint examples/reference-service/ with that project's copy.
+line-length = 88
+target-version = "py313"
+src = ["scripts", "tests"]
+# The template body is Jinja, not Python; it is linted as its render, in
+# examples/reference-service/ -- which this file must NOT exclude: the
+# pre-commit hooks pass the example's files with --force-exclude, and an
+# excluded path would be silently skipped. ruff picks the example's own
+# ruff.toml for those files.
+# Character classes, not literal braces: ruff's globs read {a,b} as alternation, so an unescaped {{…}} matches nothing.
+extend-exclude = ["[{][{]cookiecutter.project_slug[}][}]"]
+# Ruff's default `include` gained "*.md" (it now parses Python fences inside
+# Markdown as lintable/formattable source). Restated here without it: this
+# file governs the root's own Python -- hooks/, scripts/, tests/ -- not the
+# code samples inside docs/, which `ruff check .` would otherwise walk into
+# and try to reformat. Otherwise identical to ruff's own pre-"*.md" default.
+include = [
+    "*.py",
+    "*.pyi",
+    "*.ipynb",
+    "**/pyproject.toml",
+    "**/ruff.toml",
+    "**/.ruff.toml",
+]
+
+[lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # flake8-bugbear
+    "S",        # bandit security
+    "UP",       # pyupgrade
+    "ASYNC",    # flake8-async
+    "RUF",      # ruff-specific
+]
+
+[lint.per-file-ignores]
+# assert is how tests assert; the regen tests drive git through subprocess
+# with fixed literal argument lists.
+"tests/*" = ["S101", "B017", "S603", "S607"]
+# scripts/regen.py and the hooks shell out to git and uv, resolved through
+# PATH so they work on any contributor's machine; every argument list is a
+# fixed literal, never input.
+"scripts/*" = ["S603", "S607"]
+"hooks/*" = ["S603", "S607"]
+
+[lint.isort]
+known-first-party = [
+    "regen",
+    "check_doc_examples",
+    "check_docs_freshness",
+    "check_docs_updated",
+]

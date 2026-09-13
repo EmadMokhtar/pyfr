@@ -1,4 +1,4 @@
-"""PyFr reference service."""
+"""The PyFr reference service."""
 
 from importlib.metadata import PackageNotFoundError, version
 

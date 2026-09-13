@@ -1,7 +1,8 @@
 [project]
 name = "reference-service"
 version = "0.1.0"
-description = "PyFr reference service"
+description = "The PyFr reference service."
+authors = [{ name = "Emad Mokhtar", email = "311636+EmadMokhtar@users.noreply.github.com" }]
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -167,6 +168,10 @@ filterwarnings = [
     # one instead of surfacing it. Note the category: StarletteDeprecationWarning
     # subclasses UserWarning, not the builtin DeprecationWarning.
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+    # starlette.testclient also touches the deprecated `anyio.abc.BlockingPortal`
+    # alias at import time; nothing in our control until Starlette moves to
+    # `anyio.from_thread.BlockingPortal` itself. Safe to drop once it does.
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning:starlette.testclient",
 ]
 
 [tool.mutmut]

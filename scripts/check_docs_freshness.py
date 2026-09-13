@@ -140,8 +140,7 @@ def uncovered_changes(
             continue
         for covered in page.covers:
             if any(
-                path == covered
-                or (covered.endswith("/") and path.startswith(covered))
+                path == covered or (covered.endswith("/") and path.startswith(covered))
                 for path in changed
             ):
                 findings.append((page.path, covered))

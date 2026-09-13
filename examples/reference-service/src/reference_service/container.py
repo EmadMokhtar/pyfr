@@ -35,7 +35,9 @@ from reference_service.infrastructure.db.order_repository import (
 )
 from reference_service.infrastructure.http.breaker import CircuitBreaker
 from reference_service.infrastructure.http.client import build_http_client
-from reference_service.infrastructure.http.payment_gateway import HttpPaymentGateway
+from reference_service.infrastructure.http.payment_gateway import (
+    HttpPaymentGateway,
+)
 from reference_service.infrastructure.memory.order_repository import (
     InMemoryOrderRepository,
 )
@@ -49,7 +51,9 @@ from reference_service.infrastructure.storage.client import (
     build_client_config,
     build_s3_session,
 )
-from reference_service.infrastructure.storage.receipt_store import S3ReceiptStore
+from reference_service.infrastructure.storage.receipt_store import (
+    S3ReceiptStore,
+)
 from reference_service.settings import Settings
 
 ReadinessCheck = Callable[[], Awaitable[None]]

@@ -4,6 +4,7 @@ covers:
   - scripts/check_docs_updated.py
   - scripts/check_docs_freshness.py
   - scripts/check_doc_examples.py
+  - scripts/regen.py
 ---
 
 # Contributing
@@ -14,34 +15,51 @@ covers:
 pyfr/
   docs/                        this site
     superpowers/               design specs and plans; not published
-  examples/reference-service/  the reference service
+  cookiecutter.json  hooks/       the template's prompts and hooks
+  {{cookiecutter.project_slug}}/  the template body — the source of truth
+  examples/reference-service/  rendered from the template; never edited by hand
   scripts/                     repository tooling
   mkdocs.yml  pyproject.toml   documentation site and its toolchain
-  justfile                     documentation commands
+  justfile                     repository commands: docs, tests, regen, adopt
   .github/workflows/           continuous integration and publishing
   .github/dependabot.yml       automated dependency updates
 ```
 
 The repository root and the reference service are **two separate Python
 projects**, each with its own `pyproject.toml`, and they are never synced
-together. The root project holds only the documentation toolchain; it is not
-a package and nothing is published from it.
+together. The root project holds the documentation toolchain and the
+template toolchain — cookiecutter, the hooks' and generation tests, the
+regeneration script; it is not a package and nothing is published from it.
 
-## Working on the reference service
+## Working on the template
 
-From `examples/reference-service/`:
-
-```bash
-uv sync && uv run pre-commit install
-```
+From the repository root:
 
 ```bash
-just check
+uv sync --group dev && uv run pre-commit install
 ```
 
-`just check` is the one command to run before pushing: lint, type-check, the
-import rule, tests, the git hooks, and a check that nothing was rewritten.
-Every recipe is listed in [Commands](reference/commands.md).
+Edit `{{cookiecutter.project_slug}}/`, then:
+
+```bash
+just regen
+```
+
+That renders the template with `tests/reference-answers.yaml` into
+`examples/reference-service/` and is the only way that directory changes.
+It also removes anything in `examples/reference-service/` that the template
+does not produce — a stray untracked file included — except `uv.lock` and
+git-ignored paths such as `.venv/`, so keep scratch files out of that tree.
+`just regen-check` (CI's `golden` job) fails the build when the two
+disagree, naming the files. Then run the example's own gates:
+
+```bash
+cd examples/reference-service && just check
+```
+
+The example's `just precommit` steps aside inside this repository — the
+root's `.pre-commit-config.yaml` owns the hooks here, and `just precommit`
+at the root runs them over every tracked file.
 
 `just security` is the other check worth running before a pull request that
 touches a dependency or a Dockerfile. It builds both images, audits the
@@ -62,6 +80,33 @@ between your machine and the pipeline.
 
 Development is test-driven: write the failing test first, then the
 implementation. See [Testing strategy](explanation/testing.md).
+
+### Generated files
+
+Three files in the template body are produced by tools, and the tools run
+in the example, not in the template: `openapi.json` by `just openapi`,
+`.env.example` and `docs/reference/configuration.md` by `just config-docs`.
+After a template change that affects one of them — a route, a schema, a
+setting — the round trip is: `just regen`, run the tool in
+`examples/reference-service/`, then bring the result back into the
+template. `just adopt` does that when the tool replaced lines; when it
+inserted lines (a new setting, a new endpoint), copy them into the template
+file by hand, re-inserting the substitutions the render resolved —
+`{{ cookiecutter.project_slug }}` for the contract's `title`, for
+instance. `just regen-check` then confirms the two agree.
+
+### Dependabot and the template
+
+Dependabot's `directory` entries point at `examples/reference-service/`
+because it cannot parse Jinja. Its pull requests therefore change the
+rendered example, not the template. The `golden` job runs `just adopt`
+first on those pull requests, and `.github/workflows/adopt.yml` commits
+the same result to `main` after the merge. `adopt` copies a replaced
+line back into the template file that renders it; a change of any other
+shape — an inserted hook, a new dependency — fails with the file name,
+and you make it in the template by hand. If `main` is ever red on
+`golden` after a Dependabot merge — `adopt.yml` lost a race with another
+merge, or its rebase conflicted — run `just adopt`, commit and push.
 
 ## Working on the documentation
 
@@ -243,9 +288,9 @@ silently breaks the release. Because pull requests are **squash-merged**, the
 pull request title becomes the commit on `main` — so the title is what that
 automation actually reads.
 
-The commit-message hook is installed by `uv run pre-commit install` in the
-reference service, which wires up both the `pre-commit` and `commit-msg`
-stages.
+The commit-message hook is installed by `uv run pre-commit install` at the
+repository root — see [Working on the template](#working-on-the-template)
+above — which wires up both the `pre-commit` and `commit-msg` stages.
 
 The hook runs Commitizen, and Commitizen comes from the **root** `uv.lock`,
 not from a version pinned in the hook configuration: the hook's command is
@@ -259,7 +304,7 @@ to be. One pin, in one file Dependabot updates, is the whole point — see
 
 ## One-time repository settings
 
-Seven settings live in the GitHub interface, not in this repository, so they
+Eight settings live in the GitHub interface, not in this repository, so they
 are easy to miss when standing up a fork.
 
 - **Settings → Pages → Source = "GitHub Actions".** Without it the `Docs`
@@ -290,14 +335,17 @@ are easy to miss when standing up a fork.
   one used later for `gh release create`: `git push` uses the credentials
   `checkout` wired into the local git config, so replacing only the
   `gh release create` token changes nothing.
+- **`adopt.yml` pushes to `main`** under the same write permission and
+  branch-protection exemption as `release.yml`.
 - **After the first release, make the two GHCR packages public.** The first
-  `publish-images` run creates `pyfr-reference-service` and
-  `pyfr-reference-service-migrations` as *private* packages: `docker pull`
+  `publish-images` run creates `reference-service` and
+  `reference-service-migrations` as *private* packages: `docker pull`
   fails for anyone outside the repository, and the nightly `security` job
   can scan `latest` only because it authenticates with the workflow token.
   Use the package's "Change visibility" setting, under the package's own
   settings, once for each of the two. Nothing in `release.yml` can do
-  this.
+  this. The names changed in M7 — an image is named for the generated
+  project, and the reference answers name it `reference-service`.
 - **Enable Dependabot alerts and Dependabot security updates.** These are
   the "Dependabot alerts" and "Dependabot security updates" toggles under
   the repository's security settings. `.github/dependabot.yml` is the

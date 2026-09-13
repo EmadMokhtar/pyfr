@@ -1,7 +1,7 @@
 # Reference Service
 
-The PyFr reference service: the walking skeleton every generated project
-starts from. It persists orders to a real PostgreSQL database with the
+The PyFr reference service. Generated from
+[PyFr](https://github.com/EmadMokhtar/pyfr). It persists orders to a real PostgreSQL database with the
 schema under migration control, authorises payment over a retrying,
 circuit-breaking HTTP client, caches order reads in Redis behind a fail-open
 decorator, and renders and stores one receipt per order in S3-compatible
@@ -23,7 +23,7 @@ the service starts and serves correctly with none of them configured.
 
 ```bash
 uv sync                    # or: just install
-uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
+uv run pre-commit install  # one-time: wires up the lint hooks
 just dev                   # http://localhost:8000/docs — in-memory repository
 ```
 
@@ -124,8 +124,7 @@ stopped, `/readyz` itself still returned 200.
 
 ## Contract governance
 
-`openapi.json` is committed at this service's own root (not the repository
-root — `examples/reference-service/openapi.json`), generated from the code
+`openapi.json` is committed at the project root, generated from the code
 and never hand-edited. Three gates keep it honest: a byte-for-byte drift
 check against the code, generated conformance testing against the running
 app (Schemathesis, over ASGI — no server, no socket), and a breaking-change
@@ -398,8 +397,8 @@ and drop them.
 
 On release, the repository's workflow builds and scans the
 single-architecture images first, then builds both images for both
-architectures and pushes `ghcr.io/emadmokhtar/pyfr-reference-service` and
-`ghcr.io/emadmokhtar/pyfr-reference-service-migrations` under the
+architectures and pushes `ghcr.io/emadmokhtar/reference-service` and
+`ghcr.io/emadmokhtar/reference-service-migrations` under the
 repository's version, scans the pushed digests for both platforms, generates
 the SBOMs from those same references (so their subject is the image people
 pull), and only then points `latest` at that version; the SBOMs are attached

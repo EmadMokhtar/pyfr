@@ -1,0 +1,66 @@
+# After a Dependabot pull request merges, copy its pin changes from the
+# rendered example into the template (M7 spec, M7-10). The pull request's
+# `golden` job already ran `just adopt` and proved the result renders back
+# clean, so this commit is that proven result, not a new experiment.
+#
+# The push uses the workflow token, so it starts no new CI run -- the same
+# arrangement release.yml has for its bump commit, and the same token
+# requirements docs/contributing.md lists (write permission; branch
+# protection that lets the actions bot push).
+name: Adopt Dependabot pins
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+# One adoption at a time. Two Dependabot merges in quick succession start
+# two runs, and the loser would push onto a `main` that has moved. Not
+# cancelling: a cancelled run leaves its pins unadopted, and `main` red on
+# `golden` until someone runs `just adopt` by hand.
+concurrency:
+  group: adopt-main
+  cancel-in-progress: false
+
+jobs:
+  adopt:
+    if: github.event.head_commit.author.name == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install the toolchain
+        run: uv sync --group dev
+
+      - name: Adopt into the template
+        run: just adopt
+
+      - name: Commit and push the template change
+        run: |
+          if git diff --quiet -- '{{cookiecutter.project_slug}}'; then
+            echo "Nothing to adopt: the template already matches."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- '{{cookiecutter.project_slug}}'
+          git commit -m "build(deps): adopt dependabot's pins into the template"
+          # `main` may have moved since the checkout (a merge landed while
+          # `just adopt` ran). Rebase this one commit onto it rather than
+          # fail the push and leave `main` red on `golden`. The commit
+          # touches pin lines only, which a concurrent merge rarely edits;
+          # if one did, the rebase conflicts and this step fails, and the
+          # recovery is `just adopt` by hand (docs/contributing.md,
+          # "Dependabot and the template").
+          git pull --rebase origin main
+          git push

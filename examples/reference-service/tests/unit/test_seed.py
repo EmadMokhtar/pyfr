@@ -13,7 +13,13 @@ from fastapi.testclient import TestClient
 
 from reference_service.api.deps import get_payments
 from reference_service.main import create_app
-from reference_service.seed import ORDERS_PATH, SEED_ORDERS, SeedError, main, seed
+from reference_service.seed import (
+    ORDERS_PATH,
+    SEED_ORDERS,
+    SeedError,
+    main,
+    seed,
+)
 from reference_service.settings import Settings
 from tests.fakes import DecliningPaymentGateway
 

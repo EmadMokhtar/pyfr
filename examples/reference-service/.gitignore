@@ -1,0 +1,23 @@
+# Environments and tool caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.import_linter_cache/
+
+# Secrets and per-checkout state
+.env
+.seed-state.json
+
+# Build output: `just sbom`, `just mutants`, `just docs-build`
+sbom/
+mutants/
+site/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store

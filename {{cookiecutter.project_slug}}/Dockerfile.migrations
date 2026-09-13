@@ -1,0 +1,24 @@
+# The migrations image: the schema, and nothing else.
+#
+# Built and pushed alongside the application image with the same version tag,
+# and run as a Kubernetes init container or a pre-deployment Job. It contains
+# no Python interpreter and no service code, so applying the schema never
+# depends on the application being importable — which is the reason spec D12
+# chose golang-migrate over Alembic.
+FROM migrate/migrate:v4.20.1
+
+# See the application Dockerfile for why this label exists.
+LABEL org.opencontainers.image.source="https://github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"
+
+# Alpine's security updates, applied at build time for the same reason the
+# application Dockerfile runs `apt-get upgrade`: the base tag is rebuilt on
+# the upstream project's schedule, not the distribution's.
+RUN apk upgrade --no-cache
+
+COPY migrations/ /migrations/
+
+# The base image's entrypoint is `migrate` itself, so this supplies its
+# arguments. -database is deliberately absent: it is supplied at run time from
+# the environment of whatever cluster this runs in, and baking a database URL
+# into an image would put credentials in a registry.
+CMD ["-path=/migrations", "up"]

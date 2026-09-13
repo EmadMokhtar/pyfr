@@ -16,7 +16,10 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 )
 
 from reference_service.infrastructure.cache.client import build_redis_client
-from reference_service.observability.otel import build_providers, instrument_redis
+from reference_service.observability.otel import (
+    build_providers,
+    instrument_redis,
+)
 from reference_service.settings import CacheSettings, OtelSettings, Settings
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio(loop_scope="session")]

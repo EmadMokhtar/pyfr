@@ -158,8 +158,11 @@ gate:
 just contract-release
 ```
 
-copies the current `openapi.json` over it. `release.yml` runs that inside
-the bump commit of every release it cuts, so nobody runs it by hand.
+copies the current `openapi.json` over it. `release.yml` makes that
+promotion inside the bump commit of every release it cuts, so nobody runs
+it by hand. In PyFr's own repository the promotion is made in the template
+body and `just regen` carries it into the example; a generated project's
+`just contract-release` works on its own tree.
 Running it by hand to make `contract-gates` stop complaining *is* the
 silent breaking change this gate exists to catch — it does not report
 anything different afterwards, it simply has nothing left to compare

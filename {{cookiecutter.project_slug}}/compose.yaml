@@ -1,0 +1,347 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: app
+    ports:
+      # Published so `just psql` and any local tool can reach it. The
+      # application inside compose does NOT use this — it connects over the
+      # compose network to the host name `postgres`.
+      - "5432:5432"
+    healthcheck:
+      # `migrate` and `app` both wait on this. Without it they start while
+      # PostgreSQL is still initialising and fail on connection refused.
+      # pg_isready is the server's own readiness tool and needs no client.
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      # postgres:18 moved PGDATA from /var/lib/postgresql/data to
+      # /var/lib/postgresql/18/docker and declares its VOLUME one level up,
+      # at /var/lib/postgresql. Mounting at the old /data path would leave
+      # the cluster OUTSIDE the named volume — every `docker compose down`
+      # would drop the schema and the orders. A volume written by
+      # postgres:16 under the old layout is not upgraded in place: `just
+      # down` (`docker compose down -v`) removes it, and the next `just up`
+      # initialises a fresh 18 cluster.
+      - postgres-data:/var/lib/postgresql
+
+  # The cache. Not behind a profile: it is small, starts in under a second,
+  # and `just up` should exercise the same arrangement production runs.
+  # Losing it is survivable by design — see CachedOrderRepository — so
+  # nothing `depends_on` it with service_healthy the way `app` does for
+  # postgres.
+  redis:
+    image: redis:8-alpine
+    ports:
+      # Published so `just redis-cli` and any local tool can reach it. The
+      # application inside compose does NOT use this — it connects over the
+      # compose network to the host name `redis`.
+      - "6379:6379"
+    command:
+      # An explicit bound, because the default is unbounded: a Redis with no
+      # maxmemory grows until the host's OOM killer picks a process, and on
+      # a developer's laptop that process is as likely to be the database as
+      # this. allkeys-lru makes it a cache rather than a store — under
+      # pressure it evicts the least recently used key instead of returning
+      # errors on write, which is the correct behaviour for data whose
+      # source of truth is PostgreSQL.
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Mounted over the directory the image COPYs in, so migrations edited on
+      # the host apply without rebuilding, and `just migrate-new` writes its new
+      # files back out to the host. Production runs the image as built, with no
+      # mount — see Dockerfile.migrations.
+      - ./migrations:/migrations
+    # The single definition of the local database URL. Every `just migrate-*`
+    # recipe passes only a subcommand and inherits these flags.
+    #
+    # `?sslmode=disable` belongs HERE and not in APP_DATABASE__DSN: it is a
+    # libpq parameter, golang-migrate requires it against a local server with
+    # no TLS, and asyncpg rejects it. engine.py fails loudly if it ever appears
+    # in the application's own URL.
+    entrypoint:
+      - migrate
+      - -path=/migrations
+      - -database
+      - postgres://app:secret@postgres:5432/app?sslmode=disable
+    command: ["up"]
+
+  # The object store. MinIO speaks the S3 API, so the same adapter that runs
+  # here runs against Amazon S3 in production with only endpoint_url
+  # changing (spec 9.1).
+  minio:
+    # quay.io, not Docker Hub: MinIO withdrew its Docker Hub images in
+    # September 2026 (`docker pull minio/minio:latest` answers "pull access
+    # denied ... repository does not exist"), which broke every pull of the
+    # previous pin. The same release tags are published on quay.io. The
+    # integration tests read this pin from here, so this is the one place
+    # to change it.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      # 9000 is the S3 API, published so `just test-record`-style host tools
+      # and the AWS CLI can reach it. The application inside compose does NOT
+      # use this — it connects over the compose network to `minio:9000`.
+      - "9000:9000"
+      # 9001 is the web console: `just minio-console`.
+      - "9001:9001"
+    healthcheck:
+      # MinIO's own documented healthcheck. `mc` ships inside the image and
+      # resolves the `local` alias itself, so this needs no curl (the image
+      # has none) and no credentials on the command line.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - minio-data:/data
+
+  # One-shot bucket creation. MinIO does not create a bucket on demand and
+  # the application deliberately does not create its own — doing so would
+  # need CreateBucket permission in production, where the bucket is
+  # provisioned by whoever owns the account, not by the service.
+  #
+  # The same shape as the `migrate` service above: a container that runs
+  # once, exits 0, and that `app` waits on with
+  # service_completed_successfully.
+  minio-bootstrap:
+    # quay.io for the same reason as the `minio` service above.
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    # --ignore-existing makes this idempotent, so a second `just up` is not
+    # an error. Credentials match the MINIO_ROOT_* pair above; they are
+    # local-only values and never leave this file.
+    command: >
+      "mc alias set local http://minio:9000 minioadmin minioadmin &&
+       mc mb --ignore-existing local/receipts"
+
+  app:
+    build: .
+    # Named so the `seed` one-shot below can run from the same image
+    # without a second `build:` block. `up --build` builds every buildable
+    # service before creating any container, so the name exists by the time
+    # `seed` needs it.
+    image: {{ cookiecutter.project_slug }}:compose
+    ports:
+      - "{{ cookiecutter.http_port }}:{{ cookiecutter.http_port }}"
+    depends_on:
+      # Not just "started": the API must not serve a request against a schema
+      # that is not there yet. service_completed_successfully waits for the
+      # one-shot migrate container to exit 0, so `just up` is a single command
+      # that yields a migrated database and a working API.
+      migrate:
+        condition: service_completed_successfully
+      # The bucket must exist before the first receipt is requested. Same
+      # arrangement as `migrate`: wait for the one-shot container to exit 0.
+      minio-bootstrap:
+        condition: service_completed_successfully
+      # `payment-stub` has no `profiles:` entry, so plain `docker compose up`
+      # already starts it alongside `app` — but starting is not readiness,
+      # and without this, `app` could come up and serve its first order
+      # before WireMock has finished booting, with no readiness check to
+      # catch it (container.py deliberately registers none for the payment
+      # provider — see its comment). service_healthy waits for the
+      # healthcheck below instead.
+      payment-stub:
+        condition: service_healthy
+    environment:
+      APP_ENVIRONMENT: production
+      APP_LOG__LEVEL: info
+      # Host `postgres` is the compose service name. No driver suffix and no
+      # sslmode — see settings.py's DatabaseSettings.dsn.
+      APP_DATABASE__DSN: postgresql://app:secret@postgres:5432/app
+      # `redis` is the compose service name above. Set here rather than
+      # defaulted, because `just up` should exercise the cached path — an
+      # adapter that only runs in tests is an adapter nobody has really run.
+      APP_CACHE__DSN: redis://redis:6379/0
+      # Defaulted rather than hardcoded so one compose file serves both
+      # `just up` (telemetry off) and `just o11y` (telemetry on), which
+      # sets these two in its own environment.
+      APP_OTEL__ENABLED: ${APP_OTEL__ENABLED:-false}
+      APP_OTEL__LOGS_ENABLED: ${APP_OTEL__LOGS_ENABLED:-false}
+      # `lgtm` is the compose service name below. Harmless when telemetry
+      # is off — settings only require an endpoint when enabled.
+      APP_OTEL__ENDPOINT: http://lgtm:4317
+      # 60s is the SDK default and far too slow to iterate against: you
+      # make a request and wait a minute to see the panel move.
+      APP_OTEL__METRIC_EXPORT_INTERVAL_MS: 10000
+      # `payment-stub` is the compose service name below. WireMock, not a
+      # real provider — see ops/payment-stub/mappings and Task 15's
+      # documentation of what that does and does not prove.
+      APP_PAYMENT__BASE_URL: http://payment-stub:8080
+      # `minio` is the compose service name above. endpoint_url is the whole
+      # of "one adapter for every S3-compatible provider": unset it and the
+      # same code talks to Amazon S3.
+      APP_STORAGE__BUCKET: receipts
+      APP_STORAGE__ENDPOINT_URL: http://minio:9000
+      APP_STORAGE__ACCESS_KEY_ID: minioadmin
+      APP_STORAGE__SECRET_ACCESS_KEY: minioadmin
+    # The Dockerfile's CMD passes uvicorn --timeout-graceful-shutdown 30,
+    # letting in-flight requests drain for up to 30s on SIGTERM. Compose's
+    # (and Docker's) own default kill deadline is 10s, so without raising
+    # it here the container is SIGKILLed at 10s regardless — a promise
+    # uvicorn cannot keep. Set comfortably above the app's own deadline so
+    # the app's timeout is always the one that governs shutdown.
+    stop_grace_period: 40s
+    # No healthcheck: block here. The image already declares one (see the
+    # Dockerfile's HEALTHCHECK), and it reads APP_HTTP_PORT the same way
+    # the CMD does. A hardcoded port here would drift from that the moment
+    # APP_HTTP_PORT is overridden — Compose applies the image's own
+    # healthcheck automatically, so duplicating it just to hardcode the
+    # port both drifts and repeats the same instruction twice.
+
+  # A one-shot, like `migrate` and `minio-bootstrap`: runs once `app` is
+  # healthy, creates the fixed orders in {{ cookiecutter.package_name }}/seed.py through
+  # the API, and exits 0. `just up` therefore yields a service with data in
+  # it, and `GET /api/v1/orders/<id>` works before anyone has typed a POST.
+  # Idempotent: re-running `up` without `down` creates nothing new.
+  seed:
+    image: {{ cookiecutter.project_slug }}:compose
+    depends_on:
+      # service_healthy, not service_started: the image's HEALTHCHECK is
+      # what says the API is answering.
+      app:
+        condition: service_healthy
+    # Root, deliberately, and only here. The state file that makes the seed
+    # idempotent lives in the named volume below, and Docker creates a fresh
+    # volume's mount point owned by root -- the image's `app` user cannot
+    # write into it. This container runs an HTTP client against `app` and
+    # touches nothing else; the `migrate` one-shot above already runs as
+    # root for its own reasons (see `just migrate-new`'s comment).
+    user: root
+    command:
+      - python
+      - -m
+      - {{ cookiecutter.package_name }}.seed
+      - --base-url
+      - http://app:{{ cookiecutter.http_port }}
+      - --state
+      - /state/seed.json
+    volumes:
+      - seed-state:/state
+
+  # A local stub of the payment provider, not the provider itself — there
+  # is no real one to build a reference service against. WireMock serves
+  # the mappings in ops/payment-stub/mappings as-is: two declarative JSON
+  # files rather than a second application to build and maintain. Used by
+  # `app` above (APP_PAYMENT__BASE_URL) and by `just test-record` to
+  # (re-)record the cassettes tests/recorded replays offline. See Task 15
+  # for what a stub recorded once and committed does and does not prove.
+  payment-stub:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      # Published so `just test-record` can reach it from the host, where
+      # pytest runs. The app inside compose reaches it over the compose
+      # network at the service name, same as postgres above.
+      - "9099:8080"
+    volumes:
+      - ./ops/payment-stub/mappings:/home/wiremock/mappings:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/__admin/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # The whole local observability stack in one container: Grafana,
+  # Prometheus, Tempo, Loki and an OpenTelemetry collector. One image
+  # rather than five services, with OUR dashboards and rules mounted in —
+  # the same portable JSON that loads into a production Grafana.
+  #
+  # Behind a profile, so `just up` stays a database and an API. This image
+  # is around 2.5GB and runs six processes; nobody wants it started by
+  # default on a laptop.
+  #
+  # Deliberately NO `depends_on` from `app` to here. Compose would either
+  # refuse to start app without this profile active, or auto-enable the
+  # profile and pull the whole image for a plain `just up` — both worse
+  # than the alternative, which costs nothing: the OTLP exporters batch
+  # and retry, so an app that starts first loses a few seconds of
+  # telemetry rather than failing.
+  lgtm:
+    profiles: ["o11y"]
+    image: grafana/otel-lgtm:0.33.0
+    ports:
+      # The image does declare EXPOSE for these, but EXPOSE only documents
+      # a port — it does not publish one. Every port that must be reachable
+      # from the host has to be listed here.
+      - "3000:3000"  # Grafana
+      - "4317:4317"  # OTLP over gRPC — what the app exports to
+      - "4318:4318"  # OTLP over HTTP
+      # Prometheus. Published so `just o11y` can be queried ad hoc while
+      # developing a dashboard, and so the integration test can read
+      # /api/v1/rules from the host.
+      - "9090:9090"
+    volumes:
+      # Replaces the image's own Prometheus config. Its copy has no
+      # rule_files key at all, and there is no other way to load rules —
+      # no scrape config to attach to, no directory it already watches.
+      - ./ops/prometheus/prometheus.yaml:/otel-lgtm/prometheus.yaml:ro
+      # ONLY the rules directory. ops/prometheus/slo_test.yml deliberately
+      # sits outside it: the rule_files glob would pick a promtool test
+      # file up as a rules file and Prometheus would refuse to start.
+      - ./ops/prometheus/rules:/otel-lgtm/rules:ro
+      # Added ALONGSIDE the image's own dashboard provider file rather
+      # than over it, so the bundled RED and JVM dashboards survive.
+      - ./ops/grafana/provisioning/dashboards/pyfr-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/pyfr-dashboards.yaml:ro
+      - ./ops/grafana/dashboards:/otel-lgtm/pyfr-dashboards:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Trivy, for `just scan` and `just sbom`. A compose service rather than a
+  # `docker run` in the justfile so that its image pin lives HERE, with
+  # every other one, where Dependabot moves it (ADR 0014). The `tools`
+  # profile keeps it out of `just up`; `docker compose run` enables a
+  # service's profile on its own.
+  #
+  # The Docker socket is how Trivy reads an image that was `docker build`
+  # -- not pushed anywhere -- and the cache volume is what makes the second
+  # run take seconds rather than re-downloading the vulnerability database.
+  trivy:
+    profiles: ["tools"]
+    image: aquasec/trivy:0.74.0
+    environment:
+      # Registry credentials for scanning a remote image that is not
+      # public. Empty locally, where every scan is of a local image.
+      TRIVY_USERNAME: ${TRIVY_USERNAME:-}
+      TRIVY_PASSWORD: ${TRIVY_PASSWORD:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - trivy-cache:/root/.cache/trivy
+      - ./.trivyignore.yaml:/.trivyignore.yaml:ro
+      - ./sbom:/sbom
+
+volumes:
+  postgres-data:
+  minio-data:
+  seed-state:
+  trivy-cache:

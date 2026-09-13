@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 covers:
   - examples/reference-service/Dockerfile
   - examples/reference-service/Dockerfile.migrations
@@ -58,8 +58,8 @@ Every release pushes both images to GHCR (the GitHub Container Registry), for
 `latest`:
 
 ```bash
-docker pull ghcr.io/emadmokhtar/pyfr-reference-service:vX.Y.Z
-docker pull ghcr.io/emadmokhtar/pyfr-reference-service-migrations:vX.Y.Z
+docker pull ghcr.io/emadmokhtar/reference-service:vX.Y.Z
+docker pull ghcr.io/emadmokhtar/reference-service-migrations:vX.Y.Z
 ```
 
 `vX.Y.Z` is a tag from the repository's Releases page — the same string as
@@ -70,7 +70,7 @@ The service image runs on its own with no configuration at all — every
 dependency is optional, and unset means in-memory:
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/emadmokhtar/pyfr-reference-service:vX.Y.Z
+docker run --rm -p 8000:8000 ghcr.io/emadmokhtar/reference-service:vX.Y.Z
 ```
 
 The migrations image is the schema and nothing else, built `FROM
@@ -81,7 +81,7 @@ Kubernetes init container or a pre-deployment job with the arguments spelled
 out:
 
 ```bash
-docker run --rm ghcr.io/emadmokhtar/pyfr-reference-service-migrations:vX.Y.Z \
+docker run --rm ghcr.io/emadmokhtar/reference-service-migrations:vX.Y.Z \
   -path=/migrations -database 'postgres://app:secret@db:5432/app?sslmode=disable' up
 ```
 

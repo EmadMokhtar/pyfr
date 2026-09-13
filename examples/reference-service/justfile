@@ -317,14 +317,20 @@ minio-console:
     @echo "http://localhost:9001 — minioadmin / minioadmin"
     @open http://localhost:9001 2>/dev/null || true
 
-# Run the pre-commit hooks over this project's own files.
+# The project's own git hooks over its own tracked files.
+#
+# pre-commit runs from the root of the enclosing git repository and resolves
+# hook commands there. When this project is generated into a subdirectory of
+# an existing repository — PyFr's own examples/reference-service/ is one —
+# that repository's root configuration owns the hooks and this one cannot
+# run; say so and exit clean rather than fail on paths that do not resolve.
 precommit:
-    # `git ls-files` scopes this to the project's own files. `--all-files`
-    # walks up to the enclosing repository when this project sits inside
-    # one, and rewrites files outside it — during development that silently
-    # reformatted Python snippets inside this plan's own Markdown. In a
-    # standalone generated project the two are equivalent, so this is
-    # correct in both layouts.
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git rev-parse --show-prefix)" ]; then
+        echo "precommit: nested inside another repository; its root pre-commit configuration covers this tree."
+        exit 0
+    fi
     uv run pre-commit run --files $(git ls-files)
 
 # Everything CI checks, failing loudly if a hook modified the tree.
@@ -476,11 +482,11 @@ publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-b
     docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
         --label "org.opencontainers.image.version={{version}}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-        -t "{{registry}}/pyfr-reference-service:{{version}}" .
+        -t "{{registry}}/reference-service:{{version}}" .
     docker buildx build --builder {{builder}} --platform linux/amd64,linux/arm64 --push \
         --label "org.opencontainers.image.version={{version}}" \
         --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-        -t "{{registry}}/pyfr-reference-service-migrations:{{version}}" \
+        -t "{{registry}}/reference-service-migrations:{{version}}" \
         -f Dockerfile.migrations .
 
 # Scan the two images just pushed under `version`, for BOTH platforms.
@@ -495,7 +501,7 @@ publish-images version registry="ghcr.io/emadmokhtar" builder="pyfr": (_buildx-b
 scan-published version registry="ghcr.io/emadmokhtar":
     #!/usr/bin/env bash
     set -euo pipefail
-    for image in pyfr-reference-service pyfr-reference-service-migrations; do
+    for image in reference-service reference-service-migrations; do
         for platform in linux/amd64 linux/arm64; do
             docker compose run --rm trivy image --platform "$platform" \
                 --ignorefile /.trivyignore.yaml \
@@ -510,11 +516,11 @@ scan-published version registry="ghcr.io/emadmokhtar":
 # `scan-published` verified. Run by release.yml only after that scan.
 promote-latest version registry="ghcr.io/emadmokhtar":
     docker buildx imagetools create \
-        -t "{{registry}}/pyfr-reference-service:latest" \
-        "{{registry}}/pyfr-reference-service:{{version}}"
+        -t "{{registry}}/reference-service:latest" \
+        "{{registry}}/reference-service:{{version}}"
     docker buildx imagetools create \
-        -t "{{registry}}/pyfr-reference-service-migrations:latest" \
-        "{{registry}}/pyfr-reference-service-migrations:{{version}}"
+        -t "{{registry}}/reference-service-migrations:latest" \
+        "{{registry}}/reference-service-migrations:{{version}}"
 
 up:
     docker compose up --build
