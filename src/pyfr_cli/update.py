@@ -167,13 +167,20 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         if not clean:
             out.write(CONFLICT_HELP)
             return 1
+        # No merge in progress after a clean exit: git said "Already up to
+        # date" because the template commit is in HEAD's history already
+        # (merged by hand, say). Only the answers file changes then, and
+        # the commit is a plain one, not a merge.
+        merged = git.operation_in_progress() == "merge"
         git.run(
             "commit", "--quiet", "--no-verify",
             "--file", str(git.git_dir() / "MERGE_MSG"),
         )  # fmt: skip
-        out.write(
-            f"merge: clean, committed as {git.out('rev-parse', '--short=12', 'HEAD')}\n"
-        )
+        if merged:
+            sha = git.out("rev-parse", "--short=12", "HEAD")
+            out.write(f"merge: clean, committed as {sha}\n")
+        else:
+            out.write(f"merge: nothing to merge; recording {target}\n")
         state.save(git, state.State(recorded.version, target, "after-scripts"))
         _finish(git, project, migrations, recorded.version, target, out)
 

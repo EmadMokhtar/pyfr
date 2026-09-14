@@ -522,6 +522,44 @@ def test_squash_merged_history_does_not_conflict_again(
     assert not (project / ".git" / "pyfr-update.json").exists()
 
 
+def test_a_template_commit_already_in_history_is_recorded_without_a_merge(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    assert (
+        run(project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0")[0]
+        == 0
+    )
+    # The answers file goes back to v100.0.0 by hand -- a bad rebase, say --
+    # while HEAD still descends from template v100.1.0's commit. The merge
+    # then has nothing to bring ("Already up to date"), and the run must
+    # not call that a clean merge: only the answers file changes.
+    path = project / ".pyfr-answers.yml"
+    path.write_text(path.read_text().replace('"100.1.0"', '"100.0.0"'))
+    commit_all(project, "chore: the answers file went back")
+    assert recorded_version(project) == "100.0.0"
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert code == 0, out
+    assert "template: already at v100.1.0" in out
+    assert "merge: nothing to merge; recording v100.1.0" in out
+    assert "merge: clean" not in out
+    assert out.rstrip().endswith("recorded: v100.1.0")
+    assert recorded_version(project) == "100.1.0"
+    # A plain commit with the prepared message, not a merge commit.
+    assert (
+        git(project, "log", "-1", "--format=%s")
+        == "chore: update template v100.0.0 -> v100.1.0"
+    )
+    assert len(git(project, "rev-parse", "HEAD^@").split()) == 1
+    assert git(project, "status", "--porcelain") == ""
+    assert not (project / ".git" / "pyfr-update.json").exists()
+
+
 def test_a_replacement_ref_on_head_is_refused_before_the_merge(
     project: Path,
     template_remote: Path,
