@@ -83,9 +83,9 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 `just seed` does the same against `just dev`.
 {%- else %}
 
-`just up` is the containerized alternative: one command builds the image,
-starts whichever backends this project has and a payment stub, and starts
-the API.
+`just up` is the containerized alternative: one command builds the service
+image, starts whichever backends this project has and a payment stub, and
+starts the API.
 {%- if cookiecutter.database == "postgres" %}
 Every migration is applied before the API starts, so there is no window
 where the API is up against a schema that is not there yet.

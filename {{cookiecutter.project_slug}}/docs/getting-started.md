@@ -64,8 +64,8 @@ That builds the image, starts PostgreSQL, Redis, MinIO and a payment stub,
 applies the migrations, and starts the API. Once the API reports healthy, a
 {%- else %}
 
-That builds the image, starts whichever backends this project has and a
-payment stub, and starts the API. Once the API reports healthy, a
+That builds the service image, starts whichever backends this project has
+and a payment stub, and starts the API. Once the API reports healthy, a
 {%- endif %}
 one-shot `seed` container creates five fixed orders through the HTTP API and
 exits. The line to look for in the output is:
