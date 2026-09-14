@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from pyfr_cli.errors import UpdateError
-from pyfr_cli.versions import Version, parse_ls_remote, resolve_target
+from pyfr_cli.versions import Version, parse_ls_remote, remote_versions, resolve_target
 
 LS_REMOTE = """\
 aaaa\trefs/tags/v0.10.0
@@ -66,3 +68,35 @@ def test_resolve_target_refuses_garbage() -> None:
     with pytest.raises(UpdateError) as stop:
         resolve_target("latest", AVAILABLE)
     assert "not a version" in stop.value.cause
+
+
+def test_remote_versions_reads_a_repository_by_path(tmp_path: Path) -> None:
+    from cli.helpers import git, make_repo
+    from pyfr_cli.git import Git
+
+    template = make_repo(tmp_path / "template")
+    git(template, "tag", "v0.5.0")
+    git(template, "tag", "-a", "v0.6.0", "-m", "annotated")
+    git(template, "tag", "not-a-release")
+    assert remote_versions(str(template), Git(tmp_path)) == [
+        Version(0, 5, 0),
+        Version(0, 6, 0),
+    ]
+
+
+def test_remote_versions_refuses_a_repository_without_release_tags(
+    tmp_path: Path,
+) -> None:
+    from cli.helpers import make_repo
+    from pyfr_cli.git import Git
+
+    template = make_repo(tmp_path / "template")
+    with pytest.raises(UpdateError, match="no release tags"):
+        remote_versions(str(template), Git(tmp_path))
+
+
+def test_remote_versions_refuses_an_unreachable_template(tmp_path: Path) -> None:
+    from pyfr_cli.git import Git
+
+    with pytest.raises(UpdateError, match="could not list the tags"):
+        remote_versions(str(tmp_path / "missing"), Git(tmp_path))
