@@ -110,6 +110,16 @@ lint: typecheck
 typecheck:
     uv run --group dev mypy
 
+# Build the pyfr-cli wheel and run its console script from it, exactly as
+# CI does (M8 spec, section 8.4). Needs the network: uvx resolves the
+# wheel's dependencies into a throwaway environment.
+wheel:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf dist
+    uv build --wheel
+    uvx --from dist/pyfr_cli-*.whl pyfr --version
+
 # Audit the documentation and release toolchain's lock the same way the
 # reference service audits its own -- see that justfile's `audit` for the
 # flags. Two locks, two audits, one CI job.

@@ -434,3 +434,52 @@ jobs:
         # not die on "asset already exists" when one of the two files had
         # already made it up.
         run: gh release upload --clobber "$VERSION" sbom/reference-service.cdx.json sbom/reference-service-migrations.cdx.json
+
+  publish-pypi:
+    # pyfr-cli on PyPI at the version just released (M8 spec, section 3.5).
+    # Trusted Publishing: PyPI accepts the short-lived OpenID Connect token
+    # GitHub mints for this job, so no PyPI token is stored as a secret. The
+    # publisher was registered on pypi.org by hand, once: project pyfr-cli,
+    # owner EmadMokhtar, repository pyfr, workflow release.yml, no
+    # environment. PyPI is asked first whether the version is already
+    # there, so a rerun of a partly failed release publishes nothing twice
+    # -- the same shape as the registry probe that gates publish-images.
+    # Last, and nothing depends on it: while the publisher is missing, only
+    # this job is red.
+    needs: release
+    if: needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # the OpenID Connect token Trusted Publishing verifies
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The tag, not main: main may already have moved on.
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Decide whether PyPI already has this version
+        id: pypi
+        run: |
+          if curl --fail --silent --show-error --output /dev/null \
+              "https://pypi.org/pypi/pyfr-cli/${VERSION}/json"; then
+            echo "pyfr-cli ${VERSION} is on PyPI already."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the sdist and the wheel
+        if: steps.pypi.outputs.publish == 'true'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: steps.pypi.outputs.publish == 'true'
+        # `uv publish` detects GitHub Actions and uses Trusted Publishing on
+        # its own; no token argument, no secret.
+        run: uv publish
