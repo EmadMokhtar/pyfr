@@ -18,7 +18,9 @@ import pathlib
 NAME = "{name}"
 log = pathlib.Path("migrations.log")
 existing = log.read_text() if log.exists() else ""
-line = f"{{os.environ['PYFR_UPDATE_FROM']}}->{{os.environ['PYFR_UPDATE_TO']}} {{NAME}}\\n"
+frm = os.environ["PYFR_UPDATE_FROM"]
+to = os.environ["PYFR_UPDATE_TO"]
+line = f"{{frm}}->{{to}} {{NAME}}\\n"
 # Idempotent: a second run leaves the log as it is.
 if line not in existing:
     with log.open("a") as handle:
