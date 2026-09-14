@@ -32,6 +32,12 @@ exclude = [
     # MkDocs Material's own edit links point at paths on a branch, which
     # 404 for a page added in the same commit being checked.
     "^https://github\\.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}/edit/",
+    # The decision records' "full reasoning" links point into PyFr's design
+    # archive -- the specs and plans behind the template this project was
+    # generated from, out of date by design once a milestone lands. This
+    # project's link check should not depend on PyFr keeping those files
+    # where they are.
+    "^https://github\\.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/",
     # Placeholder hosts in configuration examples. Anchored to match only the host
     # and its subdomains, not as a substring in unrelated domains.
     "^https?://([a-z0-9-]+\\.)*example\\.com(?::\\d+)?(/|$)",
