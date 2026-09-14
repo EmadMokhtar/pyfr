@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.10.0 (2026-09-14)
+
+### Feat
+
+- prove a generated project passes its own gates and close m7 (m7 pr 5) (#50)
+
 ## v0.9.0 (2026-09-14)
 
 ### Feat
