@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pyfr_cli import changelog
 from pyfr_cli.versions import Version
 
@@ -66,9 +68,20 @@ def test_entries_is_empty_when_nothing_is_in_range() -> None:
     assert changelog.entries("", Version(0, 1, 0), Version(9, 0, 0), TEMPLATE) == ""
 
 
-def test_release_url_normalises_the_template_url() -> None:
-    for url in (TEMPLATE, TEMPLATE + "/", TEMPLATE + ".git"):
-        assert (
-            changelog.release_url(url, Version(0, 12, 0))
-            == "https://github.com/EmadMokhtar/pyfr/releases/tag/v0.12.0"
-        )
+@pytest.mark.parametrize(
+    "url",
+    [
+        TEMPLATE,
+        TEMPLATE + "/",
+        TEMPLATE + ".git",
+        "git@github.com:EmadMokhtar/pyfr.git",
+        "git@github.com:EmadMokhtar/pyfr",
+        "ssh://git@github.com/EmadMokhtar/pyfr.git",
+        "ssh://git@github.com/EmadMokhtar/pyfr/",
+    ],
+)
+def test_release_url_normalises_the_template_url(url: str) -> None:
+    assert (
+        changelog.release_url(url, Version(0, 12, 0))
+        == "https://github.com/EmadMokhtar/pyfr/releases/tag/v0.12.0"
+    )

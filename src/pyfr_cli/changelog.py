@@ -11,6 +11,8 @@ import re
 from pyfr_cli.versions import Version
 
 HEADING = re.compile(r"^## v?(?P<version>\d+\.\d+\.\d+)(?P<rest>.*)$")
+# An ssh clone URL: `git@host:owner/repo.git` or `ssh://git@host/owner/repo.git`.
+SSH_URL = re.compile(r"^(?:ssh://)?git@([^:/]+)[:/](.+)$")
 
 
 def sections(text: str) -> list[tuple[Version, str, str]]:
@@ -27,7 +29,10 @@ def sections(text: str) -> list[tuple[Version, str, str]]:
 
 
 def release_url(template: str, version: Version) -> str:
-    base = template.rstrip("/").removesuffix(".git")
+    """The release page for `version` at `template`, as an https URL --
+    an ssh clone URL is turned into its https form first."""
+    base = SSH_URL.sub(r"https://\1/\2", template)
+    base = base.rstrip("/").removesuffix(".git")
     return f"{base}/releases/tag/{version}"
 
 
