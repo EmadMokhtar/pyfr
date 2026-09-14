@@ -448,26 +448,30 @@ The generated default, rendered for the answers (`<package>` is
 # Everything not listed is template-owned and receives fixes by default.
 
 # Written by the update itself.
-.pyfr-answers.yml
+/.pyfr-answers.yml
 # This file.
-.pyfr-update-ignore
-README.md
-CHANGELOG.md
+/.pyfr-update-ignore
+/README.md
+/CHANGELOG.md
 # Resolver output; run `uv lock` after an update that touched pyproject.toml.
-uv.lock
+/uv.lock
 # Your schema.
-migrations/
-schema.sql
+/migrations/
+/schema.sql
 # Artifacts of your code: the contract, and the baseline your release promotes.
-openapi.json
-openapi.baseline.json
+/openapi.json
+/openapi.baseline.json
 # Your decisions.
-docs/adr/
+/docs/adr/
 # The example slice, then your business model.
-src/<package>/domain/
-src/<package>/services/
-src/<package>/api/v1/
+/src/<package>/domain/
+/src/<package>/services/
+/src/<package>/api/v1/
 ```
+
+Every pattern carries a leading `/`: without it, gitignore syntax matches
+the name at any depth, and `README.md` would also match
+`docs/adr/README.md`.
 
 `uv.lock` is new against master spec 11.4, and necessary: the render has
 no lock (`uv sync` is an environmental hook step, skipped under
