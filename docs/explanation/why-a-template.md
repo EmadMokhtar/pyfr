@@ -106,7 +106,7 @@ The reason is the same instinct as everything above: a small number of
 adapters that are genuinely finished and tested beats a long list of
 half-working ones. A team on MySQL writes one adapter against a documented
 port, using the shipped PostgreSQL adapter as a worked example — see
-[Add a backend](../guides/add-a-backend.md).
+[Add a backend](https://emadmokhtar.github.io/pyfr/reference-service/guides/add-a-backend/).
 
 Object storage is one adapter rather than several, because Amazon S3, MinIO,
 Cloudflare R2, Ceph and Backblaze B2 all speak the same protocol. One adapter

@@ -36,11 +36,13 @@ ordinary `git merge`.
 ## 🚧 Honest status: M0–M6 done, M7 in progress, M8 to go
 
 **The template exists and renders** — `uvx cookiecutter gh:EmadMokhtar/pyfr`
-generates a project today — but M7 is in progress: every generated project
-still carries every backend, and a generated project's `just check` fails
-its two configuration-reference tests (`tests/unit/test_config_docs.py`)
-until the documentation site moves into the template in M7's fourth pull
-request — see the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
+generates a project today. M7 is the conversion into a template, in five
+pull requests, and four have landed: the template renders from twelve
+prompts, prunes the backends you do not choose, gives a generated project
+its own workflows, and ships its own documentation site about itself. What
+remains is the fifth: the full-suite tests, which generate a project in CI
+and run its whole lint, type-check and test suite — see the
+[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
 The [**reference service**](examples/reference-service/) is rendered from
 that template; it is the complete, running service you can run, read, and
 copy from right now.
@@ -62,14 +64,20 @@ into a template, is under way.** See the
 ## 🚀 Try it in one command
 
 ```bash
-cd examples/reference-service && uv sync && just dev
+uvx cookiecutter gh:EmadMokhtar/pyfr
 ```
 
-Then open <http://localhost:8000/docs> and say hello. 👋
+cookiecutter asks twelve questions — the project's name, its author, which
+of PostgreSQL, Redis and S3 it gets, its port, its licence — and every one
+has a default. The hook then prunes what you did not choose, runs `git
+init`, `uv sync` and `pre-commit install`, and makes the first commit, each
+step best effort, so an offline laptop still gets a whole project.
+
+Then `cd` into it, `just up`, and open <http://localhost:8000/docs>. 👋
 
 The [getting started guide](https://emadmokhtar.github.io/pyfr/getting-started/)
-walks you through placing an order and explains what each response is telling
-you.
+explains each prompt and what the hook does; the generated project's own
+site takes it from there.
 
 ## 📦 What's in the box
 
@@ -94,6 +102,10 @@ a promise:
   requests.
 - 🔒 **A hardened container image**: non-root, no build tools, no shell
   utilities in the final layer, and reproducible installs from a lock file.
+- 📖 **Its own documentation site**, built from its own `docs/` and
+  deployed to GitHub Pages by its own workflow — the
+  [reference service's site](https://emadmokhtar.github.io/pyfr/reference-service/)
+  is the worked example.
 
 M1–M6 have since added persistence, OpenTelemetry, contract testing, cache and
 object storage, release automation, and supply-chain auditing, scanning and
@@ -102,14 +114,22 @@ what each one delivered.
 
 ## 📚 Documentation
 
+Two sites, deployed together. **[PyFr's site](https://emadmokhtar.github.io/pyfr/)**
+is about the template: generating a project, how the template is built and
+tested, and why it is a template rather than a framework. **[The reference
+service's site](https://emadmokhtar.github.io/pyfr/reference-service/)** is
+about the service: it is the documentation every generated project ships
+about itself, rendered here for the reference answers.
+
 | Page | What it covers |
 | --- | --- |
-| 🏁 [Getting started](https://emadmokhtar.github.io/pyfr/getting-started/) | Run the reference service and place an order |
-| 🔨 [Add an endpoint](https://emadmokhtar.github.io/pyfr/guides/add-an-endpoint/) | Build a feature through all four layers |
-| 🏛️ [Architecture](https://emadmokhtar.github.io/pyfr/explanation/architecture/) | How the pieces fit, and why |
-| ⚙️ [Configuration](https://emadmokhtar.github.io/pyfr/reference/configuration/) | Every environment variable |
+| 🏁 [Getting started](https://emadmokhtar.github.io/pyfr/getting-started/) | Generate a project: the twelve prompts, the hook, the first `just up` |
 | 🗺️ [Roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) | What ships when |
-| 🤝 [Contributing](https://emadmokhtar.github.io/pyfr/contributing/) | Working on PyFr itself |
+| 🤝 [Contributing](https://emadmokhtar.github.io/pyfr/contributing/) | Working on PyFr itself: the template body, the golden diff, pruning, the two sites |
+| 🏁 [Run the service](https://emadmokhtar.github.io/pyfr/reference-service/getting-started/) | Place an order and read each response |
+| 🔨 [Add an endpoint](https://emadmokhtar.github.io/pyfr/reference-service/guides/add-an-endpoint/) | Build a feature through all four layers |
+| 🏛️ [Architecture](https://emadmokhtar.github.io/pyfr/reference-service/explanation/architecture/) | How the pieces fit, and why |
+| ⚙️ [Configuration](https://emadmokhtar.github.io/pyfr/reference-service/reference/configuration/) | Every environment variable |
 
 The design specification and milestone plans live in
 [`docs/superpowers/`](docs/superpowers/). They contain the reasoning behind
@@ -124,8 +144,8 @@ edit it, run `just regen`, and the reference service is rendered from it —
 never edit `examples/reference-service/` by hand.
 
 ```bash
-# The template and its tests
-uv sync --group dev && just check
+# The template and its tests: both sites build, the root suite, the golden diff
+uv sync --group dev --group docs && just check
 ```
 
 ```bash
@@ -134,9 +154,13 @@ cd examples/reference-service && uv sync && just check
 ```
 
 ```bash
-# The documentation site
+# PyFr's documentation site, with a live preview
 just docs-install && just docs
 ```
+
+The [contributing guide](https://emadmokhtar.github.io/pyfr/contributing/)
+has the whole loop: the regeneration and golden diff, backends and pruning,
+the two documentation sites and every root `just` recipe.
 
 ## 🤝 Contributing
 

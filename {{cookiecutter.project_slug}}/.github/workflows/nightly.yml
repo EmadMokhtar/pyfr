@@ -33,6 +33,26 @@ jobs:
       - run: uv sync
       - run: just mutants-gate
 
+  links:
+    # The full sweep. ci.yml checks links on every pull request too; this
+    # one exists because an external link rots without anyone here
+    # touching a file, so nothing would ever re-check it otherwise.
+    #
+    # Deliberately NOT `just links`, for the same reason as ci.yml's links
+    # job: the lycheeverse/lychee-action@v2 action supplies the `lychee`
+    # binary itself, which this runner does not otherwise have --
+    # installing it some other way just to shell out to `just links`
+    # would add a step for no benefit. `lychee.toml` still stays the
+    # single definition of the check's behaviour either way, since the
+    # action is pointed at the same config file the recipe uses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md '**/*.md'
+          fail: true
+
   security:
     # The same audit ci.yml runs on every pull request, plus a scan of the
     # images LAST PUBLISHED rather than freshly built: a CVE is published

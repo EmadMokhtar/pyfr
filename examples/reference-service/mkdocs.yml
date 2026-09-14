@@ -1,0 +1,110 @@
+site_name: "Reference Service"
+site_description: "The PyFr reference service."
+# The project's own GitHub Pages site by default; PyFr's repository builds
+# this same tree under its own site and sets SITE_URL to say so.
+site_url: !ENV [SITE_URL, "https://emadmokhtar.github.io/reference-service/"]
+# The project's own repository by default. PyFr's deploy nests this site
+# under its repository and points all three at it: the header's link and
+# name, and each page's edit link -- which there opens the TEMPLATE page,
+# because the rendered example is never edited by hand.
+repo_url: !ENV [REPO_URL, "https://github.com/EmadMokhtar/reference-service"]
+repo_name: !ENV [REPO_NAME, "EmadMokhtar/reference-service"]
+edit_uri: !ENV [EDIT_URI, "edit/main/docs/"]
+copyright: Licensed under the Mozilla Public License 2.0
+
+validation:
+  # A reference that no longer resolves is a broken page, and `--strict`
+  # turns each of these into a build failure rather than a warning nobody
+  # reads.
+  anchors: warn
+  absolute_links: warn
+  unrecognized_links: warn
+
+# A skeleton to copy for the next decision record, not a page to read.
+exclude_docs: |
+  adr/template.md
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  # base_path reaches the project root so a page can include a file that
+  # lives outside docs/ instead of duplicating it. check_paths turns a
+  # missing include into a build error rather than a silently empty page.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Runbook: runbook.md
+  - Guides:
+      - Add an endpoint: guides/add-an-endpoint.md
+      - Add a backend: guides/add-a-backend.md
+      - Run in a container: guides/run-in-a-container.md
+      - Outbound HTTP calls: guides/outbound-http.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Configuration: reference/configuration.md
+      - HTTP API: reference/http-api.md
+      - The API contract: reference/contract.md
+      - Errors: reference/errors.md
+      - Logging: reference/logging.md
+      - Observability: reference/observability.md
+      - Supply chain: reference/supply-chain.md
+  - Decisions:
+      - Overview: adr/README.md
+      - 0001 Four-layer dependency rule: adr/0001-four-layer-dependency-rule.md
+      - 0004 golang-migrate owns the schema: adr/0004-golang-migrate-owns-the-schema.md
+      - 0005 In-memory adapters are a supported configuration: adr/0005-in-memory-adapters-are-a-supported-configuration.md
+      - 0006 The cache is fail-open, always: adr/0006-the-cache-is-fail-open-always.md
+      - 0007 Emit OpenTelemetry and stop there: adr/0007-emit-opentelemetry-and-stop.md
+      - 0008 Standard output is the source of truth for logs: adr/0008-standard-output-is-the-source-of-truth-for-logs.md
+      - 0009 RFC 9457 Problem Details for every error: adr/0009-rfc-9457-problem-details-for-every-error.md
+      - 0010 The OpenAPI document is committed and drift-gated: adr/0010-the-openapi-document-is-committed-and-drift-gated.md
+      - 0011 readyz reports optional dependencies without gating: adr/0011-readyz-reports-optional-dependencies-without-gating.md
+      - 0012 mypy is strict on the inner layers only: adr/0012-mypy-is-strict-on-the-inner-layers-only.md
+      - 0013 Redact by key name, in the shared processor chain: adr/0013-redaction-is-a-processor-in-the-shared-chain.md
+      - 0014 Dependabot, and one pin per tool: adr/0014-dependabot-and-one-pin-per-tool.md
+      - 0015 Images are published on release, under the repository's version: adr/0015-images-are-published-on-release-under-the-repository-version.md
+      - 0016 Image scanning fails on fixed findings, and exemptions expire: adr/0016-image-scanning-fails-on-fixed-findings-and-exemptions-expire.md
+  - Explanation:
+      - Architecture: explanation/architecture.md
+      - Layers and the dependency rule: explanation/layers.md
+      - Testing strategy: explanation/testing.md
+  - Project:
+      - Contributing: contributing.md
+      - Glossary: glossary.md

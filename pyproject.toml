@@ -60,11 +60,13 @@ dev = [
     # `uv run --locked --group dev cz` (ADR 0014).
     "commitizen==4.18.0",
     "pytest>=8.3",
-    # tests/test_check_docs_freshness.py imports scripts/check_docs_freshness.py,
-    # which does `import yaml` directly. Declared here rather than left to
-    # arrive transitively through the `docs` group's MkDocs: `dev` must be
-    # installable, and testable, on its own, without a `docs` sync alongside
-    # it. Floor matches what uv.lock already resolves.
+    # `just docs-freshness` runs the example's scripts/check_docs_freshness.py
+    # from the root's environment, and that script does `import yaml`
+    # directly; scripts/regen.py and tests/test_generation.py import it too.
+    # Declared here rather than left to arrive transitively through the
+    # `docs` group's MkDocs: `dev` must be installable, and usable, on its
+    # own, without a `docs` sync alongside it. Floor matches what uv.lock
+    # already resolves.
     "pyyaml>=6.0.3",
     # The template's own tests render it (pytest-cookies wraps cookiecutter's
     # Python API) and scripts/regen.py renders it for the golden diff. Both

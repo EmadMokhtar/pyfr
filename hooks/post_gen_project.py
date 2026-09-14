@@ -54,12 +54,14 @@ PRUNED: dict[str, list[str]] = {
         "tests/integration/test_db_instrumentation.py",
         "tests/integration/test_schema_drift.py",
         "tests/integration/test_schema_gates.py",
+        "docs/adr/0004-golang-migrate-owns-the-schema.md",
     ],
     "cache": [
         f"src/{PACKAGE}/infrastructure/cache/",
         "tests/unit/test_cached_order_repository.py",
         "tests/integration/test_cached_order_repository.py",
         "tests/integration/test_redis_instrumentation.py",
+        "docs/adr/0006-the-cache-is-fail-open-always.md",
     ],
     "object_storage": [
         f"src/{PACKAGE}/infrastructure/storage/",

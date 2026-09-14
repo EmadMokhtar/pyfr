@@ -156,6 +156,16 @@ dev = [
     "mutmut>=3.7",
 ]
 
+# The documentation site (docs/, mkdocs.yml). Its own group so `uv sync`
+# for the service does not install a static-site generator.
+docs = [
+    # Capped below 2.0: MkDocs 2.0 removes the plugin system entirely, with
+    # no migration path, which would break mkdocs-material and the docs
+    # build outright.
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.5,<10",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

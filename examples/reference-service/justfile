@@ -264,6 +264,28 @@ migrate-version:
 migrate-force version:
     docker compose run --rm migrate force {{version}}
 
+# Install the documentation toolchain.
+docs-install:
+    uv sync --group docs
+
+# Serve a live preview on http://127.0.0.1:8001, rebuilding on save. One
+# above the service's default port, so `just dev` and this can run together.
+docs:
+    uv run --group docs mkdocs serve --dev-addr 127.0.0.1:8001
+
+# Build the site into site/ with --strict, exactly as CI does.
+docs-build:
+    # --strict turns a warning into a failure: a link to a page that no
+    # longer exists, a renamed heading anchor, or an unresolvable include
+    # each fail the build rather than printing a warning nobody reads.
+    uv run --group docs mkdocs build --strict
+
+# Dead external links. Internal ones are already `mkdocs build --strict`'s job.
+links:
+    # Needs the lychee binary: `brew install lychee`, or run it in CI,
+    # where the action provides it.
+    lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md
+
 # Run the documentation's marked `curl` examples against a real service.
 docs-examples:
     #!/usr/bin/env bash
@@ -300,7 +322,14 @@ docs-examples:
     project=reference-service-docs-examples
     trap 'docker compose -p "$project" down -v' EXIT
     docker compose -p "$project" up -d --wait app redis
-    python3 ../../scripts/check_doc_examples.py ../../docs
+    python3 scripts/check_doc_examples.py docs
+
+# Documentation hygiene warnings for a pull request range: a stale
+# `last_reviewed` date, or a `covers:` path that changed while its page did
+# not. Never fails -- see the contributing page for what has to be true
+# before these become hard failures.
+docs-freshness base="origin/main" head="HEAD":
+    uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
 
 # An interactive psql session against the running compose database.
 psql:
@@ -320,10 +349,10 @@ minio-console:
 # The project's own git hooks over its own tracked files.
 #
 # pre-commit runs from the root of the enclosing git repository and resolves
-# hook commands there. When this project is generated into a subdirectory of
-# an existing repository — PyFr's own examples/reference-service/ is one —
-# that repository's root configuration owns the hooks and this one cannot
-# run; say so and exit clean rather than fail on paths that do not resolve.
+# hook commands there. When this project is vendored or nested inside
+# another repository, that repository's root configuration owns the hooks
+# and this one cannot run; say so and exit clean rather than fail on paths
+# that do not resolve.
 precommit:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -347,17 +376,20 @@ check: lint typecheck imports test precommit
     git diff --exit-code
 
 # What running every gate locally, in one command, looks like. CI does not
-# call this recipe itself — `ci.yml` runs `check`, `test-integration`,
-# `gates`, `o11y-gates` and `contract-gates` as five separate jobs, in
-# parallel, so one failure names the gate that broke instead of an opaque
-# `check-all` exit code. This recipe is for a developer who wants the same
-# coverage before opening the pull request, without waiting on CI to say so.
-# Separate from `check` so the fast loop stays fast and usable without
-# Docker.
+# call this recipe itself — `ci.yml` runs `check`, `docs-build`,
+# `test-integration`, `gates`, `o11y-gates` and `contract-gates` as six
+# separate jobs (`check`, `docs`, `integration`, `gates`, `o11y-gates`,
+# `contract`), in parallel, so one failure names the gate that broke
+# instead of an opaque `check-all` exit code. This recipe is for a
+# developer who wants the same coverage before opening the pull request,
+# without waiting on CI to say so. Separate from `check` so the fast loop
+# stays fast and usable without Docker.
 #
-# Everything `check` does, plus the container tier and the three gate
-# recipes -- the five jobs CI runs separately, as one local command.
-check-all: check test-integration gates o11y-gates contract-gates
+# The site build comes first among the additions: it is the one that needs
+# no Docker, so it fails fast. `just --list` shows the line below.
+#
+# Everything `check` does, plus the site build, the container tier and the three gate recipes -- the six jobs CI runs separately, as one local command.
+check-all: check docs-build test-integration gates o11y-gates contract-gates
 
 # Audit every pinned dependency in uv.lock against the PyPI advisory
 # database. `uv export` writes the lock as a fully hashed requirements

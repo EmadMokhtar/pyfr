@@ -88,6 +88,7 @@ RAW_GUARDED_FILES = frozenset(
         ".github/workflows/ci.yml",
         ".github/workflows/nightly.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/docs.yml",
     }
 )
 
@@ -174,6 +175,28 @@ def test_a_custom_port_reaches_every_place_the_port_lives(cookies) -> None:
     assert "default=9000" in settings
     test_settings = (root / "tests" / "unit" / "test_settings.py").read_text()
     assert "== 9000" in test_settings
+
+
+def test_the_docs_carry_the_chosen_port(cookies) -> None:
+    # The eight-combination matrix never varies http_port; this render does,
+    # so a port hard-coded in a page fails here and not in a user's
+    # config-docs-check.
+    root = render(cookies, http_port="9000")
+    offenders = [
+        path.relative_to(root).as_posix()
+        for path in sorted((root / "docs").rglob("*.md"))
+        if "localhost:8000" in path.read_text()
+    ]
+    assert offenders == []
+    configuration = (root / "docs" / "reference" / "configuration.md").read_text()
+    # The generated table's row: `just config-docs-check` regenerates it
+    # from the settings model, whose default is the answer.
+    row = next(
+        line
+        for line in configuration.splitlines()
+        if line.startswith("| `APP_HTTP_PORT` |")
+    )
+    assert "| `9000` |" in row, row
 
 
 def test_a_package_name_at_the_cap_is_format_clean(cookies) -> None:
@@ -268,6 +291,7 @@ BACKEND = {
             "tests/integration/test_db_instrumentation.py",
             "tests/integration/test_schema_drift.py",
             "tests/integration/test_schema_gates.py",
+            "docs/adr/0004-golang-migrate-owns-the-schema.md",
         ),
     },
     "cache": {
@@ -283,6 +307,7 @@ BACKEND = {
             "tests/unit/test_cached_order_repository.py",
             "tests/integration/test_cached_order_repository.py",
             "tests/integration/test_redis_instrumentation.py",
+            "docs/adr/0006-the-cache-is-fail-open-always.md",
         ),
     },
     "object_storage": {
@@ -488,6 +513,33 @@ WORKFLOW_BACKEND_WORDS = {
     "cache": ("redis",),
     "object_storage": ("minio", "s3"),
 }
+
+# Pages that document what the render HAS: a word of a pruned backend in
+# them is a section that should have been conditional. Comparative prose
+# elsewhere (an ADR weighing PostgreSQL against an in-memory store) is
+# deliberately not policed.
+DOCS_BACKEND_PAGES = (
+    "docs/index.md",
+    "docs/getting-started.md",
+    "docs/runbook.md",
+    "docs/reference/commands.md",
+    "docs/reference/configuration.md",
+    "docs/reference/observability.md",
+    "docs/reference/supply-chain.md",
+    "docs/guides/run-in-a-container.md",
+    "docs/glossary.md",
+    "mkdocs.yml",
+    "README.md",
+)
+DOCS_BACKEND_WORDS = {
+    "database": ("postgres", "migrat", "schema.sql", "golang-migrate"),
+    "cache": ("redis",),
+    # "bucket" is deliberately not here: it is also Prometheus's own word for
+    # a histogram bucket (observability.md's "Changing the objectives"
+    # section), so banning it would fail a combination that has nothing to
+    # do with object storage.
+    "object_storage": ("minio", " s3"),
+}
 JUST_CALL = re.compile(r"\bjust\s+([a-z][a-z0-9-]*)")
 DEPENDABOT_ECOSYSTEMS = [
     "uv",
@@ -550,6 +602,7 @@ def assert_workflows_are_coherent(root: Path, answers: dict[str, str]) -> None:
         ".github/workflows/ci.yml",
         ".github/workflows/nightly.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/docs.yml",
         ".github/dependabot.yml",
     }, present
 
@@ -571,6 +624,13 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
         for dependency in spec["dependencies"]:
             assert (dependency in dependencies) == on, (key, dependency, on)
         assert (spec["env_prefix"] in env_example) == on, (key, "env")
+        configuration = (root / "docs" / "reference" / "configuration.md").read_text()
+        assert (spec["env_prefix"] in configuration) == on, (key, "configuration.md")
+        if not on:
+            for page in DOCS_BACKEND_PAGES:
+                text = (root / page).read_text().lower()
+                for word in DOCS_BACKEND_WORDS[key]:
+                    assert word not in text, (key, page, word)
         for library in spec["importlinter"]:
             assert (library in importlinter) == on, (key, library, ".importlinter")
         if on:
@@ -617,3 +677,73 @@ def assert_invariant(root: Path, answers: dict[str, str]) -> None:
 @pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
 def test_a_render_carries_only_the_backends_it_chose(cookies, answers) -> None:
     assert_invariant(render(cookies, **answers), answers)
+
+
+def build_site(root: Path) -> subprocess.CompletedProcess[str]:
+    # The root's MkDocs over the render's own mkdocs.yml: no `uv sync` in
+    # the render, so no network and no second toolchain. `site_url` and the
+    # repository keys read SITE_URL, REPO_URL, REPO_NAME and EDIT_URI
+    # through `!ENV`; unset, the defaults apply.
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mkdocs",
+            "build",
+            "--strict",
+            "--config-file",
+            str(root / "mkdocs.yml"),
+            "--site-dir",
+            str(root / "site"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "answers", [EVERYTHING_ON, COMBINATIONS[-1]], ids=combination_id
+)
+def test_the_two_extreme_renders_build_their_sites(cookies, answers) -> None:
+    # Every page, every nav entry and every cross-reference must resolve
+    # with everything on and with everything off; the six other
+    # combinations are covered by the full-suite tests (PR 5).
+    root = render(cookies, **answers)
+    built = build_site(root)
+    assert built.returncode == 0, built.stdout + built.stderr
+    assert (root / "site" / "index.html").is_file()
+
+
+# The reference service's identity must never leak into a project with a
+# different one. PyFr's own URLs are the exception: a generated project
+# links back to the template it came from.
+IDENTITY_LEAKS = ("reference-service", "reference_service", "Reference Service")
+PYFR_URLS = ("github.com/EmadMokhtar/pyfr", "emadmokhtar.github.io/pyfr/")
+# Where a render speaks about itself: the site, the README, the scripts'
+# docstrings and comments, the site's configuration and the workflows.
+IDENTITY_TREES = ("docs", "README.md", "scripts", "mkdocs.yml", ".github")
+
+
+def identity_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    for name in IDENTITY_TREES:
+        path = root / name
+        files.extend(files_under(path) if path.is_dir() else [path])
+    return files
+
+
+def test_the_docs_carry_the_answers_not_the_reference_identity(cookies) -> None:
+    root = render(cookies)  # default answers: my-service, my_service, your-org
+    offenders = []
+    for path in identity_files(root):
+        text = path.read_text()
+        for line in text.splitlines():
+            stripped = line
+            for url in PYFR_URLS:
+                stripped = stripped.replace(url, "")
+            if (
+                any(leak in stripped for leak in IDENTITY_LEAKS)
+                or "emadmokhtar" in stripped.lower()
+            ):
+                offenders.append(f"{path.relative_to(root)}: {line.strip()[:80]}")
+    assert offenders == []

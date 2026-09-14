@@ -62,7 +62,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just typecheck` | mypy — strict on domain and services |
 | `just imports` | Verify the layer dependency rule |
 | `just check` | lint, typecheck, imports, test, precommit, then `git diff --exit-code` — fails loudly if any pre-commit hook (ruff-format, uv-lock, and others mutate files) changed the tree instead of silently passing on a second run; needs no Docker; run this before pushing |
-| `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same five gates CI runs as separate jobs, in one local command; run it before a pull request that touches the schema, the adapter, the API contract, or observability |
+| `just check-all` | `check`, plus `docs-build`, `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same six gates CI runs as separate jobs (`check`, `docs`, `integration`, `gates`, `o11y-gates`, `contract`), in one local command; run it before a pull request that touches the schema, the adapter, the API contract, observability, or the documentation |
 | `just up` / `just down` | Start / stop the container stack; `up` seeds five orders once the API is healthy, `down` removes the volumes, the seed's state included |
 | `just seed` | Create the same five orders against `just dev` (`localhost:${APP_HTTP_PORT}`), idempotently — state in `.seed-state.json`, ignored by git |
 | `just build-images` | Build both container images for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning |
@@ -82,6 +82,11 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just contract-release` | Promote `openapi.json` to the baseline. Only at a release — never to silence a red `contract-gates` |
 | `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub — see [Outbound payments](#outbound-payments) |
 | `just mutants` / `just mutants-gate` | Mutation testing over `domain/` and `services/`, and the gate against the recorded floor |
+| `just docs-install` | Install the documentation toolchain (`uv sync --group docs`) |
+| `just docs` | Serve a live preview of the documentation site on <http://127.0.0.1:8001>, rebuilding on save |
+| `just docs-build` | Build the site into `site/` with `mkdocs build --strict`, exactly as CI's `docs` job and `docs.yml` do — a broken internal link or a renamed heading anchor fails it |
+| `just links` | Check every external link in `docs/` and this README with `lychee`, against `lychee.toml` — needs the `lychee` binary (`brew install lychee`); CI's `links` job gets it from the action |
+| `just docs-freshness [BASE] [HEAD]` | Advisory warnings only, never a failure: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not — what CI's `docs-warnings` job runs; not CI's `docs-freshness` job, which runs `scripts/check_docs_updated.py` |
 | `just docs-examples` | Start the compose stack, run every marked `curl` example in `docs/` against it, then tear it down — pass or fail |
 | `just redis-cli` | An interactive `redis-cli` session against the running compose cache |
 | `just minio-console` | Print, and try to open, the MinIO web console — see [Object storage](#object-storage) |
@@ -259,9 +264,9 @@ prove this adapter still parses that stub's wire format; they cannot detect
 the real provider changing, because the stub is static and nothing about it
 changes on its own. And if this process dies between a successful
 authorisation and a successful save, the payment provider is left holding
-an authorisation with no order to match it — a gap M3 records rather than
-closes, because closing it needs an outbox or a reconciliation job, and
-message queues are excluded from this project entirely.
+an authorisation with no order to match it — a gap this project records
+rather than closes, because closing it needs an outbox or a reconciliation
+job, and message queues are excluded from this project entirely.
 
 ## Object storage
 
@@ -414,28 +419,28 @@ deliberately not distroless: the start command needs a shell to expand
 
 ## Continuous integration and releases
 
-Three workflows under `.github/workflows/` and a Dependabot schedule ship
+Four workflows under `.github/workflows/` and a Dependabot schedule ship
 with the project and run from the first push:
 
 | Workflow | Runs | What it does |
 |---|---|---|
-| `ci.yml` | every push to `main` and every pull request | `just check`, `just test-integration`, `just gates`, `just contract-gates` and `just o11y-gates` as separate jobs, so a failure names its gate; a two-architecture build of every image; `just audit`, `just scan` and `just sbom` |
+| `ci.yml` | every push to `main` and every pull request | `just check`, `just test-integration`, `just gates`, `just contract-gates` and `just o11y-gates` as separate jobs, so a failure names its gate; a two-architecture build of every image; `just audit`, `just scan` and `just sbom`; the documentation site build, the documentation-freshness gate, the external-link check and the documented examples |
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
-
-Until PyFr's next release moves the documentation site into the template,
-the `check` and `gates` jobs stay red: `just test` and `just gates` look
-for `docs/reference/configuration.md` two directories above the project,
-where it lives in PyFr's own repository.
+| `docs.yml` | every push to `main`, or by hand | builds the documentation site with `mkdocs build --strict` and deploys it to GitHub Pages |
 
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
 
-Three settings live in the GitHub interface, not in this repository. The
+Five settings live in the GitHub interface, not in this repository. The
 workflow-token permission is not one of them: each workflow declares what
 it needs in its own `permissions:` key, so the repository can stay at
 GitHub's default.
 
+- **Settings → Pages → Source = "GitHub Actions".** Without it `docs.yml`'s
+  deploy job fails with an opaque error while its build job succeeds.
+- **A `no-docs-needed` label must exist**, or the documentation-freshness
+  check has no escape hatch.
 - **A `RELEASE_TOKEN` secret, only if a ruleset on `main` requires a pull
   request.** The workflow token cannot pass such a ruleset (`GH013`), and
   on a user-owned repository GitHub does not let the Actions app be

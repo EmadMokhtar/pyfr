@@ -58,5 +58,9 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        # mkdocs.yml's `site_url: !ENV [...]` is a custom tag MkDocs itself
+        # resolves -- generic YAML has no constructor for it, so a plain
+        # parse fails on a file that is otherwise correct.
+        exclude: ^mkdocs\.yml$
       - id: check-toml
       - id: check-merge-conflict

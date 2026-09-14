@@ -4,6 +4,10 @@ name: Docs
 # "GitHub Actions". Until that is set, `deploy` fails with an opaque error
 # even though `build` succeeds, and every published documentation link stays
 # dead. See docs/contributing.md, "One-time repository settings".
+#
+# The deploy carries two sites: PyFr's, and the reference service's own
+# documentation under `reference-service/` -- the site every generated
+# project ships, rendered from the template (spec §9.2).
 
 on:
   push:
@@ -33,11 +37,17 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Install just
+        uses: extractions/setup-just@v4
+
       - name: Install the documentation toolchain
         run: uv sync --group docs
 
-      - name: Build the site
-        run: uv run mkdocs build --strict
+      - name: Build both sites
+        # `just docs-build` builds PyFr's site into site/ and the reference
+        # service's rendered site into site/reference-service/ -- one
+        # definition of the build, the same one a contributor runs.
+        run: just docs-build
 
       - uses: actions/configure-pages@v6
 

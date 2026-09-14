@@ -81,7 +81,13 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
-        exclude: ^\{\{cookiecutter\.project_slug\}\}/
+        # The template body is also excluded here (unrendered Jinja, not
+        # YAML). The example's own mkdocs.yml is rendered YAML, but its
+        # `!ENV [...]` values -- site_url, repo_url, repo_name, edit_uri --
+        # are a custom tag MkDocs itself resolves; generic YAML has no
+        # constructor for it, so a plain parse fails on a file that is
+        # otherwise correct.
+        exclude: ^\{\{cookiecutter\.project_slug\}\}/|^examples/reference-service/mkdocs\.yml$
       - id: check-toml
         exclude: ^\{\{cookiecutter\.project_slug\}\}/
       - id: check-merge-conflict
