@@ -99,6 +99,31 @@ them; `tests/test_regen.py` holds every `uses:` ref in the template's
 workflows equal to the root's. The workflows themselves run only in a
 generated project.
 
+### The full-suite tests
+
+The generation tests prove every render is well-formed. Three renders are
+also proven to be *services*: `tests/test_generated_service.py` renders
+everything on (the reference answers), everything off, and PostgreSQL
+alone, for real — the post-generation hook runs `git init`, `uv sync` and
+the first commit, exactly as on a user's machine — and runs each project's
+own `just check-all`, the six gates its CI runs as separate jobs. The two
+smaller combinations also change the name, organisation, licence and port,
+so those substitutions are proven to produce a working project too. Three
+syncs and three full gate runs take too long for every push, so the tests
+carry the `full_suite` marker, `pyproject.toml` deselects it by default,
+and `.github/workflows/full-suite.yml` runs them on every merge to `main`,
+nightly, and on demand — one job per combination. Locally, with Docker
+running:
+
+```bash
+just test-full-suite            # all three, a few minutes each
+just test-full-suite postgres-only
+```
+
+A failing gate fails the test with that gate's output, and the render is
+kept on disk (the test prints where); a passing render is removed, since
+each carries a `.venv/` of a few hundred megabytes.
+
 The service's own checks before a pull request — `just check`, `just
 check-all` and `just security` — are the example's, and the example's site
 describes them in its
@@ -632,6 +657,7 @@ are not interchangeable.
 | `just docs-build` | Build both sites into `site/` with `--strict`, exactly as CI and `docs.yml` do: PyFr's at the top, and the reference service's rendered site — built from `examples/reference-service/` with its own toolchain and its own `mkdocs.yml`, with `SITE_URL` set to its nested address, `REPO_URL` and `REPO_NAME` pointing its header at this repository, and `EDIT_URI` pointing its edit links at the template body — under `site/reference-service/`; then `scripts/check_site_links.py` resolves every link between the two sites against that tree, and every link into this repository's tree on GitHub against the checkout. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee), over the root `docs/`, the root `README.md` and the rendered example's `docs/` and `README.md`. Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml` and the same paths. |
 | `just test` | This repository's own tests (`tests/`) — the hooks' tests, the generation-test matrix that renders all eight backend combinations and checks each one, `scripts/regen.py`'s tests and the golden diff — with both the `dev` and `docs` groups, because the generation tests build a render's site with the root's MkDocs. Needs no Docker. |
+| `just test-full-suite [combination]` | The full-suite tests: three combinations rendered for real, synced, committed and run through their own `just check-all`. Slow; needs Docker and the network. `combination` is one of `everything-on`, `everything-off`, `postgres-only`. CI runs them on merge to `main` and nightly, never on a pull request — see [above](#the-full-suite-tests). |
 | `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |
 | `just regen` | Regenerate `examples/reference-service/` from the template with the answers in `tests/reference-answers.yaml`; run this after every change to `{{cookiecutter.project_slug}}/` and commit the result. |
 | `just regen-check` | The golden diff: render and compare, writing nothing. CI's `golden` job. |

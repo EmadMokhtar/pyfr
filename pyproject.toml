@@ -89,5 +89,13 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers --strict-config"
+# `-m "not full_suite"` keeps the full-suite tests out of every ordinary
+# run: `just test`, CI's `docs` job, a bare `pytest`. A `-m` given on the
+# command line replaces this one (the last `-m` wins), so
+# `pytest -m full_suite` runs exactly those -- that is what
+# `just test-full-suite` and .github/workflows/full-suite.yml do.
+addopts = "-q --strict-markers --strict-config -m \"not full_suite\""
+markers = [
+    "full_suite: renders a project for real -- the hook runs `uv sync` and `git init` -- and runs its own `just check-all`; slow, needs Docker and the network (spec section 10.3)",
+]
 testpaths = ["tests"]

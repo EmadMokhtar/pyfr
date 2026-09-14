@@ -61,6 +61,16 @@ links:
 test:
     uv run --group dev --group docs pytest tests/
 
+# The full-suite tests: render three combinations for real -- the hook
+# runs `uv sync` and `git init` -- and run each project's own
+# `just check-all`. Slow (a few minutes per combination) and needs Docker
+# and the network. CI runs them on every merge to main and nightly
+# (.github/workflows/full-suite.yml), never on a pull request; `just test`
+# deselects them. `combination` narrows the run to one test id:
+# everything-on, everything-off or postgres-only.
+test-full-suite combination="":
+    uv run --group dev pytest -m full_suite -k "{{combination}}" tests/test_generated_service.py
+
 # The repository's git hooks over every tracked file. The reference service's
 # own precommit recipe skips itself when it finds it is nested inside this
 # repository; this recipe is the one that covers that tree here.
