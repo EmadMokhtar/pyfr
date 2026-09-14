@@ -28,6 +28,7 @@ if line not in existing:
 print("hello from", NAME)
 """
 FAIL = "import sys\nsys.exit('the schema is not what I expected')\n"
+WARN = 'import sys\nprint("warning: the schema looks old", file=sys.stderr)\n'
 
 
 def script(clone: Path, version: str, name: str, text: str) -> Path:
@@ -106,3 +107,11 @@ def test_a_failing_script_stops_the_update_with_its_message(
     assert "v1.5.0/before.py failed" in stop.value.cause
     assert "the schema is not what I expected" in stop.value.cause
     assert "git reset --hard HEAD" in stop.value.fix
+
+
+def test_a_successful_script_s_stderr_is_shown(clone: Path, project: Path) -> None:
+    script(clone, "v1.5.0", "before", WARN)
+    found = migrate.discover(clone, Version(1, 4, 0), Version(1, 5, 0))
+    out = io.StringIO()
+    migrate.run_before(found, project, Version(1, 4, 0), Version(1, 5, 0), out)
+    assert "warning: the schema looks old\n" in out.getvalue()

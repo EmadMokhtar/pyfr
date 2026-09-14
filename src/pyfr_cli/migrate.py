@@ -85,6 +85,9 @@ def run_script(
             "fix what it reports; `git reset --hard HEAD` reverts what it "
             "changed, then run pyfr update again",
         )
+    # A warning the script printed is worth seeing when it succeeds too.
+    if result.stderr:
+        out.write(result.stderr)
 
 
 def run_before(
