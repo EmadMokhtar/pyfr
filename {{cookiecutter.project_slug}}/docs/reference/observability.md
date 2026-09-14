@@ -13,7 +13,7 @@ can see your own request end to end on a laptop.
 
 ## What ships, and what does not
 
-The template ships **instrumentation, dashboards and rules**. It does not ship
+The service ships **instrumentation, dashboards and rules**. It does not ship
 a production observability platform, because teams already have one. The
 service's only commitment is to emit OpenTelemetry data to whatever
 `APP_OTEL__ENDPOINT` points at.
@@ -128,7 +128,7 @@ The object store is informational only.
 them can turn a 200 into a 503.
 {%- else %}
 There is nothing optional here to report — `dependencies` is always `{}`
-in this render.
+in this service.
 {%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 
@@ -163,6 +163,23 @@ response shapes.
 Saturation sits beside rate and errors deliberately. A connection pool at its
 ceiling is a queue, and a queue is latency that has not been served yet — it
 moves minutes before the error rate does.
+{%- if cookiecutter.database == "none" and cookiecutter.cache == "none" %}
+
+The dashboards are the same files whatever backends a service has. With no
+database and no cache, the service health dashboard's "Database connection
+pool" panel and its cache command latency panel have no metric to draw and
+stay empty — Grafana shows "No data", not zero.
+{%- elif cookiecutter.database == "none" %}
+
+The dashboards are the same files whatever backends a service has. With no
+database, the service health dashboard's "Database connection pool" panel
+has no metric to draw and stays empty — Grafana shows "No data", not zero.
+{%- elif cookiecutter.cache == "none" %}
+
+The dashboards are the same files whatever backends a service has. With no
+cache, the service health dashboard's cache command latency panel has no
+metric to draw and stays empty — Grafana shows "No data", not zero.
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 
 ### The Redis panel shows latency, not pool usage
@@ -180,7 +197,7 @@ Prometheus's own label-values endpoint for anything named `redis` or `pool`.
 Nothing came back.
 
 A panel querying a metric that is not there would not error — it would
-render empty, and an empty saturation panel reads as "zero saturation", which
+come up empty, and an empty saturation panel reads as "zero saturation", which
 is a false "everything is fine" rather than an honest "not observed". That
 failure mode is worse than the panel not existing.
 
@@ -276,11 +293,11 @@ not an error.
 `just test` fails until the two agree. `just o11y-gates` additionally runs the
 rules through `promtool` unit tests.
 
-The objective is not a cookiecutter prompt. M7 considered one and dropped
-it: the numbers are threaded through `slo.py`, the rules, their `promtool`
-tests and the SLO dashboard, and templating that arithmetic would have
-been the most fragile Jinja in the tree. A generated project starts at
-99.9 % and 300 ms and edits them here.
+The objective was deliberately not made a question to answer when the
+project was generated: the numbers are threaded through `slo.py`, the
+rules, their `promtool` tests and the SLO dashboard, and templating that
+arithmetic would have been fragile. The project starts at 99.9 % and
+300 ms and edits them here.
 
 Two places the tests do not reach: `ops/prometheus/slo_test.yml`, whose
 synthetic series and alert summaries `just o11y-gates` asserts, and the

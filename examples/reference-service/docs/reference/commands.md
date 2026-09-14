@@ -218,3 +218,17 @@ This is an executable check on the documentation's own prose, not on the
 code: breaking one of the documented examples, or the endpoint it calls,
 fails the recipe. It is not part of `just check-all` — it runs as its own
 `docs-examples` job in CI, against a stack that job starts itself.
+
+## The documentation
+
+Run these from the project root. The site is built from `docs/` and
+`mkdocs.yml`; [Contributing](../contributing.md#documentation-ships-with-the-change)
+says what a change to the code owes it.
+
+| Command | What it does |
+| --- | --- |
+| `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
+| `just docs` | Serve a live preview on <http://127.0.0.1:8001>, rebuilding on save. |
+| `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. `--strict` turns a warning into a failure: a link to a page that no longer exists, a renamed heading anchor, or an unresolvable include each fail the build rather than printing a warning nobody reads. |
+| `just links` | Dead external links, checked with `lychee`. Internal ones are already `mkdocs build --strict`'s job. Needs the `lychee` binary (`brew install lychee`), or run it in CI, where the action provides it. |
+| `just docs-freshness [BASE] [HEAD]` | Documentation hygiene warnings for a pull request range: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails — see [Contributing](../contributing.md#when-the-warnings-become-failures) for what has to be true before these become hard failures. |

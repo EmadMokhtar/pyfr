@@ -66,7 +66,7 @@ only entry in `checks` — a failure looks like this:
 {"status": "unavailable", "checks": {"database": "error: TimeoutError"}, "dependencies": {}}
 ```
 {%- else %}
-moot here: nothing is ever registered in `checks` in this render, so
+moot here: nothing is ever registered in `checks` in this service, so
 `GET /readyz` can never fail on that account, and always returns 200 as far
 as `checks` is concerned.
 {%- endif %}
@@ -97,37 +97,37 @@ status code, whatever it says. The object store lives here, and stays
 ```
 {%- else %}
 status code, whatever it says — but nothing is registered here in this
-render, so `dependencies` is always `{}`.
+service, so `dependencies` is always `{}`.
 {%- endif %}
 {%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 {%- if cookiecutter.database == "postgres" %}
 
-**Why gate on the database but not the other two.** This is the part of the
-milestone worth remembering, because it is not the obvious choice.
+**Why gate on the database but not the other two.** This is worth
+remembering, because it is not the obvious choice.
 {%- else %}
 
-**Why the cache and the object store never gate.** This is the part of the
-milestone worth remembering, because it is not the obvious choice.
+**Why the cache and the object store never gate.** This is worth
+remembering, because it is not the obvious choice.
 {%- endif %}
 {%- elif cookiecutter.cache == "redis" %}
 {%- if cookiecutter.database == "postgres" %}
 
-**Why gate on the database but not the cache.** This is the part of the
-milestone worth remembering, because it is not the obvious choice.
+**Why gate on the database but not the cache.** This is worth remembering,
+because it is not the obvious choice.
 {%- else %}
 
-**Why the cache never gates.** This is the part of the milestone worth
-remembering, because it is not the obvious choice.
+**Why the cache never gates.** This is worth remembering, because it is
+not the obvious choice.
 {%- endif %}
 {%- elif cookiecutter.object_storage == "s3" %}
 {%- if cookiecutter.database == "postgres" %}
 
-**Why gate on the database but not the object store.** This is the part of
-the milestone worth remembering, because it is not the obvious choice.
+**Why gate on the database but not the object store.** This is worth
+remembering, because it is not the obvious choice.
 {%- else %}
 
-**Why the object store never gates.** This is the part of the milestone
-worth remembering, because it is not the obvious choice.
+**Why the object store never gates.** This is worth remembering, because
+it is not the obvious choice.
 {%- endif %}
 {%- endif %}
 {%- if cookiecutter.cache == "redis" %}
@@ -159,7 +159,7 @@ storage is configured — a service can run with none of the three, on the
 in-memory repository, no cache decorator, and the in-memory receipt store.
 {%- else %}
 
-`checks` is empty and `dependencies` is empty whenever none of this render's
+`checks` is empty and `dependencies` is empty whenever none of this project's
 optional backends is configured — the service runs on its in-memory
 adapters either way.
 {%- endif %}
@@ -296,7 +296,7 @@ small.
 Every amount in the document is a JSON string, for the same reason as the
 order response below. The document carries no timestamp — a receipt is
 stored once and served unchanged afterwards, and a `generated_at` field
-would make a re-render after a cache eviction produce different bytes for
+would make a re-rendering after a cache eviction produce different bytes for
 "the same" receipt. `internal_note` is absent for the same reason it is
 absent from the order response: the renderer names every field it emits
 rather than dumping the entity.

@@ -40,11 +40,10 @@ Two contracts are declared:
 | `domain-independence` | `domain` importing `api`, `services`, `infrastructure`, the container, the app factory, or any of: FastAPI, Starlette, SQLAlchemy, asyncpg, OpenTelemetry, httpx, stamina, redis, aioboto3 |
 | `services-independence` | `services` importing `api`, `infrastructure`, the container, the app factory, or that same list of frameworks and drivers |
 
-The list has grown milestone by milestone: FastAPI and Starlette were named
-from M0, and SQLAlchemy, asyncpg, OpenTelemetry, httpx, stamina, redis and
-aioboto3 were added as each adapter arrived, so that the layer rule catches a
-new dependency leaking inward the same day it is introduced, not only the
-two frameworks the project started with.
+The list grows with the adapters: FastAPI and Starlette came first, and
+every driver an adapter brought in was added with it, so that the layer rule
+catches a new dependency leaking inward the same day it is introduced, not
+only the two frameworks the project started with.
 
 Add `import fastapi` to a domain module and `just check` fails with the
 contract that broke and the import chain that broke it. Try it — the failure

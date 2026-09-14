@@ -6,7 +6,7 @@ covers:
 
 # Testing strategy
 
-M0 ships 102 tests that run in about three seconds, with no containers and no
+The unit and API tiers run in a few seconds, with no containers and no
 network.
 
 ```bash
@@ -23,9 +23,9 @@ tests/
   conftest.py shared fixtures.
 ```
 
-Later milestones add `integration/` (real PostgreSQL, Redis and MinIO started
-in Docker for the test session), `contract/` (generated requests checked
-against the published API contract), and `cassettes/` (recorded outbound HTTP
+Beside them sit `integration/` (real PostgreSQL, Redis and MinIO started in
+Docker for the test session), `contract/` (generated requests checked against
+the published API contract), and `cassettes/` (recorded outbound HTTP
 responses, replayed offline).
 
 ## Unit tests carry the weight
@@ -89,7 +89,7 @@ proves the tests never actually checked that behaviour. It measures whether
 tests *assert*, where coverage measures only whether lines *executed*. It is
 the stronger of the two signals.
 
-M3 shipped it, over `domain/` and `services/` — the two layers where a
+It runs over `domain/` and `services/` — the two layers where a
 surviving mutant means a business rule nothing actually checks, not a line of
 routing or wiring. Run it with `just mutants`; see
 [Commands](../reference/commands.md#outbound-http-and-mutation-testing) for
@@ -97,7 +97,7 @@ the full set (`mutants-changed`, `mutants-gate`).
 
 ## What is not measured yet
 
-Coverage thresholds are not implemented, and are not in M3's scope. Nothing
+Coverage thresholds are not implemented. Nothing
 in this repository fails a build for a line that never ran.
 
 ## Your `.env` is kept out of the tests

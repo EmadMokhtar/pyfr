@@ -13,7 +13,7 @@ can see your own request end to end on a laptop.
 
 ## What ships, and what does not
 
-The template ships **instrumentation, dashboards and rules**. It does not ship
+The service ships **instrumentation, dashboards and rules**. It does not ship
 a production observability platform, because teams already have one. The
 service's only commitment is to emit OpenTelemetry data to whatever
 `APP_OTEL__ENDPOINT` points at.
@@ -104,7 +104,7 @@ Prometheus's own label-values endpoint for anything named `redis` or `pool`.
 Nothing came back.
 
 A panel querying a metric that is not there would not error — it would
-render empty, and an empty saturation panel reads as "zero saturation", which
+come up empty, and an empty saturation panel reads as "zero saturation", which
 is a false "everything is fine" rather than an honest "not observed". That
 failure mode is worse than the panel not existing.
 
@@ -199,11 +199,11 @@ not an error.
 `just test` fails until the two agree. `just o11y-gates` additionally runs the
 rules through `promtool` unit tests.
 
-The objective is not a cookiecutter prompt. M7 considered one and dropped
-it: the numbers are threaded through `slo.py`, the rules, their `promtool`
-tests and the SLO dashboard, and templating that arithmetic would have
-been the most fragile Jinja in the tree. A generated project starts at
-99.9 % and 300 ms and edits them here.
+The objective was deliberately not made a question to answer when the
+project was generated: the numbers are threaded through `slo.py`, the
+rules, their `promtool` tests and the SLO dashboard, and templating that
+arithmetic would have been fragile. The project starts at 99.9 % and
+300 ms and edits them here.
 
 Two places the tests do not reach: `ops/prometheus/slo_test.yml`, whose
 synthetic series and alert summaries `just o11y-gates` asserts, and the

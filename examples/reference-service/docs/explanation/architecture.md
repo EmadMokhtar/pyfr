@@ -27,11 +27,11 @@ src/<package>/
     order.py            application services and their command objects
 
   infrastructure/     adapters: the only code that knows a storage technology
-    memory/             the in-memory repository (M0)
-    db/                 the PostgreSQL repository (M1)
-    http/               the outbound payment gateway (M3)
-    cache/              a Redis decorator OVER the repository, not beside it (M4)
-    storage/            the S3-compatible receipt store (M4)
+    memory/             the in-memory adapters
+    db/                 the PostgreSQL repository
+    http/               the outbound payment gateway
+    cache/              a Redis decorator OVER the repository, not beside it
+    storage/            the S3-compatible receipt store
 
   api/                the only code that knows HTTP exists
     deps.py             FastAPI dependencies reading from application state
@@ -82,10 +82,10 @@ storage or transport, it belongs in `domain/`. The service layer is
 choreography.
 
 **`infrastructure/`** holds adapters: the only code that knows a specific
-technology. M0 ships an in-memory repository. M1 adds PostgreSQL behind the
-identical interface, and nothing above this layer changes.
+technology. An in-memory repository and the PostgreSQL one sit behind the
+identical interface, and nothing above this layer changes between them.
 
-M4 adds two more adapters, and one of them is a different shape from the
+Two more adapters follow, and one of them is a different shape from the
 rest. `infrastructure/storage/` is an ordinary adapter: `S3ReceiptStore`
 satisfies the `ReceiptStore` port over `aioboto3`, the same way
 `PostgresOrderRepository` satisfies `OrderRepository` over SQLAlchemy.
@@ -157,12 +157,13 @@ class of incident rather than adding a feature:
   killed, not drained. See [Run in a container](../guides/run-in-a-container.md#the-shutdown-deadline-trap),
   which is where this bites in practice.
 
-## What M0 does not have
+## Running with nothing configured
 
-No database, no cache, no object storage, no distributed tracing, no metrics.
-Those arrive in M1 through M4 — see the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
+No database, no cache, no object storage, no traces, no metrics: leave every
+optional setting unset and the service still starts and serves, on its
+in-memory adapters, with telemetry off.
 
 This is not an unfinished service. A service with no database is a real thing
-people build: an API gateway, an aggregator, a webhook receiver. M0 is
-deliberately useful on its own, and every later milestone adds to a service
-that already runs.
+people build: an API gateway, an aggregator, a webhook receiver. The service
+is deliberately useful on its own, and every backend it can be given is added
+to a service that already runs.

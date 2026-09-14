@@ -4,7 +4,7 @@ site_description: "The PyFr reference service."
 # this same tree under its own site and sets SITE_URL to say so.
 site_url: !ENV [SITE_URL, "https://emadmokhtar.github.io/reference-service/"]
 repo_url: https://github.com/EmadMokhtar/reference-service
-repo_name: EmadMokhtar/reference-service
+repo_name: "EmadMokhtar/reference-service"
 edit_uri: edit/main/docs/
 copyright: Licensed under the Mozilla Public License 2.0
 

@@ -27,16 +27,16 @@ src/<package>/
     order.py            application services and their command objects
 
   infrastructure/     adapters: the only code that knows a storage technology
-    memory/             the in-memory repository (M0)
+    memory/             the in-memory adapters
 {%- if cookiecutter.database == "postgres" %}
-    db/                 the PostgreSQL repository (M1)
+    db/                 the PostgreSQL repository
 {%- endif %}
-    http/               the outbound payment gateway (M3)
+    http/               the outbound payment gateway
 {%- if cookiecutter.cache == "redis" %}
-    cache/              a Redis decorator OVER the repository, not beside it (M4)
+    cache/              a Redis decorator OVER the repository, not beside it
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
-    storage/            the S3-compatible receipt store (M4)
+    storage/            the S3-compatible receipt store
 {%- endif %}
 
   api/                the only code that knows HTTP exists
@@ -90,18 +90,18 @@ choreography.
 {%- if cookiecutter.database == "postgres" %}
 
 **`infrastructure/`** holds adapters: the only code that knows a specific
-technology. M0 ships an in-memory repository. M1 adds PostgreSQL behind the
-identical interface, and nothing above this layer changes.
+technology. An in-memory repository and the PostgreSQL one sit behind the
+identical interface, and nothing above this layer changes between them.
 {%- else %}
 
 **`infrastructure/`** holds adapters: the only code that knows a specific
-technology. M0 ships an in-memory repository, and nothing above this layer
+technology. The order repository is in-memory, and nothing above this layer
 would need to change if a real adapter were added later.
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
 {%- if cookiecutter.database == "postgres" %}
 
-M4 adds two more adapters, and one of them is a different shape from the
+Two more adapters follow, and one of them is a different shape from the
 rest. `infrastructure/storage/` is an ordinary adapter: `S3ReceiptStore`
 satisfies the `ReceiptStore` port over `aioboto3`, the same way
 `PostgresOrderRepository` satisfies `OrderRepository` over SQLAlchemy.
@@ -182,12 +182,13 @@ class of incident rather than adding a feature:
   killed, not drained. See [Run in a container](../guides/run-in-a-container.md#the-shutdown-deadline-trap),
   which is where this bites in practice.
 
-## What M0 does not have
+## Running with nothing configured
 
-No database, no cache, no object storage, no distributed tracing, no metrics.
-Those arrive in M1 through M4 — see the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
+No database, no cache, no object storage, no traces, no metrics: leave every
+optional setting unset and the service still starts and serves, on its
+in-memory adapters, with telemetry off.
 
 This is not an unfinished service. A service with no database is a real thing
-people build: an API gateway, an aggregator, a webhook receiver. M0 is
-deliberately useful on its own, and every later milestone adds to a service
-that already runs.
+people build: an API gateway, an aggregator, a webhook receiver. The service
+is deliberately useful on its own, and every backend it can be given is added
+to a service that already runs.

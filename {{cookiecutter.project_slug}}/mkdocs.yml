@@ -4,7 +4,7 @@ site_description: "{{ cookiecutter.description }}"
 # this same tree under its own site and sets SITE_URL to say so.
 site_url: !ENV [SITE_URL, "https://{{ cookiecutter.github_org | lower }}.github.io/{{ cookiecutter.project_slug }}/"]
 repo_url: https://github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}
-repo_name: {{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}
+repo_name: "{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"
 edit_uri: edit/main/docs/
 {%- if cookiecutter.license == "Apache-2.0" %}
 copyright: Licensed under the Apache License 2.0

@@ -85,12 +85,23 @@ this service reads. Hand-editing `.env.example` or the table in
 | Command | What it does |
 | --- | --- |
 | `just audit` | pip-audit over every pinned version in `uv.lock`, against the PyPI advisory database. Reads a `uv export` with `--disable-pip --require-hashes`, so nothing is resolved or installed. Needs no Docker. |
+{%- if cookiecutter.database == "postgres" %}
 | `just scan` | Trivy over both built images, for known vulnerabilities and embedded secrets. Fails on a HIGH or CRITICAL finding that has a fix; exemptions only through `.trivyignore.yaml`, and every one expires. Needs Docker, and the images from `just build-images`. |
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` (ignored by git). Needs Docker, and the same images. |
+{%- else %}
+| `just scan` | Trivy over the built image, for known vulnerabilities and embedded secrets. Fails on a HIGH or CRITICAL finding that has a fix; exemptions only through `.trivyignore.yaml`, and every one expires. Needs Docker, and the image from `just build-images`. |
+| `just sbom` | A CycloneDX software bill of materials for the image, into `sbom/` (ignored by git). Needs Docker, and the same image. |
+{%- endif %}
 | `just security` | `build-images`, then `audit`, `scan` and `sbom` — everything CI's `security` job runs, in the order it runs it. Needs Docker. Not part of `just check-all`, because its result changes with the advisory databases rather than with the code. |
+{%- if cookiecutter.database == "postgres" %}
 | `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` on a `docker-container` buildx builder, with no output — proof that both architectures still build, which is what CI's `build` job runs. Creates the builder (`pyfr`) on first use. |
 | `just publish-images VERSION` | Build both platforms of both images and push them to GHCR under `VERSION` only. Run by `release.yml` after `scan` has passed on the same commit's images; not something to run by hand against `ghcr.io`. |
 | `just scan-published VERSION` | The scan again, over the two images just pushed under `VERSION`, for both platforms. Release only. |
+{%- else %}
+| `just build-multiarch` | Build the image for `linux/amd64` and `linux/arm64` on a `docker-container` buildx builder, with no output — proof that both architectures still build, which is what CI's `build` job runs. Creates the builder (`pyfr`) on first use. |
+| `just publish-images VERSION` | Build both platforms of the image and push them to GHCR under `VERSION` only. Run by `release.yml` after `scan` has passed on the same commit's image; not something to run by hand against `ghcr.io`. |
+| `just scan-published VERSION` | The scan again, over the image just pushed under `VERSION`, for both platforms. Release only. |
+{%- endif %}
 | `just promote-latest VERSION` | Point `latest` at the pushed `VERSION` index without rebuilding. Release only, after `scan-published`. |
 | `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag. Read-only. |
 | `just next-version` | Preview the version the next release would choose. Read-only — the release itself runs in the project's `release.yml`. |
@@ -257,3 +268,17 @@ This is an executable check on the documentation's own prose, not on the
 code: breaking one of the documented examples, or the endpoint it calls,
 fails the recipe. It is not part of `just check-all` — it runs as its own
 `docs-examples` job in CI, against a stack that job starts itself.
+
+## The documentation
+
+Run these from the project root. The site is built from `docs/` and
+`mkdocs.yml`; [Contributing](../contributing.md#documentation-ships-with-the-change)
+says what a change to the code owes it.
+
+| Command | What it does |
+| --- | --- |
+| `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
+| `just docs` | Serve a live preview on <http://127.0.0.1:8001>, rebuilding on save. |
+| `just docs-build` | Build the site into `site/` with `--strict`, exactly as CI does. `--strict` turns a warning into a failure: a link to a page that no longer exists, a renamed heading anchor, or an unresolvable include each fail the build rather than printing a warning nobody reads. |
+| `just links` | Dead external links, checked with `lychee`. Internal ones are already `mkdocs build --strict`'s job. Needs the `lychee` binary (`brew install lychee`), or run it in CI, where the action provides it. |
+| `just docs-freshness [BASE] [HEAD]` | Documentation hygiene warnings for a pull request range: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Never fails — see [Contributing](../contributing.md#when-the-warnings-become-failures) for what has to be true before these become hard failures. |

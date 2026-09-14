@@ -72,8 +72,8 @@ turns into a 503.
 {"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "error: TimeoutError", "storage": "ok"}}
 ```
 
-**Why gate on the database but not the other two.** This is the part of the
-milestone worth remembering, because it is not the obvious choice.
+**Why gate on the database but not the other two.** This is worth
+remembering, because it is not the obvious choice.
 
 The cache is informational because it **fails open**: `CachedOrderRepository`
 swallows every Redis error and falls through to PostgreSQL, so a Redis outage
@@ -224,7 +224,7 @@ small.
 Every amount in the document is a JSON string, for the same reason as the
 order response below. The document carries no timestamp — a receipt is
 stored once and served unchanged afterwards, and a `generated_at` field
-would make a re-render after a cache eviction produce different bytes for
+would make a re-rendering after a cache eviction produce different bytes for
 "the same" receipt. `internal_note` is absent for the same reason it is
 absent from the order response: the renderer names every field it emits
 rather than dumping the entity.

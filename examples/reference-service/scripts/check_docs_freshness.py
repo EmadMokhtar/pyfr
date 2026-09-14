@@ -179,8 +179,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="append",
         metavar="PREFIX",
         help=(
-            "an extra prefix to exclude from the review-date check, "
-            f"repeatable, added to the default {EXCLUDED_PREFIXES}"
+            "exclude pages under this prefix from every check; repeatable, "
+            f"added to the default {EXCLUDED_PREFIXES}"
         ),
     )
     parser.add_argument("base", help="the base ref of the range to check")

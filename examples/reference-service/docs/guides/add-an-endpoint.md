@@ -105,7 +105,7 @@ Implement the port. Do not inherit from it — a Protocol is satisfied
 structurally, and inheriting would point an import at the domain from the
 wrong direction.
 
-M0 has only the in-memory adapter. For a real backend, see
+The in-memory adapter is the simplest one to copy. For a real backend, see
 [Add a backend](add-a-backend.md).
 
 ## 5. Wire it up

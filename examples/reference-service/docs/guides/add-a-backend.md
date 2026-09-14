@@ -141,7 +141,7 @@ container.readiness.register("mysql", check_mysql)
 ```
 
 **`register_informational`** is reported but never changes the status code —
-the choice M4 makes for both the cache and the object store:
+the choice made for both the cache and the object store:
 
 ```python
 container.readiness.register_informational("cache", check_redis)

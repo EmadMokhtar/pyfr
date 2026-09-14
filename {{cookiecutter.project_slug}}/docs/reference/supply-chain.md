@@ -125,7 +125,7 @@ shows the command.
 
 Two things to know before relying on the registry. The first push creates
 private packages; making them public is a one-time setting listed in
-[Contributing](https://emadmokhtar.github.io/pyfr/contributing/#one-time-repository-settings). And `latest`
+[Repository settings](../contributing.md#repository-settings). And `latest`
 is for the nightly scan, which wants whatever is current — a real deployment
 pins `vX.Y.Z`, because `latest` gives no guarantee about which release it
 points at from one day to the next.
@@ -327,7 +327,9 @@ five ecosystems this repository has:
 | `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
-Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions).
+Conventional Commits prefix (`build(deps)`, or `ci(deps)` for actions). Each
+carries the `no-docs-needed` label, because a version bump is exactly the
+internal-only change CI's documentation gate has that label for.
 
 Dependabot has no way to update a version literal inside a `justfile`, a
 workflow step or a test. So the rule is **one pin per tool, in the file
@@ -346,8 +348,8 @@ all call through `uv run --locked cz`. Container image pins live in
 Two literals remain outside Dependabot's reach, knowingly: `pip-audit==2.10.1`
 in the justfile — its advisory data is fetched live, so a stale binary still
 reports new findings — and the `tufin/oasdiff:v1.31.0` image in
-`scripts/check_contract_compatibility.py`, a pin that predates M6.
-See [ADR 0014](../adr/0014-dependabot-and-one-pin-per-tool.md).
+`scripts/check_contract_compatibility.py`, a pin older than the Dependabot
+arrangement. See [ADR 0014](../adr/0014-dependabot-and-one-pin-per-tool.md).
 
 ## The hardened image
 

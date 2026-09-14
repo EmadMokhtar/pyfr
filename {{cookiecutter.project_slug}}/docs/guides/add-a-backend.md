@@ -87,7 +87,7 @@ that work.
     adding is not a cache).
 {%- else %}
 
-    No real backend adapter is in this render to copy from — every port
+    No real backend adapter is in this service to copy from — every port
     here resolves to its in-memory adapter under `infrastructure/memory/`.
     Start from one of those instead; the shape (a plain class satisfying
     the port's `Protocol`) is the same either way.
@@ -207,19 +207,19 @@ container.readiness.register("mysql", check_mysql)
 
 **`register_informational`** is reported but never changes the status code —
 {%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
-the choice M4 makes for both the cache and the object store:
+the choice made for both the cache and the object store:
 
 ```python
 container.readiness.register_informational("cache", check_redis)
 ```
 {%- elif cookiecutter.cache == "redis" %}
-the choice M4 makes for the cache:
+the choice made for the cache:
 
 ```python
 container.readiness.register_informational("cache", check_redis)
 ```
 {%- elif cookiecutter.object_storage == "s3" %}
-the choice M4 makes for the object store:
+the choice made for the object store:
 
 ```python
 container.readiness.register_informational("storage", check_s3)

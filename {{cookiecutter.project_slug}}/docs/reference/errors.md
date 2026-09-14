@@ -157,6 +157,6 @@ is currently reported as a client fault.
 
 The real fix is translating validation at the service-layer boundary, so a
 service's own bugs surface as 500s and only genuinely bad client input reaches
-the handler. M0's services are too thin for that boundary to pay for itself,
-so it is scheduled for M1. Every occurrence is logged at `warning` level with
-the correlation identifier, so the case is loud rather than silent.
+the handler. The services here are too thin for that boundary to pay for
+itself, so it is not built yet. Every occurrence is logged at `warning` level
+with the correlation identifier, so the case is loud rather than silent.

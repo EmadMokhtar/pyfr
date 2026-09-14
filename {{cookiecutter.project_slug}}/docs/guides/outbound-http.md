@@ -94,8 +94,8 @@ like an oversight:
 Making read and write timeouts safe to retry needs an idempotency key the
 gateway itself honours on every attempt — the next section covers the one
 this client already sends, and why sending it is not the same thing as
-this problem being solved. That is scheduled for M9, not M3; see the
-roadmap's M9 row.
+this problem being solved. That is deliberately not solved in this
+service.
 
 A decline is handled separately from both of these, and on purpose:
 `PaymentDeclinedError` — a 402 the gateway returned on purpose, with a
@@ -161,8 +161,8 @@ service* makes, internally, while trying to get one `PlaceOrder` call to
 the gateway. It says nothing about a caller retrying its own
 `POST /api/v1/orders` request — each such retry generates a fresh order id
 and authorises a fresh payment. An inbound idempotency key, so a client's
-own retry of that request is safe too, is the "idempotency keys" line in
-the roadmap's M9 row: excluded from M3, not forgotten.
+own retry of that request is safe too, is not something this service
+provides: a known gap, not a forgotten one.
 
 ## Testing without a real upstream
 
@@ -203,7 +203,7 @@ forever — there is no real upstream here for it to detect drift against.
 Until this project has one, this gap is a property of the test suite that
 a reader should know about, not a defect to silently work around.
 
-## The gap this milestone does not close: authorise, then save
+## The gap this service does not close: authorise, then save
 
 `services/order.py`'s `PlaceOrder` authorises the payment **before**
 saving the order. The other ordering — save first, authorise second —
@@ -219,10 +219,10 @@ provider — with no corresponding row in this service's own database. No
 error reaches the caller in the case that actually causes this: the
 process is gone before it can answer at all.
 
-**Why M3 does not close it.** Voiding the authorisation from inside the
-same code path that just failed to save does not close the gap, it just
-relocates it: that call can fail too, for the same reasons the save could,
-and the service would then be holding *two* possible failure points
+**Why this service does not close it.** Voiding the authorisation from
+inside the same code path that just failed to save does not close the gap,
+it just relocates it: that call can fail too, for the same reasons the save
+could, and the service would then be holding *two* possible failure points
 instead of one. Closing it properly means something outside this one
 request path notices the mismatch after the fact — an outbox that records
 the authorisation durably in the same transaction as the eventual save, or
