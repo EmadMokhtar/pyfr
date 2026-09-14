@@ -50,6 +50,10 @@ select = [
 # src/pyfr_cli shells out to git and uv the same way; every argument list
 # is a fixed literal or a path the tool computed.
 "src/*" = ["S603", "S607"]
+# The MARK fixture is a migration script's exact source, written and run
+# by the test as-is; one of its lines is 90 columns. Wrapping it would
+# change what runs, so the line stays long instead.
+"tests/cli/test_migrate.py" = ["E501"]
 
 [lint.isort]
 known-first-party = ["regen", "check_site_links", "pyfr_cli", "cli"]
