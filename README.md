@@ -7,6 +7,7 @@
 *Answer a few prompts. Get a service that runs, is tested, is observable, and is documented.*
 
 [![CI](https://github.com/EmadMokhtar/pyfr/actions/workflows/ci.yml/badge.svg)](https://github.com/EmadMokhtar/pyfr/actions/workflows/ci.yml)
+[![Full suite](https://github.com/EmadMokhtar/pyfr/actions/workflows/full-suite.yml/badge.svg)](https://github.com/EmadMokhtar/pyfr/actions/workflows/full-suite.yml)
 [![Docs](https://img.shields.io/badge/docs-pyfr-blue)](https://emadmokhtar.github.io/pyfr/)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-brightgreen)](LICENSE)

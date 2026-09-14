@@ -6,6 +6,7 @@ covers:
   - scripts/check_site_links.py
   - .github/workflows/ci.yml
   - .github/workflows/docs.yml
+  - .github/workflows/full-suite.yml
   - "{{cookiecutter.project_slug}}/scripts/check_docs_updated.py"
   - "{{cookiecutter.project_slug}}/scripts/check_docs_freshness.py"
 ---
@@ -28,7 +29,7 @@ pyfr/
   tests/                       PyFr's own tests: the hooks, the render, the golden diff
   mkdocs.yml  pyproject.toml   this site and the root toolchain
   justfile                     repository commands — see Commands below
-  .github/workflows/           continuous integration and publishing
+  .github/workflows/           continuous integration, the full suite, publishing
   .github/dependabot.yml       automated dependency updates
 ```
 
