@@ -16,32 +16,28 @@ placeholders. The [cookiecutter](https://cookiecutter.readthedocs.io/) tool
 asks you questions, substitutes your answers into the skeleton, and writes a
 new repository to disk.
 
-!!! warning "Status: M0–M6 done, M7 in progress, M8 to go"
+!!! note "Status: M0–M7 done, M8 to go"
 
-    **The template is not finished yet.** `{{cookiecutter.project_slug}}/`
-    is the template body, and it is already the source of truth: the
-    *reference service* —
+    **The template is usable.** `{{cookiecutter.project_slug}}/` is the
+    template body and the source of truth: the *reference service* —
     [`examples/reference-service/`](https://github.com/EmadMokhtar/pyfr/tree/main/examples/reference-service)
     — is rendered from it and never edited by hand.
 
-    M7 is the conversion into a template, in five pull requests, and four
-    have landed. The template renders from twelve prompts; it prunes the
-    backends you do not choose; a generated project carries its own
-    continuous-integration, nightly, release and documentation workflows;
-    and it ships its own documentation site, about itself. What remains is
-    the fifth pull request: the *full-suite tests*, which generate a
-    project in CI and run its whole `lint`, type-check and test suite.
+    M7, the conversion into a template, is complete. The template renders
+    from twelve prompts; it prunes the backends you do not choose; a
+    generated project carries its own continuous-integration, nightly,
+    release and documentation workflows, ships its own documentation site
+    about itself, and records the template version it came from; and on
+    every merge to `main` and every night, three combinations are
+    generated for real and run through their own `just check-all`. M8 —
+    template updates for generated projects — is next.
 
     PyFr is built in three phases. Phase A (milestones M0 to M6) built that
-    service as ordinary Python, with no template placeholders anywhere. Phase
-    B (M7) is converting it into the template. Phase C keeps the two in
+    service as ordinary Python, with no template placeholders anywhere.
+    Phase B (M7) converted it into the template. Phase C keeps the two in
     step forever after. The reason is stated plainly in the design: never
     debug Jinja and Python at the same time. (Jinja is the placeholder
     language cookiecutter uses.)
-
-    M0 through M6 are done, and M7 is in progress. **PyFr becomes a usable
-    template at the end of M7.** See the [roadmap](roadmap.md) for what each
-    milestone delivers.
 
     You can generate a project today — [Getting started](getting-started.md)
     — and you can read the reference service, run it, and copy from it.
