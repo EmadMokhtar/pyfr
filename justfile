@@ -80,6 +80,10 @@ precommit:
 # Regenerate examples/reference-service from the template with the answers in
 # tests/reference-answers.yaml. The template is the source of truth; run this
 # after every change to {{cookiecutter.project_slug}}/ and commit the result.
+# The release runs this as `cz bump`'s pre-bump hook; the nested `uv run`
+# here is not `--locked`, which is safe because Commitizen's uv provider
+# rewrites pyproject.toml and uv.lock together, so the lock is consistent
+# when the hook runs.
 regen:
     uv run --group dev python scripts/regen.py
 

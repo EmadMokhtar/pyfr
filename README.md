@@ -37,8 +37,10 @@ ordinary `git merge`.
 ## ✅ Status: M0–M7 done, M8 to go
 
 **The template is usable** — `uvx cookiecutter gh:EmadMokhtar/pyfr`
-generates a project whose `just check` passes, for every combination of
-backends. M7, the conversion into a template, is complete: the template
+generates a project whose `just check` passes: three combinations are
+rendered for real and run through their own `just check-all` on every merge
+to `main` and every night, and all eight are rendered and lint-checked on
+every push. M7, the conversion into a template, is complete: the template
 renders from twelve prompts, prunes the backends you do not choose, gives
 a generated project its own workflows and its own documentation site
 about itself, and records the template version it came from. On every
