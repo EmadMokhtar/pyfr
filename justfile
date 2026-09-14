@@ -33,7 +33,10 @@ docs-build:
 links:
     # Needs the lychee binary: `brew install lychee`, or run it in CI,
     # where the action provides it.
-    lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md
+    # The rendered example's docs are checked here too: the template
+    # body's own Markdown carries Jinja inside its URLs, so the rendered
+    # copy is what a link checker can actually read.
+    lychee --config lychee.toml --no-progress 'docs/**/*.md' README.md 'examples/reference-service/docs/**/*.md' examples/reference-service/README.md
 
 # The repository's own script tests. Both groups: the generation tests
 # build a render's documentation site with the root's MkDocs.

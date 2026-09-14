@@ -57,5 +57,7 @@ exclude_path = [
     # The template body's Markdown carries Jinja inside its URLs, so the
     # rendered example is what gets checked instead; without this,
     # nightly.yml's '**/*.md' sweep would also catch the template body's.
-    "{{cookiecutter.project_slug}}",
+    # Every entry here is a regular expression, hence the escapes: `{{` is
+    # otherwise an invalid repetition operator and lychee refuses to start.
+    "\\{\\{cookiecutter\\.project_slug\\}\\}",
 ]
