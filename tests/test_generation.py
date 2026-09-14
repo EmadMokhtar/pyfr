@@ -602,6 +602,7 @@ def assert_workflows_are_coherent(root: Path, answers: dict[str, str]) -> None:
         ".github/workflows/ci.yml",
         ".github/workflows/nightly.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/docs.yml",
         ".github/dependabot.yml",
     }, present
 

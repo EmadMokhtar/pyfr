@@ -276,6 +276,7 @@ order_id=$(curl -sf -X POST http://localhost:{{ cookiecutter.http_port }}/api/v1
   | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 curl -sf "http://localhost:{{ cookiecutter.http_port }}/api/v1/orders/$order_id/receipt" | grep -q '"schema_version":1'
 ```
+{%- if cookiecutter.object_storage == "s3" %}
 
 Also [404](errors.md) when no order has that id — checked first, so an
 unknown id never touches object storage at all — and **503 Service
@@ -292,6 +293,21 @@ request after that serves the stored bytes unchanged. This is deliberate:
 one read endpoint but can never fail a payment. The cost is one slower first
 request per order — rendering is pure and cheap, so in practice that cost is
 small.
+{%- else %}
+
+Also [404](errors.md) when no order has that id — checked first. The
+contract publishes **503 Service Unavailable** for this route too, for a
+receipt store that cannot be reached; this service keeps its receipts in
+memory, so that response never occurs here, and a client written against
+the contract handles it all the same.
+
+**Rendered on demand, not written when the order is placed.** The first
+request for a receipt renders it from the order and stores the result; every
+request after that serves the stored bytes unchanged. This is deliberate:
+`PlaceOrder` never touches the receipt store, so the store can never fail a
+payment. The cost is one slower first request per order — rendering is pure
+and cheap, so in practice that cost is small.
+{%- endif %}
 
 Every amount in the document is a JSON string, for the same reason as the
 order response below. The document carries no timestamp — a receipt is

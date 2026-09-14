@@ -53,13 +53,17 @@ publishes.
 | 422 | `validation_error` | The request body broke a rule. |
 | 500 | `internal_error` | An unhandled failure. |
 | 503 | `payment_unavailable` | The payment provider could not be reached, or its circuit breaker is open. Carries a `Retry-After` header set from the configured breaker cool-down. |
+| 503 | `storage_unavailable` | The receipt store could not be reached. Carries a `Retry-After` header of a fixed 30 seconds — there is no circuit breaker in front of object storage to read a cool-down from. |
 
 422 is used for a request that is well-formed JSON but breaks a rule —
 a quantity of zero, a currency of `eur`, two lines in different currencies.
 
-402 and 503 are specific to `POST /api/v1/orders`, the only route that talks
-to a payment provider — see [HTTP API](http-api.md#post-apiv1orders) and
-[Outbound HTTP calls](../guides/outbound-http.md).
+402 is specific to `POST /api/v1/orders`, the only route that talks to a
+payment provider — see [HTTP API](http-api.md#post-apiv1orders) and
+[Outbound HTTP calls](../guides/outbound-http.md). 503 comes from two
+routes with two `type`s: `payment_unavailable` from that same `POST`, and
+`storage_unavailable` from `GET /api/v1/orders/{order_id}/receipt`
+([HTTP API](http-api.md#get-apiv1ordersorder_idreceipt)).
 
 The 400, 404 `http_error` and 405 rows are not raised by this service's own
 route handlers at all — they come from the framework, before a route handler

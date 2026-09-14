@@ -148,7 +148,14 @@ the own-line form. A `{%-` tag consumes the newline and any whitespace
 before it, so a block's own leading blank line has to sit *inside* the
 block, never before the tag, or the "everything on" render loses a blank
 line the pruned render never had — and that render must stay
-byte-identical to `examples/reference-service/`. For example:
+byte-identical to `examples/reference-service/`. The mirror case has one
+sanctioned exception: where a pruned block must *leave* a blank line
+behind — a bullet list whose first item is conditional, and Markdown
+needs a blank line between the paragraph above and whichever item comes
+first — the block ends with `{%- else %}` followed by a plain `{% endif %}`
+with no dash, whose kept newline is that blank line. It is used once, in
+the runbook's "Act, per dependency" list; comment it wherever it recurs.
+For example:
 
 ```
 import pytest
@@ -265,8 +272,13 @@ template page to a root page it is
 relative link to a page outside the site it is building, so there is no
 other way to write one. The root `lychee.toml` excludes PyFr's own Pages
 host from the external-link check for the same reason: a link to a page
-added in the branch being checked resolves only after the deploy, and
-`--strict` already proves every page and anchor exists.
+added in the branch being checked resolves only after the deploy. What
+checks those links instead is `scripts/check_site_links.py`, the last step
+of `just docs-build`: it reads every `https://emadmokhtar.github.io/pyfr/…`
+link out of both documentation trees and resolves it against the `site/`
+directory just built — the page must exist there, and an anchor must be an
+element id in it — so a renamed page or heading on either side fails the
+build before it reaches the deploy.
 
 A page in the template's `docs/` carries the project's identity, never the
 reference service's: `{{ cookiecutter.project_slug }}`,
@@ -562,7 +574,7 @@ are not interchangeable.
 | --- | --- |
 | `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
 | `just docs` | Live preview of PyFr's site on <http://127.0.0.1:8000>, rebuilding as you save. |
-| `just docs-build` | Build both sites into `site/` with `--strict`, exactly as CI and `docs.yml` do: PyFr's at the top, and the reference service's rendered site — built from `examples/reference-service/` with its own toolchain and its own `mkdocs.yml`, with `SITE_URL` set to its nested address — under `site/reference-service/`. |
+| `just docs-build` | Build both sites into `site/` with `--strict`, exactly as CI and `docs.yml` do: PyFr's at the top, and the reference service's rendered site — built from `examples/reference-service/` with its own toolchain and its own `mkdocs.yml`, with `SITE_URL` set to its nested address — under `site/reference-service/`; then `scripts/check_site_links.py` resolves every link between the two sites against that tree. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee), over the root `docs/`, the root `README.md` and the rendered example's `docs/` and `README.md`. Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml` and the same paths. |
 | `just test` | This repository's own tests (`tests/`) — the hooks' tests, the generation-test matrix that renders all eight backend combinations and checks each one, `scripts/regen.py`'s tests and the golden diff — with both the `dev` and `docs` groups, because the generation tests build a render's site with the root's MkDocs. Needs no Docker. |
 | `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |

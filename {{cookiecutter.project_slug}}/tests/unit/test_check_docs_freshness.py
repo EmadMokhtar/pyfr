@@ -8,6 +8,8 @@ nothing to report. These tests pin the difference.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -16,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from check_docs_freshness import (
     MAX_REVIEW_AGE_DAYS,
     Page,
+    changed_files,
     parse_frontmatter,
     stale_pages,
     uncovered_changes,
@@ -28,15 +31,13 @@ def test_parse_frontmatter_reads_both_keys() -> None:
         "---\n"
         "last_reviewed: 2026-09-10\n"
         "covers:\n"
-        "  - examples/reference-service/src/reference_service/settings.py\n"
+        "  - src/{{ cookiecutter.package_name }}/settings.py\n"
         "---\n\n"
         "# Title\n"
     )
     meta = parse_frontmatter(text)
     assert meta["last_reviewed"] == dt.date(2026, 9, 10)
-    assert meta["covers"] == [
-        "examples/reference-service/src/reference_service/settings.py"
-    ]
+    assert meta["covers"] == ["src/{{ cookiecutter.package_name }}/settings.py"]
 
 
 def test_parse_frontmatter_on_a_page_with_none() -> None:
@@ -103,13 +104,13 @@ def test_a_covered_path_that_changed_without_the_page_is_reported() -> None:
     page = Page(
         path="docs/reference/configuration.md",
         last_reviewed=None,
-        covers=["examples/reference-service/src/reference_service/settings.py"],
+        covers=["src/{{ cookiecutter.package_name }}/settings.py"],
     )
-    changed = {"examples/reference-service/src/reference_service/settings.py"}
+    changed = {"src/{{ cookiecutter.package_name }}/settings.py"}
     assert uncovered_changes([page], changed) == [
         (
             "docs/reference/configuration.md",
-            "examples/reference-service/src/reference_service/settings.py",
+            "src/{{ cookiecutter.package_name }}/settings.py",
         )
     ]
 
@@ -118,10 +119,10 @@ def test_a_covered_path_that_changed_with_the_page_is_not_reported() -> None:
     page = Page(
         path="docs/reference/configuration.md",
         last_reviewed=None,
-        covers=["examples/reference-service/src/reference_service/settings.py"],
+        covers=["src/{{ cookiecutter.package_name }}/settings.py"],
     )
     changed = {
-        "examples/reference-service/src/reference_service/settings.py",
+        "src/{{ cookiecutter.package_name }}/settings.py",
         "docs/reference/configuration.md",
     }
     assert uncovered_changes([page], changed) == []
@@ -136,13 +137,13 @@ def test_a_covers_entry_matches_a_directory_prefix() -> None:
     page = Page(
         path="docs/reference/http-api.md",
         last_reviewed=None,
-        covers=["examples/reference-service/src/reference_service/api/"],
+        covers=["src/{{ cookiecutter.package_name }}/api/"],
     )
-    changed = {"examples/reference-service/src/reference_service/api/orders.py"}
+    changed = {"src/{{ cookiecutter.package_name }}/api/orders.py"}
     assert uncovered_changes([page], changed) == [
         (
             "docs/reference/http-api.md",
-            "examples/reference-service/src/reference_service/api/",
+            "src/{{ cookiecutter.package_name }}/api/",
         )
     ]
 
@@ -151,6 +152,47 @@ def test_an_unrelated_change_reports_nothing() -> None:
     page = Page(
         path="docs/reference/http-api.md",
         last_reviewed=None,
-        covers=["examples/reference-service/src/reference_service/api/"],
+        covers=["src/{{ cookiecutter.package_name }}/api/"],
     )
     assert uncovered_changes([page], {"README.md"}) == []
+
+
+def test_changed_files_are_relative_to_the_working_directory(tmp_path) -> None:
+    # A generated project runs the script from its own root, where a
+    # `covers:` entry reads `src/<package>/...`; `--relative` is what makes
+    # git report that same shape from any directory the script runs in.
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args: str) -> None:
+        # A fixed argv of our own literals; the same exemption the script
+        # itself carries for its git call.
+        subprocess.run(  # noqa: S603
+            ["git", *args],  # noqa: S607
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    project = tmp_path / "project"
+    (project / "src" / "pkg").mkdir(parents=True)
+    (project / "src" / "pkg" / "settings.py").write_text("A = 1\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "base")
+    (project / "src" / "pkg" / "settings.py").write_text("A = 2\n")
+    (tmp_path / "elsewhere.txt").write_text("outside the project\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "change")
+
+    # Only the path shape matters here, so call the function itself from
+    # the project directory rather than the whole script.
+    previous = os.getcwd()
+    os.chdir(project)
+    try:
+        changed = changed_files("HEAD~1", "HEAD")
+    finally:
+        os.chdir(previous)
+    assert changed == {"src/pkg/settings.py"}
