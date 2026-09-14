@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-14
 covers:
   - justfile
   - src/{{ cookiecutter.package_name }}/seed.py
@@ -63,9 +63,11 @@ just up
 That builds the image, starts PostgreSQL, Redis, MinIO and a payment stub,
 applies the migrations, and starts the API. Once the API reports healthy, a
 {%- else %}
+{%- set _services = (["PostgreSQL"] if cookiecutter.database == "postgres" else []) + (["Redis"] if cookiecutter.cache == "redis" else []) + (["MinIO"] if cookiecutter.object_storage == "s3" else []) + ["a payment stub"] %}
+{%- set _started = ((_services[:-1] | join(", ")) ~ " and " ~ _services[-1]) if _services | length > 1 else _services[0] %}
 
-That builds the service image, starts whichever backends this project has
-and a payment stub, and starts the API. Once the API reports healthy, a
+That builds the service image, starts {{ _started }}, and starts the API.
+Once the API reports healthy, a
 {%- endif %}
 one-shot `seed` container creates five fixed orders through the HTTP API and
 exits. The line to look for in the output is:

@@ -28,6 +28,9 @@ DESCRIPTION = json.loads(r'''{{ cookiecutter.description | tojson }}''')
 AUTHOR_NAME = json.loads(r'''{{ cookiecutter.author_name | tojson }}''')
 AUTHOR_EMAIL = json.loads(r'''{{ cookiecutter.author_email | tojson }}''')
 HTTP_PORT = json.loads(r'''{{ cookiecutter.http_port | tojson }}''')
+DATABASE = json.loads(r'''{{ cookiecutter.database | tojson }}''')
+CACHE = json.loads(r'''{{ cookiecutter.cache | tojson }}''')
+OBJECT_STORAGE = json.loads(r'''{{ cookiecutter.object_storage | tojson }}''')
 # fmt: on
 
 # Free-text answers are pasted into pyproject.toml basic strings, Python
@@ -50,6 +53,31 @@ PORT_PATTERN = re.compile(r"[1-9][0-9]*")
 # proven format-clean at 88 columns (tests/test_generation.py); one
 # character more and lines cross the limit.
 MAX_PACKAGE_NAME_LENGTH = 25
+
+# Host ports the generated project's own tooling binds -- compose.yaml's
+# services and the documentation preview. A service told to listen on one
+# of them could never run beside its own stack, and the collision would
+# surface as a failed `just up`, long after generation. Keys are the
+# answer's own spelling: a plain decimal string, checked below before this
+# table is consulted.
+RESERVED_PORTS = {
+    "8001": "the documentation preview (`just docs`)",
+    "9099": "the payment stub (compose.yaml)",
+    "3000": "Grafana (compose.yaml, the o11y profile)",
+    "4317": "the OTLP gRPC collector (compose.yaml, the o11y profile)",
+    "4318": "the OTLP HTTP collector (compose.yaml, the o11y profile)",
+    "9090": "Prometheus (compose.yaml, the o11y profile)",
+}
+# Bound only while the backend is in the stack; a project without it may
+# use the port.
+BACKEND_PORTS = {
+    "postgres": {"5432": "PostgreSQL (compose.yaml)"},
+    "redis": {"6379": "Redis (compose.yaml)"},
+    "s3": {
+        "9000": "MinIO (compose.yaml)",
+        "9001": "the MinIO console (compose.yaml)",
+    },
+}
 
 
 def problems() -> list[str]:
@@ -96,6 +124,15 @@ def problems() -> list[str]:
         )
     elif not 1 <= int(HTTP_PORT) <= 65535:
         found.append(f"http_port {HTTP_PORT} is outside 1-65535.")
+    else:
+        reserved = dict(RESERVED_PORTS)
+        for backend in (DATABASE, CACHE, OBJECT_STORAGE):
+            reserved.update(BACKEND_PORTS.get(backend, {}))
+        if HTTP_PORT in reserved:
+            found.append(
+                f"http_port {HTTP_PORT} is taken by {reserved[HTTP_PORT]}; "
+                "the service could not run beside its own stack."
+            )
     return found
 
 

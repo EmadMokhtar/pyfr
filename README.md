@@ -7,10 +7,11 @@
 *Answer a few prompts. Get a service that runs, is tested, is observable, and is documented.*
 
 [![CI](https://github.com/EmadMokhtar/pyfr/actions/workflows/ci.yml/badge.svg)](https://github.com/EmadMokhtar/pyfr/actions/workflows/ci.yml)
+[![Full suite](https://github.com/EmadMokhtar/pyfr/actions/workflows/full-suite.yml/badge.svg)](https://github.com/EmadMokhtar/pyfr/actions/workflows/full-suite.yml)
 [![Docs](https://img.shields.io/badge/docs-pyfr-blue)](https://emadmokhtar.github.io/pyfr/)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![License: MPL 2.0](https://img.shields.io/badge/license-MPL--2.0-brightgreen)](LICENSE)
-[![Status: pre-release](https://img.shields.io/badge/status-building%20toward%20M7-orange)](https://emadmokhtar.github.io/pyfr/roadmap/)
+[![Status: usable template](https://img.shields.io/badge/status-usable%20template-brightgreen)](https://emadmokhtar.github.io/pyfr/roadmap/)
 
 📖 **[Read the documentation →](https://emadmokhtar.github.io/pyfr/)**
 
@@ -33,16 +34,18 @@ no runtime dependency on us, and nothing to lock you in. From M8, a generated
 project will still be able to pull later template fixes into itself through an
 ordinary `git merge`.
 
-## 🚧 Honest status: M0–M6 done, M7 in progress, M8 to go
+## ✅ Status: M0–M7 done, M8 to go
 
-**The template exists and renders** — `uvx cookiecutter gh:EmadMokhtar/pyfr`
-generates a project today. M7 is the conversion into a template, in five
-pull requests, and four have landed: the template renders from twelve
-prompts, prunes the backends you do not choose, gives a generated project
-its own workflows, and ships its own documentation site about itself. What
-remains is the fifth: the full-suite tests, which generate a project in CI
-and run its whole lint, type-check and test suite — see the
-[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
+**The template is usable** — `uvx cookiecutter gh:EmadMokhtar/pyfr`
+generates a project whose `just check` passes: three combinations are
+rendered for real and run through their own `just check-all` on every merge
+to `main` and every night, and all eight are rendered and lint-checked on
+every pull request and merge. M7, the conversion into a template, is complete: the template
+renders from twelve prompts, prunes the backends you do not choose, gives
+a generated project its own workflows and its own documentation site
+about itself, and records the template version it came from. See the
+[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what each
+milestone delivered.
 The [**reference service**](examples/reference-service/) is rendered from
 that template; it is the complete, running service you can run, read, and
 copy from right now.
@@ -57,9 +60,10 @@ PyFr is built in three phases:
 
 The rule behind that order: never debug Jinja and Python at the same time. 🙂
 
-**M0 through M6 — the reference service — are complete. M7, the conversion
-into a template, is under way.** See the
-[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what ships when.
+**M0 through M7 — the reference service and its conversion into a
+template — are complete. M8, template updates for generated projects, is
+next.** See the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/)
+for what ships when.
 
 ## 🚀 Try it in one command
 

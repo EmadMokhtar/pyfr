@@ -81,9 +81,10 @@ jobs:
           enable-cache: true
 
       - name: Install just
-        # For `just regen` in the bump step. This puts a binary on the
+        # For the `just regen` that `cz bump` runs as its pre-bump hook
+        # (pyproject.toml, [tool.commitizen]). This puts a binary on the
         # runner's PATH and writes nothing into the checkout, so it does
-        # not fall foul of the "nothing writes before the bump" rule that
+        # not break the "nothing writes before the bump" rule the bump
         # step's comment explains.
         uses: extractions/setup-just@v4
 
@@ -165,23 +166,31 @@ jobs:
             #
             # In PyFr's own repository the baseline lives in the template
             # body and examples/reference-service/ is rendered from it
-            # (ADR 0017), so the promotion happens there and `just regen`
-            # carries it into the example. Promoting inside the example
-            # instead -- `just contract-release` there -- would leave the
-            # example's baseline ahead of the template's, and the `golden`
-            # job red from the next pull request on. A generated project
-            # runs `just contract-release` in its own tree. `just regen`
-            # runs through `uv run --group dev`, whose sync writes only
-            # the untracked `.venv/`.
+            # (ADR 0017), so the promotion happens there, and `just regen`
+            # carries it into the example. That regeneration is `cz
+            # bump`'s pre-bump hook (pyproject.toml): it runs after the
+            # bump has written the new version into pyproject.toml,
+            # uv.lock and cookiecutter.json's `_template_version`, and
+            # before the bump commit, so the example's .pyfr-answers.yml
+            # records the version being released in that same commit.
+            # Promoting inside the example instead -- `just
+            # contract-release` there -- would leave the example's
+            # baseline ahead of the template's, and the `golden` job red
+            # from the next pull request on. A generated project runs
+            # `just contract-release` in its own tree.
             #
-            # If cz then decides there is nothing to release (exit 3 or
-            # 21 below), these writes are discarded with the runner:
-            # nothing is committed and nothing is pushed.
+            # If cz decides there is nothing to release (exit 3 or 21
+            # below), the hook never runs and this copy is discarded with
+            # the runner: nothing is committed and nothing is pushed.
+            #
+            # --check-consistency: a bump that cannot find the current
+            # version on cookiecutter.json's `_template_version` line
+            # fails here rather than release a template that records the
+            # wrong version.
             cp '{{cookiecutter.project_slug}}/openapi.json' '{{cookiecutter.project_slug}}/openapi.baseline.json'
-            just regen
 
             set +e
-            uv run --locked --group dev cz bump --yes --changelog
+            uv run --locked --group dev cz bump --yes --changelog --check-consistency
             status=$?
             set -e
 

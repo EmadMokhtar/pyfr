@@ -1,0 +1,63 @@
+name: Full suite
+
+# Proves that what the generation tests call a well-formed render is also
+# a service that passes its own gates: three combinations are rendered for
+# real -- the post-generation hook runs `git init`, `uv sync` and the
+# first commit, as on a user's machine -- and each project's own
+# `just check-all` runs (spec section 10.3). Three syncs and three full
+# gate runs are too slow for every push, so this is not part of ci.yml:
+# it runs on every merge to main, nightly, and on demand. `just test`
+# deselects these tests; `just test-full-suite` runs them locally.
+#
+# This is PyFr's own workflow, not template content: the template's
+# workflows live under {{cookiecutter.project_slug}}/.github/.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 04:17 UTC, an hour after nightly.yml, and off the hour for the
+    # reason that workflow gives: every scheduled job on GitHub is queued
+    # at :00, and a job that starts when the queue is empty starts sooner.
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generated-service:
+    # One job per combination: a failure names the combination in the job
+    # name, and the three run side by side instead of one after another.
+    # `fail-fast: false` because the other two results are the point when
+    # one fails.
+    strategy:
+      fail-fast: false
+      matrix:
+        combination: [everything-on, everything-off, postgres-only]
+    name: ${{ matrix.combination }}
+    runs-on: ubuntu-latest
+    # A render's `uv sync` from a cold cache, its container tier and the
+    # image pulls for the schema gates and o11y-gates all fit in a
+    # fraction of this; the limit exists so a hung container cannot hold
+    # the runner for six hours.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          # The render resolves the same packages the example's uv.lock
+          # pins, so the cache the example's jobs fill serves it too.
+          enable-cache: true
+      - uses: extractions/setup-just@v4
+      - name: Identify the committer
+        # The render's first commit is made by the post-generation hook, in a
+        # repository that does not exist when this job starts, so the identity
+        # has to be global. tests/test_generated_service.py sets one through the
+        # environment as well; a runner without either would refuse the commit
+        # with "empty ident name".
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Render the project and run its own gates
+        run: just test-full-suite ${{ matrix.combination }}

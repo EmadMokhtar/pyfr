@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-14
 ---
 
 # Decision records
@@ -9,9 +9,13 @@ it cost. They are short on purpose. The full reasoning lives in the
 [design specification](https://github.com/EmadMokhtar/pyfr/tree/main/docs/superpowers),
 and each record links to the section that argues its case.
 
-Records 1 to 12 were backfilled after M0 to M4 already existed, and describe
-decisions taken during that work. They are dated to the milestone that made
-each decision rather than to the day the record itself was written.
+The records were written while PyFr's reference service — the service this
+project was generated from — was being built, and records 1 to 12 were
+backfilled after the work they describe. The "Decided" column names the
+PyFr milestone (M0, M1, …) that made each decision — PyFr's
+[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) says what each
+milestone built — and a record is dated to that milestone rather than to
+the day it was written.
 
 ## Why they are never edited
 

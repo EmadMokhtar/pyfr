@@ -7,6 +7,7 @@ a matrix over the backend combinations.
 from __future__ import annotations
 
 import ast
+import json
 import re
 import shutil
 import subprocess
@@ -20,6 +21,14 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_ANSWERS = ROOT / "tests" / "reference-answers.yaml"
+
+# The version the release last wrote into pyproject.toml. cookiecutter.json
+# cannot compute, so its `_template_version` is written by the same
+# `cz bump` (pyproject.toml's [tool.commitizen] version_files) and must
+# equal this at every commit.
+TEMPLATE_VERSION: str = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
+    "version"
+]
 
 BACKENDS = {
     "database": ("postgres", "none"),
@@ -132,11 +141,20 @@ def test_no_template_syntax_survives_any_combination(cookies, answers) -> None:
 def test_every_combination_renders_and_records_its_answers(cookies, answers) -> None:
     root = render(cookies, **answers)
     recorded = yaml.safe_load((root / ".pyfr-answers.yml").read_text())
-    assert recorded["_template_version"] == "0.6.0"
+    assert recorded["_template_version"] == TEMPLATE_VERSION
     assert recorded["_template"] == "https://github.com/EmadMokhtar/pyfr"
     for key, value in answers.items():
         assert recorded[key] == value
     assert recorded["package_name"] == "my_service"
+
+
+def test_the_template_version_is_the_repository_version() -> None:
+    # A hand edit of either file between releases would drift them apart;
+    # `cz bump --check-consistency` in release.yml then refuses to release
+    # a version it cannot find on cookiecutter.json's line, and this fails
+    # first, on the pull request.
+    answers = json.loads((ROOT / "cookiecutter.json").read_text())
+    assert answers["_template_version"] == TEMPLATE_VERSION
 
 
 @pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
@@ -164,24 +182,25 @@ def test_the_reference_answers_render_the_reference_names(cookies) -> None:
     )
 
 
+# 9100: no template file mentions it, and nothing in the stack binds it.
 def test_a_custom_port_reaches_every_place_the_port_lives(cookies) -> None:
-    result = cookies.bake(extra_context={"http_port": "9000"})
+    result = cookies.bake(extra_context={"http_port": "9100"})
     assert result.exit_code == 0, result.exception
     root = result.project_path
-    assert "EXPOSE 9000" in (root / "Dockerfile").read_text()
-    assert '"9000:9000"' in (root / "compose.yaml").read_text()
-    assert "APP_HTTP_PORT=9000" in (root / ".env.example").read_text()
+    assert "EXPOSE 9100" in (root / "Dockerfile").read_text()
+    assert '"9100:9100"' in (root / "compose.yaml").read_text()
+    assert "APP_HTTP_PORT=9100" in (root / ".env.example").read_text()
     settings = (root / "src" / "my_service" / "settings.py").read_text()
-    assert "default=9000" in settings
+    assert "default=9100" in settings
     test_settings = (root / "tests" / "unit" / "test_settings.py").read_text()
-    assert "== 9000" in test_settings
+    assert "== 9100" in test_settings
 
 
 def test_the_docs_carry_the_chosen_port(cookies) -> None:
     # The eight-combination matrix never varies http_port; this render does,
     # so a port hard-coded in a page fails here and not in a user's
     # config-docs-check.
-    root = render(cookies, http_port="9000")
+    root = render(cookies, http_port="9100")
     offenders = [
         path.relative_to(root).as_posix()
         for path in sorted((root / "docs").rglob("*.md"))
@@ -196,7 +215,7 @@ def test_the_docs_carry_the_chosen_port(cookies) -> None:
         for line in configuration.splitlines()
         if line.startswith("| `APP_HTTP_PORT` |")
     )
-    assert "| `9000` |" in row, row
+    assert "| `9100` |" in row, row
 
 
 def test_a_package_name_at_the_cap_is_format_clean(cookies) -> None:

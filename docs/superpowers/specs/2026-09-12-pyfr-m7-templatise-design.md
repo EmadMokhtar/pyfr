@@ -34,8 +34,11 @@ M7 is done when all of the following are true on `main`:
 5. `docs/` describes PyFr — how to generate a service — and links to the
    reference service's generated site, built and deployed by the same
    workflow.
-6. The roadmap marks M7 done and the release is `v0.7.0`, which is also the
-   `_template_version` every generated project records.
+6. The roadmap marks M7 done, and the release that closes M7 is also the
+   `_template_version` every generated project records. *(Amended in
+   PR 5: this said `v0.7.0`; the milestone took four releases, `v0.6.0`
+   to `v0.9.0`, before its fifth pull request, and Commitizen numbers the
+   closing one.)*
 
 ---
 
@@ -155,6 +158,14 @@ moves the template version, the regen writes the new version into the
 example's `.pyfr-answers.yml`, and the bump commit carries both — the same
 pattern that already promotes the contract baseline in that commit.
 
+*Amended in PR 5.* `cz bump` writes the version files and commits in one
+command, so no workflow step can sit between the two. The step is
+Commitizen's `pre_bump_hooks` (`["just regen"]` in `pyproject.toml`), which
+runs after `version_files` are written and before the bump commit; the
+workflow's own `just regen` line went, and `cz bump` is passed
+`--check-consistency` so a version it cannot find in `cookiecutter.json`
+fails the release. `tests/test_release_bump.py` proves the order.
+
 ---
 
 ## 5. Prompts and hooks
@@ -191,6 +202,11 @@ Rejects, with one plain sentence each, before any file is written:
   `sys.stdlib_module_names` — a package named `email` or `types` breaks in
   ways that are confusing to debug.
 - `http_port` outside 1–65535.
+- `http_port` that the generated project's own stack binds on the host
+  *(added in PR 5)*: always 8001 (`just docs`), 9099 (the payment stub) and
+  3000, 4317, 4318, 9090 (the observability profile); 5432, 6379, and 9000
+  with 9001 while PostgreSQL, Redis or MinIO is chosen. The sentence names
+  the service that has the port.
 
 Exit code 1 with the message on standard error. Cookiecutter then writes
 nothing.
@@ -455,9 +471,10 @@ schedule and `workflow_dispatch`.
 `release.yml` gains the regen step of section 4.4. `docs.yml` is section
 9.2.
 
-One tag series, as today: `v0.7.0` is "M7 done" and is the
-`_template_version` a project generated from it records. A generated
-project's version is its own.
+One tag series, as today: the release that closes M7 is "M7 done" and is
+the `_template_version` a project generated from it records (`v0.7.0`
+when this was written; amended in PR 5). A generated project's version is
+its own.
 
 ---
 
@@ -471,7 +488,7 @@ Each leaves `main` runnable and the golden diff green.
 | 2 — pruning | The three backend prompts; `{% if %}` and hook deletions per section 6; the eight-combination tests of section 10.1; `.pyfr-answers.yml`; `_template_version: 0.6.0` in `cookiecutter.json` until PR 5 wires its bump. | all twelve |
 | 3 — generated `.github/` | Section 8's `ci.yml`, `nightly.yml`, `release.yml` and `dependabot.yml`, without the jobs that need the project's own documentation site (`docs`, `docs-freshness`, `docs-warnings`, `links`, `docs-examples`) — those and `docs.yml` land with the site in PR 4, so no generated workflow ever references a file the project does not have; Commitizen moves (M7-9); the reference service's `.github/` appears as output; the template's action pins follow the root's through `just adopt` (Dependabot's `github-actions` ecosystem reads `/.github/workflows` only). | — |
 | 4 — docs split | Section 9 in full; `docs.yml` builds both sites; the hygiene scripts move; root pages rewritten; a generated project's `docs.yml` and the documentation jobs of its `ci.yml` and `nightly.yml`. | — |
-| 5 — done | Full-suite tests and `full-suite.yml`; `_template_version` with the release's regen step; ADR 0017; roadmap **Done**; README status; `v0.7.0`. | — |
+| 5 — done | Full-suite tests and `full-suite.yml`; `_template_version` with the release's regen step; ADR 0017; roadmap **Done**; README status; the closing release (`v0.7.0` when this was written). | — |
 
 PR 1 is the largest by line count — it contains the moved tree — and the
 smallest by risk: with no pruning yet, the everything-on render must equal

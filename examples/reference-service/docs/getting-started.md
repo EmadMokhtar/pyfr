@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-14
 covers:
   - justfile
   - src/reference_service/seed.py
