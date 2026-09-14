@@ -71,7 +71,13 @@ def remote_tip(git: Git, *, offline: bool = False) -> str | None:
     """
     if not git.remote_exists(REMOTE):
         return None
-    result = git.run("ls-remote", "--exit-code", "--heads", REMOTE, BRANCH, check=False)
+    # The full ref name, not the bare branch name: a pattern matches the
+    # tail of a ref, so `template` alone also matches `feature/template`,
+    # which sorts first and would be taken for the branch.
+    result = git.run(
+        "ls-remote", "--exit-code", "--heads", REMOTE, f"refs/heads/{BRANCH}",
+        check=False,
+    )  # fmt: skip
     if result.returncode == 0:
         return result.stdout.split()[0]
     if result.returncode == 2 or offline:

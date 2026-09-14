@@ -317,3 +317,19 @@ def test_commit_for_finds_the_commit_that_renders_a_version(
     assert vendor.commit_for(repo, V10, root) == root
     with pytest.raises(UpdateError, match=re.escape("no commit for v0.11.0")):
         vendor.commit_for(repo, Version(0, 11, 0), root)
+
+
+def test_remote_tip_matches_only_the_full_branch_name(project: Path) -> None:
+    # `git ls-remote` matches a pattern against the tail of a ref name, so
+    # a remote branch `feature/template` -- which sorts before `template`
+    # -- must not be taken for the template branch.
+    repo = Git(project)
+    root = git(project, "rev-parse", "HEAD")
+    (project / "later.txt").write_text("x\n")
+    later = commit_all(project, "later")
+    git(project, "branch", "feature/template", later)
+    git(project, "push", "-q", "origin", "feature/template")
+    assert vendor.remote_tip(repo) is None
+    git(project, "branch", "template", root)
+    git(project, "push", "-q", "origin", "template")
+    assert vendor.remote_tip(repo) == root
