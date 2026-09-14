@@ -3,6 +3,7 @@ last_reviewed: 2026-09-14
 covers:
   - justfile
   - scripts/regen.py
+  - scripts/check_site_links.py
   - .github/workflows/ci.yml
   - .github/workflows/docs.yml
   - "{{cookiecutter.project_slug}}/scripts/check_docs_updated.py"
@@ -23,6 +24,7 @@ pyfr/
     scripts/                     the documentation hygiene scripts
   examples/reference-service/  rendered from the template; never edited by hand
   scripts/regen.py             the regeneration loop: regen, regen-check, adopt
+  scripts/check_site_links.py  the links between the two sites, and into the repository
   tests/                       PyFr's own tests: the hooks, the render, the golden diff
   mkdocs.yml  pyproject.toml   this site and the root toolchain
   justfile                     repository commands — see Commands below
@@ -39,12 +41,14 @@ template body's `docs/`, because every generated project ships that site
 about itself. [Working on the documentation](#working-on-the-documentation)
 has the mechanics.
 
-`scripts/regen.py` is the only script at the root. The three documentation
+Two scripts live at the root: `scripts/regen.py`, the regeneration loop,
+and `scripts/check_site_links.py`, which only this repository needs
+because only it builds two sites into one. The three documentation
 hygiene scripts — `check_docs_updated.py`, `check_docs_freshness.py` and
-`check_doc_examples.py` — live in the template body's `scripts/`, and the
-tests of the last two in its `tests/unit/`, because a generated project
-runs them in its own continuous integration. PyFr runs the example's rendered copies
-over its own pages; [Documentation ships with the
+`check_doc_examples.py` — live in the template body's `scripts/`, with
+their tests in its `tests/unit/`, because a generated project runs them
+in its own continuous integration. PyFr runs the example's rendered
+copies over its own pages; [Documentation ships with the
 change](#documentation-ships-with-the-change) says which job runs which.
 
 The repository root and the reference service are **two separate Python
@@ -139,16 +143,28 @@ is always deleted by the hook, never emptied by Jinja.
 Every conditional in a Python, YAML, TOML or Markdown file uses
 cookiecutter's **left-strip** block tags — `{%- if %}`, `{%- elif %}`,
 `{%- else %}`, `{%- endif %}` — each on its own line, never the trim or
-right-strip forms. The one exception is a single token inside one line of
-a shell recipe in the `justfile` — a recipe parameter default, an image
-name in a `for` loop — written inline as `{% if … %}…{% endif %}` with no
-dashes, because splitting that line would change the command; a whole
-recipe, or anything in a Python, YAML, TOML or Markdown file, always takes
-the own-line form. A `{%-` tag consumes the newline and any whitespace
-before it, so a block's own leading blank line has to sit *inside* the
-block, never before the tag, or the "everything on" render loses a blank
-line the pruned render never had — and that render must stay
-byte-identical to `examples/reference-service/`. The mirror case has one
+right-strip forms. There are two exceptions. The first is a single token
+inside one line of a shell recipe in the `justfile` — a recipe parameter
+default, an image name in a `for` loop — written inline as
+`{% if … %}…{% endif %}` with no dashes, because splitting that line would
+change the command; a whole recipe, or anything in a Python, YAML or TOML
+file, always takes the own-line form. The second is inside one sentence
+of a Markdown page, where a word or phrase differs by backend and the
+line cannot be split without breaking the sentence: there the trim forms
+`{%- if … -%}` / `{%- else -%}` / `{%- endif -%}` (both dashes, so no
+newline survives on either side of the branch) are allowed, and each use
+carries a Jinja comment — `{#- … #}`, which renders as nothing — naming
+why the line could not be split. There is one such use today: the
+observability reference's sentence on the removed instrumentation
+dependency, whose ending is either a full stop or a pointer to
+`instrument_redis`. Prefer a `{%- set %}` phrase variable, described
+below, wherever the varying part can be named.
+
+A `{%-` tag consumes the newline and any whitespace before it, so a
+block's own leading blank line has to sit *inside* the block, never
+before the tag, or the "everything on" render loses a blank line the
+pruned render never had — and that render must stay byte-identical to
+`examples/reference-service/`. The mirror case has one
 sanctioned exception: where a pruned block must *leave* a blank line
 behind — a bullet list whose first item is conditional, and Markdown
 needs a blank line between the paragraph above and whichever item comes
@@ -181,6 +197,24 @@ compose_image`), or `container.py`'s `close_container`, whose nested
 database or the cache off repeat the surrounding `try`/`finally` one level
 up instead — a four-way `{%- if %} … {%- elif %} … {%- elif %} … {%- else %}`
 block, not new control flow.
+
+Where a sentence *enumerates* things that vary by backend — a list of
+package names, a comma-separated set of dependencies — nesting `{%- if %}`
+blocks inside the sentence produces a page nobody can read. Build the
+list in a `{%- set %}` variable at the top of the page or table instead,
+and join it where the sentence needs it. `docs/explanation/layers.md`
+does this for the import-linter table: a `{%- set _forbidden = ["FastAPI",
+"Starlette"] + (["SQLAlchemy", "asyncpg"] if cookiecutter.database ==
+"postgres" else []) + … %}` line above the row, and `{{ _forbidden |
+join(', ') }}` in the row. The `set` line renders as nothing — its `{%-`
+consumes the newline before it, and its plain `%}` keeps the line's own —
+so it takes the place of one line and moves no blank line; the leading
+underscore marks the variable as the page's own. This is also the tool
+for a sentence whose *wording* varies by backend: set the phrase once at
+the top, and the sentence stays one plain line. The `/readyz` example in
+the HTTP API reference and in the README is built that way, from a
+`_checks` string and a `_deps` list set under the heading above it, and
+needs no exception to the own-line rule.
 
 To see what one combination renders, skip the hook's side effects with
 `PYFR_REGEN=1` and pass the answers that differ from the defaults:
@@ -363,14 +397,15 @@ PyFr's own trees.
 
 **`check_docs_updated.py`** is a hard gate: CI's **`docs-freshness`** job.
 It fails a pull request that changes `{{cookiecutter.project_slug}}/src/`
-without touching the root `docs/`, `README.md`, `mkdocs.yml` or the
-template's `docs/`. The job runs
+without touching the root `docs/`, `README.md`, `mkdocs.yml`, or the
+template's `docs/` or `README.md`. The job runs
 
 ```bash
 python3 examples/reference-service/scripts/check_docs_updated.py \
   --source '{{cookiecutter.project_slug}}/src/' \
   --docs docs/ --docs README.md --docs mkdocs.yml \
   --docs '{{cookiecutter.project_slug}}/docs/' \
+  --docs '{{cookiecutter.project_slug}}/README.md' \
   --exclude-docs docs/superpowers/ "$BASE_SHA" HEAD
 ```
 
@@ -385,11 +420,14 @@ pull requests are squash-merged, which rewrites the message.
 
 **`check_docs_freshness.py`** only warns; nothing it finds can fail a
 build. CI's **`docs-warnings`** job runs `just docs-freshness "$BASE_SHA"
-HEAD`, which is
+HEAD`, which runs the script twice — at the root over PyFr's own `docs/`,
+then inside `examples/reference-service/` over the rendered pages:
 
 ```bash
 uv run --group docs python examples/reference-service/scripts/check_docs_freshness.py \
   --exclude docs/superpowers/ origin/main HEAD
+cd examples/reference-service && \
+  uv run --group docs python scripts/check_docs_freshness.py origin/main HEAD
 ```
 
 It reports two things: a page whose `covers:` front matter names a path
@@ -398,8 +436,9 @@ page whose `last_reviewed` date is more than 180 days old. Pages under
 `docs/adr/` are skipped: a decision record does not go stale. Where the
 hard gate above only notices that *some* source changed and *no*
 documentation did, this one names the page and the exact path that moved.
-It reads the root `docs/` only; the example's pages are checked by the
-same script in a generated project's own CI.
+The second run is what checks the template's pages here: a change to the
+template body regenerates them, so their `covers:` coupling is reported
+in this repository too, not only in a generated project's own CI.
 
 **`lychee` and `mkdocs build --strict`** are hard gates on links, not on
 prose. `--strict` fails the build on a link to a page that no longer
@@ -600,7 +639,7 @@ are not interchangeable.
 | `just lint` | `ruff check` and `ruff format --check` over the root's own Python: `hooks/`, `scripts/`, `tests/`. The template body is excluded; the example is linted by its own `just lint`. |
 | `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |
 | `just next-version` | Preview the version number the next release would choose. Read-only — the release itself runs in CI (`.github/workflows/release.yml`). |
-| `just docs-freshness [base] [head]` | The **advisory** warnings only, over the root `docs/`: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Runs the example's `scripts/check_docs_freshness.py` with `--exclude docs/superpowers/`; defaults to `origin/main HEAD`. Never fails. **This is not CI's `docs-freshness` job** — see [above](#just-docs-freshness-is-not-cis-docs-freshness-job). |
+| `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Runs the example's `scripts/check_docs_freshness.py` twice — at the root over `docs/` with `--exclude docs/superpowers/`, then inside `examples/reference-service/` over the rendered pages; defaults to `origin/main HEAD`. Never fails. **This is not CI's `docs-freshness` job** — see [above](#just-docs-freshness-is-not-cis-docs-freshness-job). |
 | `just check` | `docs-build`, `test` and `regen-check` — everything CI's `docs` job checks at the repository level. Run before pushing a documentation, template or repository-tooling change. |
 
 !!! warning "Two different servers, one port"

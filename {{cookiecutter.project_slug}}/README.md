@@ -199,7 +199,7 @@ the ids. `just seed` does the same against `just dev`.
 | `GET /docs` | Interactive API documentation. |
 
 ### Readiness: two tiers
-{%- set _checks = '"database": "ok"' if cookiecutter.database == "postgres" else '' -%}
+{%- set _checks = '"database": "ok"' if cookiecutter.database == "postgres" else '' %}
 {%- set _deps = (['"cache": "ok"'] if cookiecutter.cache == "redis" else []) + (['"storage": "ok"'] if cookiecutter.object_storage == "s3" else []) %}
 
 `/readyz`'s response carries `checks` (gating — decides the status code) and

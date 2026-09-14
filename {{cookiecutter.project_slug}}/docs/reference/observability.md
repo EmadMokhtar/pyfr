@@ -63,6 +63,10 @@ anyway would be worse than not shipping it: a trace search or a dashboard
 built against it would read as "S3 calls are always fast" instead of "S3
 calls are not observed", and the first of those is actively misleading. The
 dependency was removed rather than left in place doing nothing
+{#- Trim forms, both dashes: each branch continues the sentence above, so
+    no newline may survive on either side of it. The sentence cannot be
+    split because only its ending differs: a full stop, or a pointer to
+    instrument_redis. See "Backends and pruning" in PyFr's contributing page. #}
 {%- if cookiecutter.cache == "redis" -%}
 ; see
 `instrument_redis` in `src/{{ cookiecutter.package_name }}/observability/otel.py` for the

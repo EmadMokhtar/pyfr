@@ -40,7 +40,7 @@ problem into a full outage, and removing the capacity that might have
 recovered.
 
 ### `GET /readyz` — readiness
-{%- set _checks = '"database": "ok"' if cookiecutter.database == "postgres" else '' -%}
+{%- set _checks = '"database": "ok"' if cookiecutter.database == "postgres" else '' %}
 {%- set _deps = (['"cache": "ok"'] if cookiecutter.cache == "redis" else []) + (['"storage": "ok"'] if cookiecutter.object_storage == "s3" else []) %}
 
 ```json
