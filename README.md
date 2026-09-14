@@ -43,10 +43,9 @@ to `main` and every night, and all eight are rendered and lint-checked on
 every push. M7, the conversion into a template, is complete: the template
 renders from twelve prompts, prunes the backends you do not choose, gives
 a generated project its own workflows and its own documentation site
-about itself, and records the template version it came from. On every
-merge to `main` and every night, three combinations are generated for
-real and run through their own `just check-all` — see the
-[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/).
+about itself, and records the template version it came from. See the
+[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what each
+milestone delivered.
 The [**reference service**](examples/reference-service/) is rendered from
 that template; it is the complete, running service you can run, read, and
 copy from right now.
