@@ -54,7 +54,7 @@ jobs:
     # The template is the source of truth and examples/reference-service/ is
     # rendered from it (M7 spec, M7-1). This job fails when the two disagree,
     # with the list of files and a diff of the first -- see
-    # docs/contributing.md, "Edit the template, then just regen".
+    # docs/contributing.md, "Working on the template".
     #
     # Dependabot edits the rendered example, not the template: it cannot
     # parse Jinja. On its pull requests -- and on the push that merges one --
@@ -194,8 +194,8 @@ jobs:
   docs:
     # `just check` at the repository root: the documentation site build
     # (`docs-build`, --strict), the root project's own test suite (`test`)
-    # -- the hygiene scripts' tests, the hooks' tests and the generation
-    # tests that render the template -- and the golden diff
+    # -- the hooks' tests and the generation tests that render the
+    # template -- and the golden diff
     # (`regen-check`), which the `golden` job above also runs on its own
     # so a mismatch is named by a job of its own. Job id kept as `docs`
     # rather than renamed: the documentation build is still most of what
@@ -251,12 +251,13 @@ jobs:
         # The script is the reference service's rendered copy (the template
         # owns it); the options name PyFr's own trees: a change under the
         # template body's src/ must touch the root docs, the template's
-        # docs, the README or mkdocs.yml.
+        # docs or README, the root README or mkdocs.yml.
         run: >-
           python3 examples/reference-service/scripts/check_docs_updated.py
           --source '{{cookiecutter.project_slug}}/src/'
           --docs docs/ --docs README.md --docs mkdocs.yml
           --docs '{{cookiecutter.project_slug}}/docs/'
+          --docs '{{cookiecutter.project_slug}}/README.md'
           --exclude-docs docs/superpowers/
           "$BASE_SHA" HEAD
 

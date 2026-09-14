@@ -104,6 +104,10 @@ next-version:
 # place PyFr's own pages are checked with it.
 docs-freshness base="origin/main" head="HEAD":
     uv run --group docs python examples/reference-service/scripts/check_docs_freshness.py --exclude docs/superpowers/ {{base}} {{head}}
+    # The same script over the example's own pages, run inside the example:
+    # a change to the template body regenerates them, so their `covers:`
+    # coupling is checked in this repository too, not only in a project.
+    cd examples/reference-service && uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
 
 # Everything CI checks at the repository level.
 check: docs-build test regen-check
