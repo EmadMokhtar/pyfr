@@ -157,8 +157,11 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         clean = _merge(git, previous, body, recorded.version, target, out)
         # Step 10, clean or not: the answers file is an ignored path, so the
         # merge never touched it, and staged here it rides in the merge commit.
-        # `template` is the URL this update used, recorded or --template.
-        answers.install(rendered.project, project, template)
+        # The recorded URL, not --template: that flag is a one-off override
+        # (a maintainer testing an unreleased template from a local clone),
+        # and a recorded local path would break the weekly workflow's
+        # ls-remote in CI.
+        answers.install(rendered.project, project, recorded.template)
         git.run("add", answers.FILE)
         # Same for the ignore file, when the project has none yet: the
         # built-in default ignores it, so the merge could not bring it.

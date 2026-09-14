@@ -291,12 +291,13 @@ def test_a_clean_update_merges_the_template_and_keeps_the_team_s_work(
     moved = (project / "config" / "lychee.toml").read_text()
     assert "# team note\n" in moved
     assert moved.endswith("# migrated by after.py to v100.1.0\n")
-    # ... and the answers record the new version, the new prompt, and the
-    # template URL this update used -- not the body's hard-coded upstream one.
+    # ... and the answers record the new version and the new prompt, while
+    # _template is still what the project recorded: --template is a one-off
+    # override, and the local remote's path must not end up in the file.
     assert recorded_version(project) == "100.1.0"
     written = yaml.safe_load((project / ".pyfr-answers.yml").read_text())
     assert written["team_channel"] == "#platform"
-    assert written["_template"] == str(template_remote)
+    assert written["_template"] == "https://github.com/EmadMokhtar/pyfr"
 
     # The commits: prepare (before.py), the merge with the changelog body,
     # finish (after.py).

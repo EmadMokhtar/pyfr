@@ -359,10 +359,10 @@ committing so the answers file can join the commit.
 
 Then, clean or not, the render's `.pyfr-answers.yml` — the recorded answers,
 the new prompts' defaults, `_template_version` at the target — is copied
-into the working tree and staged; the recorded `_template` is kept (or
-`--template`'s URL, when one was given), so a fork stays pointed at itself
-rather than at the URL the template body hard-codes. It is an ignored path,
-so the merge never touches it and it rides in the merge commit either way. The same goes for
+into the working tree and staged; the `_template` the project recorded is
+kept — `--template` is a one-off override and a fork stays pointed at
+itself. It is an ignored path, so the merge never touches it and it rides
+in the merge commit either way. The same goes for
 the render's `.pyfr-update-ignore` when the project has none (the
 built-in-default case of section 5.2): the default ignores the file
 itself, so the merge could never deliver it, and the tool copies and

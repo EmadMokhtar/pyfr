@@ -93,12 +93,9 @@ def test_install_copies_the_rendered_file_over_the_project_one(
     "template",
     ["https://github.com/fork/pyfr", "/home/me/pyfr", "git@github.com:fork/pyfr.git"],
 )
-def test_install_keeps_the_template_url_the_update_used(
-    tmp_path: Path, template: str
-) -> None:
+def test_install_keeps_the_recorded_template_url(tmp_path: Path, template: str) -> None:
     # The render carries the body's hard-coded upstream URL; the project
-    # recorded a fork (or the update was run with --template). Only the
-    # _template line changes.
+    # recorded a fork. The recorded one wins, and only that line changes.
     project = write(tmp_path / "p")
     at_v12 = RECORDED.replace("0.10.0", "0.12.0")
     rendered = write(tmp_path / "r", at_v12)

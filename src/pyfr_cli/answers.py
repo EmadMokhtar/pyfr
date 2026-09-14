@@ -81,11 +81,10 @@ def install(rendered_project: Path, project: Path, template: str) -> None:
     prompts' defaults, the target version -- becomes the project's.
 
     Except for `_template`: the render carries the URL the template body
-    hard-codes, upstream's, while this update rendered `template` -- the
-    URL the project recorded, or --template. The version written here is
-    that repository's, so its URL is what stays recorded: a fork stays
-    pointed at itself. Only that line is rewritten; every other byte of
-    the render's file is kept.
+    hard-codes, upstream's, and `template` -- the URL the project
+    recorded -- wins over it, so a fork stays pointed at itself. Only
+    that line is rewritten; every other byte of the render's file is
+    kept. (--template is a one-off override and is never recorded.)
     """
     text = (rendered_project / FILE).read_text()
     if _value_in(text, "_template") != template:

@@ -12,9 +12,9 @@ from pyfr_cli import __version__, update
 from pyfr_cli.errors import UpdateError
 
 TEMPLATE_HELP = (
-    "the template repository (default: _template in .pyfr-answers.yml) -- its "
-    "hooks and migration scripts run with your permissions, so it must be a "
-    "repository you trust"
+    "the template repository (default: _template in .pyfr-answers.yml; one "
+    "run only, the recorded value is kept) -- its hooks and migration scripts "
+    "run with your permissions, so it must be a repository you trust"
 )
 
 
