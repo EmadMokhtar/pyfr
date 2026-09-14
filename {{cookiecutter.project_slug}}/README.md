@@ -82,10 +82,11 @@ through it and exits, so `GET /api/v1/orders/<id>` has something to return
 before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 `just seed` does the same against `just dev`.
 {%- else %}
+{%- set _services = (["PostgreSQL"] if cookiecutter.database == "postgres" else []) + (["Redis"] if cookiecutter.cache == "redis" else []) + (["MinIO"] if cookiecutter.object_storage == "s3" else []) + ["a payment stub"] %}
+{%- set _started = ((_services[:-1] | join(", ")) ~ " and " ~ _services[-1]) if _services | length > 1 else _services[0] %}
 
 `just up` is the containerized alternative: one command builds the service
-image, starts whichever backends this project has and a payment stub, and
-starts the API.
+image, starts {{ _started }}, and starts the API.
 {%- if cookiecutter.database == "postgres" %}
 Every migration is applied before the API starts, so there is no window
 where the API is up against a schema that is not there yet.

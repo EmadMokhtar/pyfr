@@ -2,7 +2,7 @@
   "project_name": "My Service",
   "project_slug": "{{ cookiecutter.project_name | lower | replace(' ', '-') }}",
   "package_name": "{{ cookiecutter.project_slug | replace('-', '_') }}",
-  "description": "A Python microservice generated from PyFr.",
+  "description": "A Python microservice.",
   "author_name": "Your Name",
   "author_email": "you@example.com",
   "github_org": "your-org",

@@ -40,7 +40,7 @@ a choice prompt, type the number of the option you want.
 | `project_name` | The human-readable name. It is the title of the README and of the documentation site. | `My Service` |
 | `project_slug` | The directory name, the repository name and the container image name. Lower-case letters, digits and hyphens, starting with a letter. | Derived: the name lower-cased, spaces replaced by hyphens — `my-service` |
 | `package_name` | The Python package under `src/`. It must be a valid Python identifier: lower-case letters, digits and underscores, at most 25 characters, and not the name of a standard-library module. | Derived: the slug with hyphens replaced by underscores — `my_service` |
-| `description` | One sentence. It opens the README and is the site's description. | `A Python microservice generated from PyFr.` |
+| `description` | One sentence. It opens the README and is the site's description. | `A Python microservice.` |
 | `author_name` | The author recorded in `pyproject.toml`. The MIT and Proprietary licence texts name it too. | `Your Name` |
 | `author_email` | The author's email address in `pyproject.toml`. | `you@example.com` |
 | `github_org` | The GitHub user or organisation the repository will live under. It decides the repository URL, the container registry path and the documentation site's address. | `your-org` |
