@@ -21,6 +21,7 @@ import yaml
 
 from cli.helpers import commit_all, git
 from pyfr_cli.__main__ import main
+from pyfr_cli.git import Git
 
 ROOT = Path(__file__).resolve().parent.parent
 BODY = "{{cookiecutter.project_slug}}"
@@ -431,3 +432,153 @@ def test_a_hand_made_commit_on_template_is_refused_before_anything_changes(
     assert "git branch --force template" in err
     assert git(project, "rev-parse", "HEAD") == head
     assert git(project, "status", "--porcelain") == ""
+
+
+def test_squash_merged_history_does_not_conflict_again(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    assert (
+        run(project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0")[0]
+        == 0
+    )
+    # What a squash-merged pull request leaves on main: one commit with the
+    # update's tree and none of its history. The template commit the merge
+    # was based on survives only on origin/template.
+    before_merge = git(project, "rev-parse", "HEAD~1^1")
+    git(project, "reset", "-q", "--soft", before_merge)
+    commit_all(project, "chore: update template v100.0.0 -> v100.1.0 (#7)")
+    template_v1 = git(project, "rev-parse", "template")
+    assert not Git(project).ok("merge-base", "--is-ancestor", template_v1, "HEAD")
+
+    # Without the pinned base this would conflict on ruff.toml: the squash
+    # added "# template v100.1.0" at the end, and v100.2.0 adds a line after
+    # it -- two different changes at the same place, against the root.
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.2.0"
+    )
+    assert code == 0, out
+    assert "merge: base pinned to template commit" in out
+    assert "conflict:" not in out
+    assert (
+        (project / "ruff.toml")
+        .read_text()
+        .endswith("# template v100.1.0\n# template v100.2.0\n")
+    )
+    assert recorded_version(project) == "100.2.0"
+    # The graft was temporary: no replacement refs remain, and the merge
+    # commit's parents are the real HEAD and the template commit.
+    assert git(project, "replace", "-l") == ""
+    merge = git(project, "log", "--format=%H", "--merges", "-1")
+    assert git(project, "rev-parse", f"{merge}^2") == git(
+        project, "rev-parse", "template"
+    )
+
+
+def test_a_conflict_pauses_the_update_and_the_same_command_resumes(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    # The team appends a line where v100.1.0 appends a different one.
+    append(project / "ruff.toml", "# team ruff\n")
+    commit_all(project, "chore: our ruff line")
+
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert code == 1, out
+    assert "conflict: ruff.toml\n" in out
+    assert "merge: conflicts in the files above" in out
+    assert git(project, "diff", "--name-only", "--diff-filter=U") == "ruff.toml"
+    # The answers file is staged at the new version, the state is written,
+    # the template branch was pushed before the merge, and the after-script
+    # has not run yet.
+    assert (
+        ".pyfr-answers.yml"
+        in git(project, "diff", "--cached", "--name-only").splitlines()
+    )
+    assert recorded_version(project) == "100.1.0"
+    assert (project / ".git" / "pyfr-update.json").exists()
+    assert trailer(project, "origin/template") == "v100.1.0"
+    assert (
+        "migrated by after.py" not in (project / "config" / "lychee.toml").read_text()
+    )
+
+    # Running again before resolving only repeats the instructions.
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert code == 1
+    assert "conflict: ruff.toml" in out
+    assert "merge: conflicts in the files above" in out
+
+    # The user resolves -- keeps both lines -- and commits with the prepared
+    # message.
+    theirs = git(project, "show", "template:ruff.toml")
+    (project / "ruff.toml").write_text(theirs + "\n# team ruff\n")
+    git(project, "add", "ruff.toml")
+    git(project, "commit", "-q", "--no-verify", "--no-edit")
+    assert (
+        git(project, "log", "-1", "--format=%s")
+        == "chore: update template v100.0.0 -> v100.1.0"
+    )
+    assert "- add the team_channel prompt" in git(project, "log", "-1", "--format=%b")
+
+    # The same command finishes: after.py runs, its commit lands, the state
+    # is gone.
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert code == 0, out
+    assert "resume: finishing the update to v100.1.0" in out
+    assert "migrations: v100.1.0/after.py" in out
+    assert out.rstrip().endswith("recorded: v100.1.0")
+    assert (
+        (project / "config" / "lychee.toml")
+        .read_text()
+        .endswith("# migrated by after.py to v100.1.0\n")
+    )
+    assert git(project, "log", "-1", "--format=%s") == "chore: finish template v100.1.0"
+    assert not (project / ".git" / "pyfr-update.json").exists()
+    assert git(project, "status", "--porcelain") == ""
+    # And now it is current.
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert (code, out) == (0, "already current at v100.1.0\n")
+
+
+def test_no_push_keeps_the_branch_local_until_the_next_run(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    code, out, _ = run(
+        project,
+        monkeypatch,
+        capsys,
+        "update",
+        *template,
+        "--to",
+        "v100.1.0",
+        "--no-push",
+    )
+    assert code == 0, out
+    assert "template: not pushed (--no-push)" in out
+    assert git(project, "ls-remote", "--heads", "origin", "template") == ""
+
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.2.0"
+    )
+    assert code == 0, out
+    assert "template: exists locally but not on origin; it will be pushed" in out
+    assert "template: pushed to origin" in out
+    assert trailer(project, "origin/template") == "v100.2.0"
