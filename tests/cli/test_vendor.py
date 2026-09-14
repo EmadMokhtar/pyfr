@@ -197,6 +197,27 @@ def test_ensure_offline_treats_an_unreachable_origin_as_absent(
     assert "not on origin" in again.notes[0]
 
 
+def test_push_if_ahead_pushes_only_what_origin_lacks(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    repo = Git(project)
+    assert not vendor.push_if_ahead(repo)  # no branch yet
+    sha = update_branch(project, rendered, tmp_path)  # a --no-push run's result
+    assert vendor.push_if_ahead(repo)
+    assert git(project, "rev-parse", "origin/template") == sha
+    assert not vendor.push_if_ahead(repo)  # nothing left to push
+    # Diverged: someone rewound the local branch and committed on it. Not
+    # pushed here; ensure() names the fix on the next update.
+    root = git(project, "rev-list", "--max-parents=0", "HEAD")
+    git(project, "branch", "--force", "template", root)
+    git(project, "worktree", "add", "-q", str(tmp_path / "wt2"), "template")
+    (tmp_path / "wt2" / "stray.txt").write_text("x\n")
+    commit_all(tmp_path / "wt2", "stray")
+    git(project, "worktree", "remove", "--force", str(tmp_path / "wt2"))
+    assert not vendor.push_if_ahead(repo)
+    assert git(project, "ls-remote", "--heads", "origin", "template").startswith(sha)
+
+
 def test_push_without_a_remote_is_an_error_naming_no_push(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "lonely", {".pyfr-answers.yml": answers_text("0.10.0")})
     with pytest.raises(UpdateError) as stop:

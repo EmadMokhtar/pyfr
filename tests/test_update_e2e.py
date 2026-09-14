@@ -573,6 +573,7 @@ def test_no_push_keeps_the_branch_local_until_the_next_run(
     )
     assert code == 0, out
     assert "template: not pushed (--no-push)" in out
+    assert "git push origin template" in out
     assert git(project, "ls-remote", "--heads", "origin", "template") == ""
 
     code, out, _ = run(
@@ -582,3 +583,40 @@ def test_no_push_keeps_the_branch_local_until_the_next_run(
     assert "template: exists locally but not on origin; it will be pushed" in out
     assert "template: pushed to origin" in out
     assert trailer(project, "origin/template") == "v100.2.0"
+
+
+def test_no_push_is_pushed_by_the_next_run_even_when_already_current(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    code, out, _ = run(
+        project,
+        monkeypatch,
+        capsys,
+        "update",
+        *template,
+        "--to",
+        "v100.1.0",
+        "--no-push",
+    )
+    assert code == 0, out
+    assert git(project, "ls-remote", "--heads", "origin", "template") == ""
+
+    # A run at the same version has nothing else to do, but the promise
+    # "the next run pushes it" must hold for it too: after a squash merge
+    # the template commit survives nowhere but this laptop (decision M8-3).
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert code == 0, out
+    assert "template: pushed to origin" in out
+    assert "already current at v100.1.0" in out
+    assert trailer(project, "origin/template") == "v100.1.0"
+    # Once pushed, a current run says nothing about the branch.
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert (code, out) == (0, "already current at v100.1.0\n")

@@ -86,6 +86,10 @@ def update(project: Path, options: Options, out: TextIO) -> int:
     available = versions.remote_versions(template, git)
     target = versions.resolve_target(options.to, available)
     if target == recorded.version:
+        # A --no-push run promised that the next run pushes the branch --
+        # this run too, although it has nothing else to do (spec 3.2).
+        if options.push and vendor.push_if_ahead(git):
+            out.write(f"template: pushed to {vendor.REMOTE}\n")
         out.write(f"already current at {target}\n")
         return 0
     if target < recorded.version:
@@ -113,6 +117,9 @@ def update(project: Path, options: Options, out: TextIO) -> int:
 
         if branch.version == target:
             out.write(f"template: already at {target}\n")
+            # A --no-push run got the branch here; this run carries it.
+            if options.push and vendor.push_if_ahead(git):
+                out.write(f"template: pushed to {vendor.REMOTE}\n")
         else:
             spec, from_file = ignore.load(project, recorded)
             if not from_file:
@@ -127,7 +134,10 @@ def update(project: Path, options: Options, out: TextIO) -> int:
                 vendor.push(git)
                 out.write(f"template: pushed to {vendor.REMOTE}\n")
             else:
-                out.write("template: not pushed (--no-push)\n")
+                out.write(
+                    "template: not pushed (--no-push); push it before this "
+                    f"update is merged: git push {vendor.REMOTE} {vendor.BRANCH}\n"
+                )
 
         migrations = migrate.discover(clone, recorded.version, target)
         migrate.run_before(migrations, project, recorded.version, target, out)

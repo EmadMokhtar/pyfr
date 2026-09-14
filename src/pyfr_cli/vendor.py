@@ -255,3 +255,25 @@ def push(git: Git) -> None:
             "check your access to the remote, then run pyfr update again -- "
             "the local branch is correct and the run resumes",
         )
+
+
+def push_if_ahead(git: Git) -> bool:
+    """Push the local branch when it holds commits the remote lacks -- what
+    a --no-push run leaves behind -- and say whether a push happened.
+
+    Called by the runs that would otherwise touch the branch not at all
+    (already current, or already at the target), so that the --no-push
+    promise "the next run pushes it" holds for every next run, not only
+    for one that finds a newer version. A branch that has diverged from
+    the remote's is left alone here: `ensure` reports that, with the fix,
+    on the next real update.
+    """
+    if not git.branch_exists(BRANCH) or not git.remote_exists(REMOTE):
+        return False
+    tip = remote_tip(git)
+    if tip == git.out("rev-parse", BRANCH):
+        return False
+    if tip is not None and not git.ok("merge-base", "--is-ancestor", tip, BRANCH):
+        return False
+    push(git)
+    return True

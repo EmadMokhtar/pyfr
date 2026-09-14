@@ -33,7 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--no-push",
         action="store_true",
-        help="do not push the template branch to origin (the next run will)",
+        help="do not push the template branch to origin (the next run pushes "
+        "it, even one that finds nothing else to do)",
     )
     run.add_argument("--template", metavar="URL", help=TEMPLATE_HELP)
 
