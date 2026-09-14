@@ -20,18 +20,32 @@ docs:
 # at the top, and the reference service's rendered site -- built from
 # examples/reference-service/ with its own toolchain and its own
 # mkdocs.yml -- under site/reference-service/. One deploy, two sites
-# (spec §9.2). SITE_URL tells the second build where it will live; a
-# generated project leaves it unset and gets its own Pages URL.
+# (spec §9.2). The environment tells the second build where it will live
+# and which repository it belongs to; a generated project leaves all four
+# unset and gets its own Pages URL and its own repository. The edit link
+# opens the TEMPLATE page, not the rendered one: the example is never
+# edited by hand (ADR 0017). The braces in that path are percent-encoded
+# so the URL is valid -- and so `just` does not read them as its own
+# interpolation.
 docs-build:
     # --strict turns a warning into a failure: a link to a page that no
     # longer exists, a renamed heading anchor, or an unresolvable include
     # each fail the build rather than printing a warning nobody reads.
     uv run mkdocs build --strict
-    cd examples/reference-service && SITE_URL=https://emadmokhtar.github.io/pyfr/reference-service/ uv run --group docs mkdocs build --strict --site-dir ../../site/reference-service
+    cd examples/reference-service && \
+        SITE_URL=https://emadmokhtar.github.io/pyfr/reference-service/ \
+        REPO_URL=https://github.com/EmadMokhtar/pyfr \
+        REPO_NAME=EmadMokhtar/pyfr \
+        EDIT_URI='edit/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/' \
+        uv run --group docs mkdocs build --strict --site-dir ../../site/reference-service
     # The links between the two sites are absolute URLs on the Pages host,
     # which neither `--strict` resolves nor lychee checks (they exist only
     # after the deploy); this resolves each one against the site/ just built.
-    uv run --group dev python scripts/check_site_links.py --exclude docs/superpowers docs README.md examples/reference-service/docs examples/reference-service/README.md
+    # With --repo-root it also resolves every link into this repository's
+    # tree on GitHub found in the built HTML against the checkout: the edit
+    # links above, which lychee is told to skip, and the ADRs' links into
+    # the design archive, which it skips as well.
+    uv run --group dev python scripts/check_site_links.py --repo-root . --exclude docs/superpowers docs README.md examples/reference-service/docs examples/reference-service/README.md
 
 # Dead external links. Internal ones are already `mkdocs build --strict`'s job.
 links:

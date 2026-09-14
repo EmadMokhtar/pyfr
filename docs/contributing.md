@@ -255,10 +255,17 @@ This repository builds two MkDocs sites and deploys them as one.
 --strict`; `.github/workflows/docs.yml` runs the same recipe and uploads
 `site/` as one Pages artifact. The second build runs inside
 `examples/reference-service/` with that project's own toolchain and its
-own `mkdocs.yml`, and sets `SITE_URL` so the rendered `site_url` is the
-nested address. A generated project leaves `SITE_URL` unset — its
+own `mkdocs.yml`, and sets four environment variables the template's
+`mkdocs.yml` reads with `!ENV`: `SITE_URL`, so the rendered `site_url` is
+the nested address; `REPO_URL` and `REPO_NAME`, so the header's
+repository link and name are PyFr's, not the reference service's; and
+`EDIT_URI`, so each page's edit link opens the *template* page —
+`edit/main/{{cookiecutter.project_slug}}/docs/`, with the braces
+percent-encoded so the URL is valid — because the rendered example is
+never edited by hand. A generated project leaves all four unset — its
 `mkdocs.yml` reads `site_url: !ENV [SITE_URL, "<its own Pages address>"]`
-— and gets a site at the top of its own domain. `mkdocs build --strict`
+and the same shape for the other three — and gets a site at the top of
+its own domain, linked to its own repository. `mkdocs build --strict`
 turns a warning into a failure: a link to a page that no longer exists, a
 renamed heading anchor, or an unresolvable include each fails the build
 rather than printing a warning nobody reads.
@@ -278,7 +285,15 @@ of `just docs-build`: it reads every `https://emadmokhtar.github.io/pyfr/…`
 link out of both documentation trees and resolves it against the `site/`
 directory just built — the page must exist there, and an anchor must be an
 element id in it — so a renamed page or heading on either side fails the
-build before it reaches the deploy.
+build before it reaches the deploy. Given `--repo-root`, as the recipe
+passes it, the same script also reads every link into this repository's
+tree on GitHub — `edit/main/…`, `blob/main/…` and `tree/main/…` under
+`https://github.com/EmadMokhtar/pyfr/` — out of the *built* HTML of both
+sites and checks that the path exists in the checkout. That covers the
+edit links Material writes from `edit_uri`, which `lychee.toml` skips
+because a page added in the branch exists on `main` only after the merge,
+and the decision records' links into `docs/superpowers/`, which it skips
+for the same reason.
 
 A page in the template's `docs/` carries the project's identity, never the
 reference service's: `{{ cookiecutter.project_slug }}`,
@@ -574,7 +589,7 @@ are not interchangeable.
 | --- | --- |
 | `just docs-install` | Install the documentation toolchain (`uv sync --group docs`). |
 | `just docs` | Live preview of PyFr's site on <http://127.0.0.1:8000>, rebuilding as you save. |
-| `just docs-build` | Build both sites into `site/` with `--strict`, exactly as CI and `docs.yml` do: PyFr's at the top, and the reference service's rendered site — built from `examples/reference-service/` with its own toolchain and its own `mkdocs.yml`, with `SITE_URL` set to its nested address — under `site/reference-service/`; then `scripts/check_site_links.py` resolves every link between the two sites against that tree. |
+| `just docs-build` | Build both sites into `site/` with `--strict`, exactly as CI and `docs.yml` do: PyFr's at the top, and the reference service's rendered site — built from `examples/reference-service/` with its own toolchain and its own `mkdocs.yml`, with `SITE_URL` set to its nested address, `REPO_URL` and `REPO_NAME` pointing its header at this repository, and `EDIT_URI` pointing its edit links at the template body — under `site/reference-service/`; then `scripts/check_site_links.py` resolves every link between the two sites against that tree, and every link into this repository's tree on GitHub against the checkout. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee), over the root `docs/`, the root `README.md` and the rendered example's `docs/` and `README.md`. Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml` and the same paths. |
 | `just test` | This repository's own tests (`tests/`) — the hooks' tests, the generation-test matrix that renders all eight backend combinations and checks each one, `scripts/regen.py`'s tests and the golden diff — with both the `dev` and `docs` groups, because the generation tests build a render's site with the root's MkDocs. Needs no Docker. |
 | `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |

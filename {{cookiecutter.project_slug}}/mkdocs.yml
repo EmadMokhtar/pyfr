@@ -3,9 +3,13 @@ site_description: "{{ cookiecutter.description }}"
 # The project's own GitHub Pages site by default; PyFr's repository builds
 # this same tree under its own site and sets SITE_URL to say so.
 site_url: !ENV [SITE_URL, "https://{{ cookiecutter.github_org | lower }}.github.io/{{ cookiecutter.project_slug }}/"]
-repo_url: https://github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}
-repo_name: "{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"
-edit_uri: edit/main/docs/
+# The project's own repository by default. PyFr's deploy nests this site
+# under its repository and points all three at it: the header's link and
+# name, and each page's edit link -- which there opens the TEMPLATE page,
+# because the rendered example is never edited by hand.
+repo_url: !ENV [REPO_URL, "https://github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"]
+repo_name: !ENV [REPO_NAME, "{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"]
+edit_uri: !ENV [EDIT_URI, "edit/main/docs/"]
 {%- if cookiecutter.license == "Apache-2.0" %}
 copyright: Licensed under the Apache License 2.0
 {%- elif cookiecutter.license == "MIT" %}

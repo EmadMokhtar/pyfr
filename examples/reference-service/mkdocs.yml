@@ -3,9 +3,13 @@ site_description: "The PyFr reference service."
 # The project's own GitHub Pages site by default; PyFr's repository builds
 # this same tree under its own site and sets SITE_URL to say so.
 site_url: !ENV [SITE_URL, "https://emadmokhtar.github.io/reference-service/"]
-repo_url: https://github.com/EmadMokhtar/reference-service
-repo_name: "EmadMokhtar/reference-service"
-edit_uri: edit/main/docs/
+# The project's own repository by default. PyFr's deploy nests this site
+# under its repository and points all three at it: the header's link and
+# name, and each page's edit link -- which there opens the TEMPLATE page,
+# because the rendered example is never edited by hand.
+repo_url: !ENV [REPO_URL, "https://github.com/EmadMokhtar/reference-service"]
+repo_name: !ENV [REPO_NAME, "EmadMokhtar/reference-service"]
+edit_uri: !ENV [EDIT_URI, "edit/main/docs/"]
 copyright: Licensed under the Mozilla Public License 2.0
 
 validation:

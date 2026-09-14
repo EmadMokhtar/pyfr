@@ -681,8 +681,9 @@ def test_a_render_carries_only_the_backends_it_chose(cookies, answers) -> None:
 
 def build_site(root: Path) -> subprocess.CompletedProcess[str]:
     # The root's MkDocs over the render's own mkdocs.yml: no `uv sync` in
-    # the render, so no network and no second toolchain. `site_url` reads
-    # SITE_URL through `!ENV`; unset, the default applies.
+    # the render, so no network and no second toolchain. `site_url` and the
+    # repository keys read SITE_URL, REPO_URL, REPO_NAME and EDIT_URI
+    # through `!ENV`; unset, the defaults apply.
     return subprocess.run(
         [
             sys.executable,
