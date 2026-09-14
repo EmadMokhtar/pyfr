@@ -10,9 +10,10 @@ last_reviewed: 2026-09-12
 ## Context
 
 M5 decided that the repository has one version, one changelog, and one
-tag series, and that the service publishes nothing. M6 adds a
-registry. The images could be tagged with the service's own `0.1.0`,
-pushed on every merge, or pushed on release under the repository's tag.
+tag series. Before this decision the service published no images. M6
+adds a registry. The images could be tagged with the service's own
+`0.1.0`, pushed on every merge, or pushed on release under the
+repository's tag.
 
 ## Decision
 {%- if cookiecutter.database == "postgres" %}
@@ -42,7 +43,7 @@ Dockerfile — links each package to this repository.
   for the nightly scan to re-check, and M7 would have no release path to
   templatise.
 - **Publish on every merge.** Rejected: registry churn for images nothing
-  consumes continuously — nobody deploys the service.
+  consumes continuously — a deployment pulls a release, not every merge.
 - **Tag with the service's own version.** Rejected: a second version
   series, which M5 already rejected for the same reason.
 

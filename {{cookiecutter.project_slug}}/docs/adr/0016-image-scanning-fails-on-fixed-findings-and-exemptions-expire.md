@@ -22,7 +22,11 @@ stop reading.
 
 `just scan` runs Trivy with
 `--severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --scanners vuln,secret`
+{%- if cookiecutter.database == "postgres" %}
 over both images. A finding is exempted only through `.trivyignore.yaml`,
+{%- else %}
+over the image. A finding is exempted only through `.trivyignore.yaml`,
+{%- endif %}
 where every entry names the vulnerability, the path it applies to, a
 reason, and an `expired_at` date about ninety days out; an expired entry
 fails the scan again. There is no other allow-list and no skip flag in
@@ -40,10 +44,16 @@ any recipe or workflow.
   since nothing prompts a re-check of whether a fix has since shipped.
 
 ## Consequences
+{%- if cookiecutter.database == "postgres" %}
 
 Someone must renew or drop the five entries in `.trivyignore.yaml` by
 2026-12-10; a Dependabot bump of the `migrate/migrate` base image is the
 natural moment. `--ignore-unfixed` drops findings with no available fix
+{%- else %}
+
+`.trivyignore.yaml` starts empty; every entry that is ever added carries
+an `expired_at` date. `--ignore-unfixed` drops findings with no available fix
+{%- endif %}
 from the report entirely; `docker compose run --rm trivy image
 --ignorefile /.trivyignore.yaml --show-suppressed <image>` lists them
 (status `affected`).

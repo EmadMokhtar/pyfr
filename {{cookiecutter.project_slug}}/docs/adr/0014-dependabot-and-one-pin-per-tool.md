@@ -26,9 +26,15 @@ locked tools, instead of hooks carrying their own separately pinned
 `rev:`. Commitizen is a dev dependency, called as `uv run --locked cz`
 from the `justfile`, `.github/workflows/release.yml` and the
 commit-message hook — one dependency declaration, read by every caller.
+{%- if cookiecutter.database == "postgres" %}
 Container image pins live in `compose.yaml` and the two
 Dockerfiles only: the integration tests read image versions from there,
 and so does `just o11y-gates`.
+{%- else %}
+Container image pins live in `compose.yaml` and the Dockerfile only: the
+integration tests read image versions from there, and so does `just
+o11y-gates`.
+{%- endif %}
 
 ## Alternatives considered
 
