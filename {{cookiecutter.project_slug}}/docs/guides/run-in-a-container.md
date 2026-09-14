@@ -15,7 +15,7 @@ just up
 ```
 
 That builds the image and starts the stack, serving on
-<http://localhost:8000>. Once the API is healthy, a one-shot `seed` container
+<http://localhost:{{ cookiecutter.http_port }}>. Once the API is healthy, a one-shot `seed` container
 creates five orders through it, so there is something to `GET` before you
 have placed anything — see [Getting started](../getting-started.md#start-with-data-in-it).
 Stop it with `just down`, which also removes the volumes.
@@ -83,7 +83,7 @@ The service image runs on its own with no configuration at all — every
 dependency is optional, and unset means in-memory:
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z
+docker run --rm -p {{ cookiecutter.http_port }}:{{ cookiecutter.http_port }} ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}:vX.Y.Z
 ```
 {%- if cookiecutter.database == "postgres" %}
 

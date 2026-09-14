@@ -177,7 +177,7 @@ every one of them fails open — none takes an instance out of load balancing.
 **Confirm.**
 
 ```bash
-curl -s localhost:8000/readyz | jq
+curl -s localhost:{{ cookiecutter.http_port }}/readyz | jq
 ```
 {%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 

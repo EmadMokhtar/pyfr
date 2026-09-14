@@ -32,7 +32,7 @@ edit `Field(description=...)` in
 | --- | --- | --- | --- |
 | `APP_ENVIRONMENT` | `local` \| `staging` \| `production` | `local` | `local` prints colourised, human-readable logs. Anything else prints one JSON object per line. |
 | `APP_SERVICE_NAME` | string | `{{ cookiecutter.project_slug }}` | The OpenAPI document's title, and the `service.name` field on every log record. |
-| `APP_HTTP_PORT` | integer, 1–65535 | `8000` | The port to serve on. Read by `just dev`, by the container's start command, and by the image's health check. |
+| `APP_HTTP_PORT` | integer, 1–65535 | `{{ cookiecutter.http_port }}` | The port to serve on. Read by `just dev`, by the container's start command, and by the image's health check. |
 | `APP_LOG__LEVEL` | `debug` \| `info` \| `warning` \| `error` \| `critical` | `info` | The root log level. |
 | `APP_LOG__LEVELS` | JSON object | `{}` | Per-logger overrides, as JSON. Silencing a chatty library is configuration, not a code change. |
 | `APP_LOG__REDACT_FIELDS` | JSON array | `["access_token","api_key","apikey","authorization","card_number","cookie","cvv","passwd","password","refresh_token","secret","secret_access_key","secret_key","set_cookie","token"]` | Field names whose values are replaced by `[REDACTED]` before a record is rendered, as a JSON array. Matched by exact name at any depth, ignoring case and treating `-` and `_` alike. Setting this REPLACES the default list rather than adding to it. |

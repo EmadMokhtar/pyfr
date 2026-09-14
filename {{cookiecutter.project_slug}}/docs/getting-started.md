@@ -45,15 +45,15 @@ Now start the service:
 just dev
 ```
 
-That serves on <http://localhost:8000> with auto-reload: edit a file and the
+That serves on <http://localhost:{{ cookiecutter.http_port }}> with auto-reload: edit a file and the
 server restarts itself. Interactive API documentation is at
-<http://localhost:8000/docs>.
+<http://localhost:{{ cookiecutter.http_port }}/docs>.
 
 ## Start with data in it
 
 `just dev` starts empty. With Docker, the container stack starts with five
 orders already in it. Stop `just dev` first (Ctrl-C) — both serve on port
-8000 — then:
+{{ cookiecutter.http_port }} — then:
 
 ```bash
 just up
@@ -92,7 +92,7 @@ Any of those ids answers a `GET` straight away, before you have placed
 anything yourself:
 
 ```bash
-curl -s http://localhost:8000/api/v1/orders/c8e7aa28-be07-4916-9b1e-eb2cae1f654a | jq
+curl -s http://localhost:{{ cookiecutter.http_port }}/api/v1/orders/c8e7aa28-be07-4916-9b1e-eb2cae1f654a | jq
 ```
 
 The ids differ on every machine — the service assigns them — so copy one
@@ -110,7 +110,7 @@ one terminal, in another:
 just seed
 ```
 
-That runs the same module against `localhost:8000`, keeps its state in
+That runs the same module against `localhost:{{ cookiecutter.http_port }}`, keeps its state in
 `.seed-state.json` (ignored by git), and prints the same five lines. `just dev`
 holds orders in memory, so after a restart `just seed` finds them gone and
 creates them again.
@@ -119,7 +119,7 @@ creates them again.
 
 <!-- exec -->
 ```bash
-response=$(curl -si http://localhost:8000/healthz)
+response=$(curl -si http://localhost:{{ cookiecutter.http_port }}/healthz)
 echo "$response"
 grep -q '^HTTP/1.1 200' <<< "$response"
 grep -q '"status":"ok"' <<< "$response"
@@ -147,7 +147,7 @@ that distinction prevents an outage.
 
 <!-- exec -->
 ```bash
-response=$(curl -si -X POST http://localhost:8000/api/v1/orders -H 'Content-Type: application/json' -d '{"customer_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","lines":[{"sku":"WIDGET-1","quantity":2,"unit_amount":"9.99","currency":"EUR"}]}')
+response=$(curl -si -X POST http://localhost:{{ cookiecutter.http_port }}/api/v1/orders -H 'Content-Type: application/json' -d '{"customer_id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","lines":[{"sku":"WIDGET-1","quantity":2,"unit_amount":"9.99","currency":"EUR"}]}')
 echo "$response"
 grep -q '^HTTP/1.1 201' <<< "$response"
 grep -q '"amount":"19.98"' <<< "$response"
@@ -194,7 +194,7 @@ That is [why API schemas are separate](explanation/layers.md#why-api-schemas-are
 
 <!-- exec -->
 ```bash
-response=$(curl -si http://localhost:8000/api/v1/orders/3fa85f64-5717-4562-b3fc-2c963f66afa6)
+response=$(curl -si http://localhost:{{ cookiecutter.http_port }}/api/v1/orders/3fa85f64-5717-4562-b3fc-2c963f66afa6)
 echo "$response"
 grep -q '^HTTP/1.1 404' <<< "$response"
 grep -q '^content-type: application/problem+json' <<< "$response"

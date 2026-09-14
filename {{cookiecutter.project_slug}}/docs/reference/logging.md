@@ -66,7 +66,7 @@ line that request produced, including the traceback.
 Send your own to follow one logical operation across several services:
 
 ```bash
-curl -H 'X-Request-ID: my-trace-42' http://localhost:8000/api/v1/orders/...
+curl -H 'X-Request-ID: my-trace-42' http://localhost:{{ cookiecutter.http_port }}/api/v1/orders/...
 ```
 
 ## The access log
