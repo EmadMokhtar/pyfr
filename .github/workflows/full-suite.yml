@@ -50,5 +50,14 @@ jobs:
           # pins, so the cache the example's jobs fill serves it too.
           enable-cache: true
       - uses: extractions/setup-just@v4
+      - name: Identify the committer
+        # The render's first commit is made by the post-generation hook, in a
+        # repository that does not exist when this job starts, so the identity
+        # has to be global. tests/test_generated_service.py sets one through the
+        # environment as well; a runner without either would refuse the commit
+        # with "empty ident name".
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
       - name: Render the project and run its own gates
         run: just test-full-suite ${{ matrix.combination }}

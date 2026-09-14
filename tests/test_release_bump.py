@@ -41,7 +41,12 @@ def version_in(repository: Path) -> str:
 
 
 @pytest.fixture
-def repository(tmp_path: Path) -> Path:
+def repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # The host's global git configuration -- signing, a hooks path -- must
+    # not reach a commit this test makes.
+    global_config = tmp_path / "gitconfig"
+    global_config.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
     repository = tmp_path / "pyfr"
     repository.mkdir()
     for name in ("pyproject.toml", "uv.lock", "cookiecutter.json"):

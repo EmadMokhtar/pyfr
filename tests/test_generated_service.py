@@ -87,6 +87,19 @@ def project(
     # `.venv` and ignore it. Unset, the project's own environment is the
     # only one in sight, as on a user's machine.
     monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    # A GitHub runner has no git identity, and the hook's first commit
+    # would be refused with "empty ident name"; a user's machine has one.
+    # Set through the environment, which every process the hook starts
+    # inherits, so the test does not depend on the machine it runs on.
+    for variable in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(variable, "PyFr full suite")
+    for variable in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(variable, "full-suite@pyfr.invalid")
+    # The host's global git configuration -- signing, a hooks path -- must
+    # not reach a commit this test makes.
+    global_config = tmp_path_factory.mktemp("git") / "config"
+    global_config.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
     # Imported here so the marker's deselection never needs cookiecutter.
     from cookiecutter.main import cookiecutter
 
