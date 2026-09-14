@@ -27,7 +27,6 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -76,7 +75,7 @@ def project(
     request: pytest.FixtureRequest,
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[Path]:
+) -> Path:
     """A project rendered for real; kept on disk only when its test fails."""
     # scripts/regen.py sets PYFR_REGEN for the whole process and an earlier
     # test in this session may have called it; the hook must see it unset
@@ -95,16 +94,29 @@ def project(
         monkeypatch.setenv(variable, "PyFr full suite")
     for variable in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
         monkeypatch.setenv(variable, "full-suite@pyfr.invalid")
-    # The host's global git configuration -- signing, a hooks path -- must
-    # not reach a commit this test makes.
+    # Neither the host's global git configuration nor the system one --
+    # signing, a hooks path -- reaches a commit this test makes (the same
+    # isolation as tests/test_regen.py's fixture).
     global_config = tmp_path_factory.mktemp("git") / "config"
     global_config.write_text("")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     # Imported here so the marker's deselection never needs cookiecutter.
     from cookiecutter.main import cookiecutter
 
     output = tmp_path_factory.mktemp(request.param)
-    rendered = Path(
+
+    # Registered before the render, so a render or hook that raises leaves
+    # its half-made project in place for inspection, exactly like a
+    # failing gate does.
+    def keep_only_a_failure() -> None:
+        if getattr(request.node, "failed", False):
+            print(f"\nThe failed render is kept under {output}")
+        else:
+            shutil.rmtree(output)
+
+    request.addfinalizer(keep_only_a_failure)
+    return Path(
         cookiecutter(
             str(ROOT),
             no_input=True,
@@ -115,11 +127,6 @@ def project(
             default_config=True,
         )
     )
-    yield rendered
-    if getattr(request.node, "failed", False):
-        print(f"\nThe failed render is kept at {rendered}")
-    else:
-        shutil.rmtree(output)
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -130,14 +137,17 @@ def git(*args: str, cwd: Path) -> str:
 
 def test_a_generated_project_passes_every_one_of_its_gates(project: Path) -> None:
     # The hook's side effects, in the order it runs them: `git init`,
-    # `uv sync`, `pre-commit install`, then one commit of everything. The
-    # commit is what `just check` needs -- it ends in `git diff
-    # --exit-code` -- and its presence proves the three steps before it
-    # did not fall back to "run it later".
+    # `uv sync`, `pre-commit install`, then one commit of everything. Each
+    # is best effort -- a failure prints "run it later" and the hook goes
+    # on -- so each is checked on its own: the commit (which `just check`
+    # needs; it ends in `git diff --exit-code`), the installed hook, and
+    # an environment that already matches the project, which `uv sync
+    # --check` proves without touching it. Without that check, the first
+    # `uv run` inside `check-all` would quietly repair a sync that failed.
     assert git("log", "--format=%s", cwd=project).splitlines() == [FIRST_COMMIT]
-    assert (project / "uv.lock").is_file()
     assert (project / ".git" / "hooks" / "pre-commit").is_file()
     assert git("status", "--porcelain", cwd=project) == ""
+    subprocess.run(["uv", "sync", "--check"], cwd=project, check=True)
     # `check-all` runs `check` first (lint, types, imports, tests, hooks),
     # then the site build, the container tier and the three gate recipes:
     # the six jobs the project's CI runs separately, in one command.

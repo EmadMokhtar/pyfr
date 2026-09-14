@@ -42,11 +42,13 @@ def version_in(repository: Path) -> str:
 
 @pytest.fixture
 def repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    # The host's global git configuration -- signing, a hooks path -- must
-    # not reach a commit this test makes.
+    # Neither the host's global git configuration nor the system one --
+    # signing, a hooks path -- reaches a commit this test makes (the same
+    # isolation as tests/test_regen.py's fixture).
     global_config = tmp_path / "gitconfig"
     global_config.write_text("")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(global_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     repository = tmp_path / "pyfr"
     repository.mkdir()
     for name in ("pyproject.toml", "uv.lock", "cookiecutter.json"):

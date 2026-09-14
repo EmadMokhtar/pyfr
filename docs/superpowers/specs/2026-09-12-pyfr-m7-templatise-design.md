@@ -202,6 +202,11 @@ Rejects, with one plain sentence each, before any file is written:
   `sys.stdlib_module_names` — a package named `email` or `types` breaks in
   ways that are confusing to debug.
 - `http_port` outside 1–65535.
+- `http_port` that the generated project's own stack binds on the host
+  *(added in PR 5)*: always 8001 (`just docs`), 9099 (the payment stub) and
+  3000, 4317, 4318, 9090 (the observability profile); 5432, 6379, and 9000
+  with 9001 while PostgreSQL, Redis or MinIO is chosen. The sentence names
+  the service that has the port.
 
 Exit code 1 with the message on standard error. Cookiecutter then writes
 nothing.
