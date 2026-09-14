@@ -94,7 +94,9 @@ def update(project: Path, options: Options, out: TextIO) -> int:
             "downgrades are not supported; pass a newer --to, or none for the newest",
         )
 
-    branch = vendor.ensure(git, recorded.version, target)
+    # --no-push says the network may be missing: an unreachable origin then
+    # means "work from the local branch", not "stop".
+    branch = vendor.ensure(git, recorded.version, target, offline=not options.push)
     for note in branch.notes:
         out.write(f"{note}\n")
     # The merge base: the template commit that renders the recorded version.

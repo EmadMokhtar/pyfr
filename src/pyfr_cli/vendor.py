@@ -58,21 +58,45 @@ def recorded_in(git: Git, rev: str) -> Version | None:
     return answers.version_in(result.stdout)
 
 
-def ensure(git: Git, recorded: Version, target: Version) -> Branch:
+def remote_tip(git: Git, *, offline: bool = False) -> str | None:
+    """The sha of the branch as the remote has it right now, or None when
+    the remote has no such branch.
+
+    `git ls-remote --exit-code` exits 2 when the branch is absent and 128
+    when the remote cannot be reached; the two must not be confused, or an
+    offline run would rebuild the branch from the root although the remote
+    has the real one. Unreachable is an error -- unless `offline`, the
+    --no-push run's promise to work from the local branch: then it counts
+    as absent.
+    """
+    if not git.remote_exists(REMOTE):
+        return None
+    result = git.run("ls-remote", "--exit-code", "--heads", REMOTE, BRANCH, check=False)
+    if result.returncode == 0:
+        return result.stdout.split()[0]
+    if result.returncode == 2 or offline:
+        return None
+    raise UpdateError(
+        f"could not reach {REMOTE} to look for the {BRANCH} branch: "
+        f"{result.stderr.strip()}",
+        "check the network, or pass --no-push to work from the local branch",
+    )
+
+
+def ensure(
+    git: Git, recorded: Version, target: Version, *, offline: bool = False
+) -> Branch:
     """Find, fetch or create the branch, then check the guard.
 
     In order: the remote's branch wins when it exists; a local one is used
     (and pushed later) when it does not; otherwise the single root commit
-    starts it (spec section 4.3).
+    starts it (spec section 4.3). `offline` is passed on to `remote_tip`.
     """
     notes: list[str] = []
     created = False
     # A run that died may have left a worktree entry behind.
     git.run("worktree", "prune")
-    on_remote = git.remote_exists(REMOTE) and git.ok(
-        "ls-remote", "--exit-code", "--heads", REMOTE, BRANCH
-    )
-    if on_remote:
+    if remote_tip(git, offline=offline) is not None:
         git.run("fetch", "--quiet", REMOTE, BRANCH)
         if not git.branch_exists(BRANCH):
             git.run("branch", BRANCH, "FETCH_HEAD")

@@ -166,6 +166,37 @@ def test_push_publishes_the_branch_and_ensure_fetches_it_elsewhere(
     assert git(clone, "rev-parse", "template") == sha
 
 
+def test_ensure_stops_when_origin_cannot_be_reached(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    # The branch is on origin; then the network goes away. Without the
+    # distinction between "absent" and "unreachable", ensure would create
+    # a second branch from the root and the push at the end would fail.
+    update_branch(project, rendered, tmp_path)
+    vendor.push(Git(project))
+    git(project, "branch", "-D", "template")
+    git(project, "remote", "set-url", "origin", "/nonexistent/repo.git")
+    with pytest.raises(UpdateError) as stop:
+        vendor.ensure(Git(project), V10, V12)
+    assert "could not reach origin" in stop.value.cause
+    assert "--no-push" in stop.value.fix
+    assert not Git(project).branch_exists("template")
+
+
+def test_ensure_offline_treats_an_unreachable_origin_as_absent(
+    project: Path,
+) -> None:
+    git(project, "remote", "set-url", "origin", "/nonexistent/repo.git")
+    root = git(project, "rev-parse", "HEAD")
+    branch = vendor.ensure(Git(project), V10, V12, offline=True)
+    assert branch.created
+    assert git(project, "rev-parse", "template") == root
+    # And a local branch is found the same way.
+    again = vendor.ensure(Git(project), V10, V12, offline=True)
+    assert not again.created
+    assert "not on origin" in again.notes[0]
+
+
 def test_push_without_a_remote_is_an_error_naming_no_push(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "lonely", {".pyfr-answers.yml": answers_text("0.10.0")})
     with pytest.raises(UpdateError) as stop:
