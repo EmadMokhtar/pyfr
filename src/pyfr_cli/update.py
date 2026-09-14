@@ -22,11 +22,14 @@ from pyfr_cli.errors import UpdateError
 from pyfr_cli.git import Git, require_tools
 from pyfr_cli.versions import Version
 
+# `--no-edit`: the prepared message holds the changelog's `## [vX]` and
+# `### Feat` headings, and the editor's default clean-up (`--cleanup=strip`)
+# would delete every line that starts with `#`.
 CONFLICT_HELP = """\
 merge: conflicts in the files above
   1. resolve them, then stage them:  git add <the files>
-  2. commit the merge:               git commit   (the message is prepared)
-  3. run the same command again:     pyfr update  (runs what is left)
+  2. commit the merge:               git commit --no-edit   (the message is prepared)
+  3. run the same command again:     pyfr update            (runs what is left)
 """
 
 
@@ -222,7 +225,7 @@ def _resume(
         else:
             out.write(
                 "merge: an uncommitted merge is waiting; commit it with git "
-                "commit, then run pyfr update again\n"
+                "commit --no-edit, then run pyfr update again\n"
             )
         return 1
     if recorded.version == pending.to_version:

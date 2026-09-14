@@ -538,6 +538,9 @@ def test_a_conflict_pauses_the_update_and_the_same_command_resumes(
     assert code == 1, out
     assert "conflict: ruff.toml\n" in out
     assert "merge: conflicts in the files above" in out
+    # --no-edit, or the editor's default clean-up strips the `## [vX]` and
+    # `### Feat` headings of the prepared message.
+    assert "git commit --no-edit" in out
     assert git(project, "diff", "--name-only", "--diff-filter=U") == "ruff.toml"
     # The answers file is staged at the new version, the state is written,
     # the template branch was pushed before the merge, and the after-script
@@ -561,8 +564,22 @@ def test_a_conflict_pauses_the_update_and_the_same_command_resumes(
     assert "conflict: ruff.toml" in out
     assert "merge: conflicts in the files above" in out
 
+    # The user gives up for now: `git merge --abort` puts the tree back
+    # (the answers file included), and the next run notices the stale
+    # state, starts over, and conflicts at the same place again.
+    git(project, "merge", "--abort")
+    assert recorded_version(project) == "100.0.0"
+    assert git(project, "status", "--porcelain") == ""
+    code, out, _ = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
+    )
+    assert code == 1, out
+    assert out.startswith("resume: the previous merge was aborted; starting over\n")
+    assert "template: already at v100.1.0" in out
+    assert "conflict: ruff.toml\n" in out
+
     # The user resolves -- keeps both lines -- and commits with the prepared
-    # message.
+    # message, as the help text says.
     theirs = git(project, "show", "template:ruff.toml")
     (project / "ruff.toml").write_text(theirs + "\n# team ruff\n")
     git(project, "add", "ruff.toml")
@@ -571,7 +588,9 @@ def test_a_conflict_pauses_the_update_and_the_same_command_resumes(
         git(project, "log", "-1", "--format=%s")
         == "chore: update template v100.0.0 -> v100.1.0"
     )
-    assert "- add the team_channel prompt" in git(project, "log", "-1", "--format=%b")
+    body = git(project, "log", "-1", "--format=%b")
+    assert "## [v100.1.0](" in body  # the heading survived the commit
+    assert "- add the team_channel prompt" in body
 
     # The same command finishes: after.py runs, its commit lands, the state
     # is gone.
