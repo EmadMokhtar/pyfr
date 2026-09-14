@@ -111,8 +111,11 @@ def ensure(
         elif git.ok("merge-base", "--is-ancestor", BRANCH, "FETCH_HEAD"):
             git.run("branch", "--force", BRANCH, "FETCH_HEAD")
         elif not git.ok("merge-base", "--is-ancestor", "FETCH_HEAD", BRANCH):
+            local = git.out("rev-parse", BRANCH)[:12]
+            remote = git.out("rev-parse", "FETCH_HEAD")[:12]
             raise UpdateError(
-                f"the local {BRANCH} branch and {REMOTE}/{BRANCH} have diverged",
+                f"the local {BRANCH} branch ({local}) and {REMOTE}/{BRANCH} "
+                f"({remote}) have diverged",
                 f"git branch --force {BRANCH} {REMOTE}/{BRANCH} keeps the "
                 f"remote's, which every other machine uses; see {GUIDE}",
             )
@@ -156,9 +159,10 @@ def _check_range(version: Version, recorded: Version, target: Version) -> None:
     root) and the answers file knows better; `commit_for` would fail
     later anyway, this says why now."""
     if version > target:
+        # The target is --to, or the newest release when none was given.
         raise UpdateError(
-            f"{BRANCH} is already at {version}, past --to {target}",
-            f"pass a --to of at least {version}, or none for the newest",
+            f"the {BRANCH} branch is at {version}, ahead of the target {target}",
+            f"pass --to {version} or newer, or wait for a newer template release",
         )
     if version < recorded:
         raise UpdateError(
@@ -310,7 +314,7 @@ def push(git: Git) -> None:
         raise UpdateError(
             f"pushing {BRANCH} to {REMOTE} failed: {result.stderr.strip()}",
             "check your access to the remote, then run pyfr update again -- "
-            "the local branch is correct and the run resumes",
+            "the local branch is correct and the next run pushes it",
         )
 
 

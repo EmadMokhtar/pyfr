@@ -121,8 +121,12 @@ def test_ensure_refuses_a_branch_above_the_target(
     update_branch(project, rendered, tmp_path)  # the branch is at v0.12.0
     with pytest.raises(UpdateError) as stop:
         vendor.ensure(Git(project), V10, Version(0, 11, 0))
-    assert stop.value.cause == "template is already at v0.12.0, past --to v0.11.0"
-    assert stop.value.fix == "pass a --to of at least v0.12.0, or none for the newest"
+    assert stop.value.cause == (
+        "the template branch is at v0.12.0, ahead of the target v0.11.0"
+    )
+    assert stop.value.fix == (
+        "pass --to v0.12.0 or newer, or wait for a newer template release"
+    )
 
 
 def test_ensure_accepts_a_branch_between_recorded_and_target(
@@ -271,6 +275,13 @@ def test_ensure_refuses_diverged_local_and_remote_branches(
     with pytest.raises(UpdateError) as stop:
         vendor.ensure(Git(project), V12, Version(0, 13, 0))
     assert "diverged" in stop.value.cause
+    # Both commits are named, so the user can compare them.
+    local, remote = git(project, "rev-parse", "template", "origin/template").split()
+    assert stop.value.cause == (
+        f"the local template branch ({local[:12]}) and origin/template "
+        f"({remote[:12]}) have diverged"
+    )
+    assert local != remote
 
 
 def test_guard_refuses_a_hand_made_commit_on_top_of_the_tool_s(
