@@ -7,6 +7,7 @@ answers (spec section 5.2 and decision M8-5).
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -84,3 +85,19 @@ def load(project: Path, recorded: Answers) -> tuple[Ignore, bool]:
     package = recorded.values.get("package_name", "")
     database = recorded.values.get("database", "none")
     return Ignore.from_text(default_text(package, database)), False
+
+
+def install(rendered_project: Path, project: Path) -> bool:
+    """Give a project that has no ignore file the render's, if the render
+    has one; say whether that happened.
+
+    The built-in default ignores the file itself, so the sync never puts
+    it on the template branch and the merge can never deliver it. This
+    is how a project generated before the template shipped the file
+    receives it with the update (spec section 5.2).
+    """
+    source, target = rendered_project / FILE, project / FILE
+    if not source.is_file() or target.exists():
+        return False
+    shutil.copyfile(source, target)
+    return True

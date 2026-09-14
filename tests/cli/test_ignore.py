@@ -103,3 +103,32 @@ def test_load_falls_back_to_the_default_for_the_recorded_answers(
     assert spec.matches("README.md")
     assert spec.matches("migrations/000001_init.up.sql")
     assert spec.matches("src/my_service/domain/order.py")
+
+
+def test_install_copies_the_render_s_file_to_a_project_without_one(
+    tmp_path: Path,
+) -> None:
+    render, project = tmp_path / "render", tmp_path / "project"
+    render.mkdir()
+    project.mkdir()
+    (render / ignore.FILE).write_text("/README.md\n")
+    assert ignore.install(render, project)
+    assert (project / ignore.FILE).read_text() == "/README.md\n"
+
+
+def test_install_does_nothing_when_the_render_has_no_file(tmp_path: Path) -> None:
+    render, project = tmp_path / "render", tmp_path / "project"
+    render.mkdir()
+    project.mkdir()
+    assert not ignore.install(render, project)
+    assert not (project / ignore.FILE).exists()
+
+
+def test_install_leaves_the_project_s_own_file_alone(tmp_path: Path) -> None:
+    render, project = tmp_path / "render", tmp_path / "project"
+    render.mkdir()
+    project.mkdir()
+    (render / ignore.FILE).write_text("/README.md\n")
+    (project / ignore.FILE).write_text("# ours\n/ruff.toml\n")
+    assert not ignore.install(render, project)
+    assert (project / ignore.FILE).read_text() == "# ours\n/ruff.toml\n"

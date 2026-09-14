@@ -159,6 +159,11 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         # merge never touched it, and staged here it rides in the merge commit.
         answers.install(rendered.project, project)
         git.run("add", answers.FILE)
+        # Same for the ignore file, when the project has none yet: the
+        # built-in default ignores it, so the merge could not bring it.
+        if ignore.install(rendered.project, project):
+            git.run("add", ignore.FILE)
+            out.write(f"ignore: installed {ignore.FILE} from the template\n")
         if not clean:
             out.write(CONFLICT_HELP)
             return 1
