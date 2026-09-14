@@ -7,6 +7,7 @@ a matrix over the backend combinations.
 from __future__ import annotations
 
 import ast
+import json
 import re
 import shutil
 import subprocess
@@ -20,6 +21,14 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 REFERENCE_ANSWERS = ROOT / "tests" / "reference-answers.yaml"
+
+# The version the release last wrote into pyproject.toml. cookiecutter.json
+# cannot compute, so its `_template_version` is written by the same
+# `cz bump` (pyproject.toml's [tool.commitizen] version_files) and must
+# equal this at every commit.
+TEMPLATE_VERSION: str = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"][
+    "version"
+]
 
 BACKENDS = {
     "database": ("postgres", "none"),
@@ -132,11 +141,20 @@ def test_no_template_syntax_survives_any_combination(cookies, answers) -> None:
 def test_every_combination_renders_and_records_its_answers(cookies, answers) -> None:
     root = render(cookies, **answers)
     recorded = yaml.safe_load((root / ".pyfr-answers.yml").read_text())
-    assert recorded["_template_version"] == "0.6.0"
+    assert recorded["_template_version"] == TEMPLATE_VERSION
     assert recorded["_template"] == "https://github.com/EmadMokhtar/pyfr"
     for key, value in answers.items():
         assert recorded[key] == value
     assert recorded["package_name"] == "my_service"
+
+
+def test_the_template_version_is_the_repository_version() -> None:
+    # A hand edit of either file between releases would drift them apart;
+    # `cz bump --check-consistency` in release.yml then refuses to release
+    # a version it cannot find on cookiecutter.json's line, and this fails
+    # first, on the pull request.
+    answers = json.loads((ROOT / "cookiecutter.json").read_text())
+    assert answers["_template_version"] == TEMPLATE_VERSION
 
 
 @pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)

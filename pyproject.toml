@@ -33,6 +33,24 @@ name = "cz_conventional_commits"
 # file stale and fails the uv-lock hook -- inside the release workflow,
 # after the tag has already been pushed.
 version_provider = "uv"
+# The template version every generated project records in its
+# .pyfr-answers.yml, moved by the same bump: cookiecutter.json's
+# `_template_version` is the version on disk here, always
+# (tests/test_generation.py holds the two equal), and a render copies it.
+# Commitizen replaces the CURRENT version on the line the pattern names,
+# and release.yml passes `--check-consistency` so a bump that cannot find
+# it there fails instead of leaving the template version behind.
+version_files = ["cookiecutter.json:_template_version"]
+# Runs after `cz bump` has written the new version into pyproject.toml,
+# uv.lock and cookiecutter.json, and before its commit -- the one slot
+# between the two, since `cz bump` writes and commits in a single command.
+# The regeneration rewrites the example's .pyfr-answers.yml with the
+# version being released and carries the contract baseline release.yml
+# promotes in the template body into the example; `cz bump` commits with
+# `git commit -a`, so both ride in the bump commit (spec section 4.4). A
+# dry run (`just next-version`) stops before any file is written and never
+# reaches this. Needs `just` on PATH, which release.yml installs.
+pre_bump_hooks = ["just regen"]
 tag_format = "v$version"
 update_changelog_on_bump = true
 changelog_file = "CHANGELOG.md"

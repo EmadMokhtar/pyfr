@@ -571,6 +571,19 @@ Its version, tags and releases are its own; the root's copy decides PyFr's
 releases only. In this repository the example's copy is rendered output,
 and the root's hook is the one that checks your messages.
 
+The release moves one more version. `cookiecutter.json`'s
+`_template_version` — the value every generated project records in its
+`.pyfr-answers.yml` — is written by the same `cz bump` as
+`pyproject.toml`'s version (`version_files` in `[tool.commitizen]`), and
+`just regen` runs as that bump's pre-bump hook, after the write and before
+the commit, so the example's `.pyfr-answers.yml` records the released
+version in the bump commit. Between releases the two versions are equal by
+construction, and `tests/test_generation.py` fails the pull request that
+edits one by hand; `cz bump --check-consistency` in `release.yml` refuses
+to release if they have drifted anyway. A generated project's
+`_template_version` is therefore the tag its template body was released
+under — what M8 will read to bring it up to date.
+
 ## One-time repository settings
 
 Seven settings live in the GitHub interface, not in this repository, so they

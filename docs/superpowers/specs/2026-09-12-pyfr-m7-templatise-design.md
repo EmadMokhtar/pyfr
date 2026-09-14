@@ -155,6 +155,14 @@ moves the template version, the regen writes the new version into the
 example's `.pyfr-answers.yml`, and the bump commit carries both — the same
 pattern that already promotes the contract baseline in that commit.
 
+*Amended in PR 5.* `cz bump` writes the version files and commits in one
+command, so no workflow step can sit between the two. The step is
+Commitizen's `pre_bump_hooks` (`["just regen"]` in `pyproject.toml`), which
+runs after `version_files` are written and before the bump commit; the
+workflow's own `just regen` line went, and `cz bump` is passed
+`--check-consistency` so a version it cannot find in `cookiecutter.json`
+fails the release. `tests/test_release_bump.py` proves the order.
+
 ---
 
 ## 5. Prompts and hooks
