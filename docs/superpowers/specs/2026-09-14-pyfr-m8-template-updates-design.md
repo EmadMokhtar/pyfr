@@ -97,8 +97,8 @@ pyfr --version
 
 `--to` accepts `v0.12.0` or `0.12.0`. `--template` overrides the `_template`
 URL recorded in the answers file — for tests, and for forks. `--no-push`
-skips pushing the `template` branch (offline work; the push happens on the
-next run).
+skips pushing the `template` branch (offline work); the next run pushes it
+— even a run that finds nothing else to do.
 
 `update-check` prints `recorded v0.10.0, newest v0.12.0` and exits 0 when
 current, 1 when behind, 2 on error. `--json` prints
@@ -140,11 +140,15 @@ not rest on anyone's transitive dependency.
 ### 3.5 Publishing
 
 A `publish-pypi` job in the root `.github/workflows/release.yml`,
-`needs: release`, runs only when the release created a tag: checkout at the
-tag, `uv build`, then `pypa/gh-action-pypi-publish` with
-`permissions: id-token: write`. This is Trusted Publishing: PyPI accepts a
-short-lived OpenID Connect token that GitHub Actions mints for the run, so
-no PyPI token is stored anywhere.
+`needs: release`, runs only when the release created a tag, with a
+15-minute timeout: checkout at the tag, then ask PyPI whether the version
+is already there (`https://pypi.org/pypi/pyfr-cli/<version>/json` — 200
+means skip, 404 means publish, anything else fails the job rather than
+guessing), then `uv build` and `uv publish` with
+`permissions: id-token: write`. `uv publish` detects GitHub Actions and
+uses Trusted Publishing by itself, so no `pypa/gh-action-pypi-publish`
+step: PyPI accepts a short-lived OpenID Connect token that GitHub Actions
+mints for the run, and no PyPI token is stored anywhere.
 
 One manual step, once, before PR 1 merges: on pypi.org, register a
 *pending publisher* for project `pyfr-cli`, owner `EmadMokhtar`, repository
@@ -209,7 +213,10 @@ checkout — starts by fetching it.
 
 1. `origin/template` exists → fetch it; a local `template` that is an
    ancestor fast-forwards to it; a local `template` that is not is an error
-   naming both commits.
+   naming both commits. An `origin` that cannot be reached at all is an
+   error (`git ls-remote` exits 128, not the 2 of an absent branch) —
+   unless `--no-push` was given, which promises to work from the local
+   branch: then it counts as absent.
 2. No remote branch, local `template` exists → use it, with a notice that
    it is not on the remote yet (it will be after this run's push).
 3. Neither → create it at the single root commit
@@ -231,12 +238,18 @@ manual procedure after a rewritten history) is accepted at the cost of one
 noisier merge.
 
 **The branch's version** is the tip's trailer, or the base's answers file.
-It must equal the recorded version or the target; anything else means the
-answers file and the branch disagree, and the tool stops and says so. When
-the tip already records the target, sections 4.4 and 4.5 are skipped — the
-render still runs, because step 10's answers file comes from it, but the
-sync, commit and push do not — a re-run after a conflicted merge, or a
-laptop picking up what the weekly workflow already pushed.
+It must be between the recorded version and the target, inclusive. A branch
+ahead of the recorded version is a pending update — the weekly workflow
+synced and pushed it, and the project has not merged its pull request yet
+— and the sync continues from it; the merge base is still the recorded
+version's commit. Below the recorded version (the branch was deleted and
+rebuilt from the root) or above the target (`--to` names a version the
+branch has passed), the tool stops and says which. When the tip already
+records the target, sections 4.4 and 4.5 are skipped — the render still
+runs, because the answers file the merge records (master spec 11.3, step
+10) comes from it, but the sync, commit and push do not — a re-run after a
+conflicted merge, or a laptop picking up what the weekly workflow already
+pushed.
 
 ### 4.4 Render
 
@@ -307,11 +320,14 @@ in `(recorded, target]`, in ascending order. For each, `before.py` runs now
 and `after.py` after the merge (section 4.7), each as
 
 ```
-uv run python <clone>/updates/vX.Y.Z/before.py
+uv run --no-project python <clone>/updates/vX.Y.Z/before.py
 ```
 
 with the project root as the working directory and `PYFR_UPDATE_FROM`,
-`PYFR_UPDATE_TO` (with the `v`) in the environment. A non-zero exit stops
+`PYFR_UPDATE_TO` (with the `v`) in the environment. `--no-project` skips
+the project's own `uv sync`: the scripts are standard library only
+(decision M8-9), a sync would be slow, and it would fail in a fresh
+checkout that has no environment yet. A non-zero exit stops
 the run with exit 2 and the script's output. Changes the before-scripts
 leave are committed as `chore: prepare for template v0.12.0` so the merge
 starts from a clean tree; section 6 gives the scripts' contract.
@@ -344,7 +360,11 @@ committing so the answers file can join the commit.
 Then, clean or not, the render's `.pyfr-answers.yml` — the recorded answers,
 the new prompts' defaults, `_template_version` at the target — is copied
 into the working tree and staged. It is an ignored path, so the merge never
-touches it and it rides in the merge commit either way.
+touches it and it rides in the merge commit either way. The same goes for
+the render's `.pyfr-update-ignore` when the project has none (the
+built-in-default case of section 5.2): the default ignores the file
+itself, so the merge could never deliver it, and the tool copies and
+stages it here instead.
 
 - **Clean:** commit `chore: update template v0.10.0 -> v0.12.0` with the
   template's `CHANGELOG.md` entries in `(recorded, target]` as the body
@@ -352,17 +372,23 @@ touches it and it rides in the merge commit either way.
   `chore: finish template v0.12.0`; print `recorded: v0.12.0`; exit 0.
 - **Conflicts:** print one `conflict: <path>` line per file from
   `git diff --name-only --diff-filter=U`, then the three commands that
-  finish the job — resolve the files, `git add` them, `git commit` — and
-  `then run pyfr update again`. The tool writes the prepared message
-  (subject and changelog body, section 4.9) into `.git/MERGE_MSG`, so a
-  plain `git commit` uses it. Write the state file. Exit 1.
+  finish the job — resolve the files and `git add` them,
+  `git commit --no-edit`, `pyfr update` again. The tool writes the
+  prepared message (subject and changelog body, section 4.9) into
+  `.git/MERGE_MSG`; `--no-edit` commits it as written, where a plain
+  `git commit` would open the editor and its default clean-up
+  (`--cleanup=strip`) would delete every line starting with `#` — the
+  `## [vX]` and `### Feat` headings. Write the state file. Exit 1.
 
 ### 4.8 Resuming
 
 `.git/pyfr-update.json` (found through `git rev-parse --git-dir`, so a
 worktree finds its own) holds `{"from": "v0.10.0", "to": "v0.12.0",
-"phase": "merging" | "after-scripts"}`. It is never committed: `.git/` is
-not part of the tree.
+"phase": "merging" | "after-scripts", "graft": "<sha>" | null}` — `graft`
+is the sha of the `HEAD` the tool grafted an extra parent onto for the
+merge (section 4.7), or `null` when no graft was needed, so a run that
+died before deleting the graft is cleaned up by the next one. It is never
+committed: `.git/` is not part of the tree.
 
 Running `pyfr update` again:
 
@@ -790,7 +816,7 @@ Commits title — the repository's rules.
 | A non-pristine root commit (the first commit was amended before the first push) | The wrong merge base once; the first run prints the commit it used; the how-to's re-point procedure. |
 | `uvx --from pyfr-cli@latest` spelling differs across `uv` versions | Verified in the plan against the `uv` the generated project pins; `--refresh-package` is the fallback. |
 | A team's `pyproject.toml` edit collides with the template's | An ordinary line-level merge conflict, resolved once; the ignore file is not the answer, because the file must keep receiving template fixes. |
-| `origin/template` deleted by a tidy-up | The guide says not to; the tool then recreates from the root and the next update conflicts once, loudly, with the cause named (the branch's version is below the recorded one). |
+| `origin/template` deleted by a tidy-up | The guide says not to. The tool then recreates the branch from the root and stops with exit 2 before the working tree changes — the branch's version is below the recorded one (section 4.3) — naming the guide's re-point procedure (`git branch --force template <the last template commit>`); it does not merge against the wrong base. |
 | The weekly workflow opens the same pull request or issue twice | Both steps look for an open one first. |
 | `pathspec` semantics differ from git's in an edge case | The unit tests pin the patterns the default uses; anything exotic a team adds is theirs to check with `git check-ignore`'s equivalent, documented. |
 
@@ -816,7 +842,7 @@ Commits title — the repository's rules.
 | 11.2: the `template` branch is local and rebuilt from the root on demand | On the remote, pushed before every merge (4.3) | Squash merges destroy the merge commit; the second update needs the first's template commit. |
 | 11.3: `PYFR_REGENERATE` | `PYFR_REGEN` | The variable M7 actually implemented. |
 | 11.4: the default ignore list | Adds `uv.lock`, `openapi.baseline.json`, `.pyfr-update-ignore` (5.2) | The render has no lock; the baseline is promoted by the project's release; the ignore file is the team's. |
-| 11.5: scripts "run with `uv run`" | `uv run python <script>`, standard library only, output committed by the tool (6) | The project's environment may hold nothing else; the merge needs a clean tree. |
+| 11.5: scripts "run with `uv run`" | `uv run --no-project python <script>`, standard library only, output committed by the tool (6) | The project's environment may hold nothing else; the merge needs a clean tree. |
 | 11.6: the updater is unspecified; `docs/how-to/` | A published `pyfr-cli` (3); `docs/guides/` | Decision M8-1; the directory M7 actually created. |
 | 11.3: nothing about resuming | `.git/pyfr-update.json`, one command (4.8) | A conflicted merge is finished by the user; the after-scripts still have to run. |
 
