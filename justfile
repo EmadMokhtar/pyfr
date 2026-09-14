@@ -28,6 +28,10 @@ docs-build:
     # each fail the build rather than printing a warning nobody reads.
     uv run mkdocs build --strict
     cd examples/reference-service && SITE_URL=https://emadmokhtar.github.io/pyfr/reference-service/ uv run --group docs mkdocs build --strict --site-dir ../../site/reference-service
+    # The links between the two sites are absolute URLs on the Pages host,
+    # which neither `--strict` resolves nor lychee checks (they exist only
+    # after the deploy); this resolves each one against the site/ just built.
+    uv run --group dev python scripts/check_site_links.py --exclude docs/superpowers docs README.md examples/reference-service/docs examples/reference-service/README.md
 
 # Dead external links. Internal ones are already `mkdocs build --strict`'s job.
 links:

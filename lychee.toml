@@ -41,8 +41,10 @@ exclude = [
     # and its subdomains, not as a substring in unrelated domains.
     "^https?://([a-z0-9-]+\\.)*example\\.com(?::\\d+)?(/|$)",
     # PyFr's own site, deployed by the same workflow that builds it: a link
-    # to a page added in this branch resolves only after the deploy, and
-    # `mkdocs build --strict` already proves every page and anchor exists.
+    # to a page added in this branch resolves only after the deploy.
+    # `mkdocs build --strict` proves every page and anchor within one site,
+    # and scripts/check_site_links.py (run by `just docs-build`) resolves the
+    # absolute links between the two sites against the built site/ tree.
     "^https://emadmokhtar\\.github\\.io/pyfr/",
 ]
 

@@ -49,4 +49,4 @@ select = [
 "hooks/*" = ["S603", "S607"]
 
 [lint.isort]
-known-first-party = ["regen"]
+known-first-party = ["regen", "check_site_links"]
