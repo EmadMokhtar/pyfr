@@ -13,8 +13,7 @@ If you need one of those, you write one adapter. This guide is the shape of
 that work.
 
 !!! note "Worked examples in the codebase"
-
-{%- if cookiecutter.cache == "redis" %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
     Three real adapters follow the structure below exactly, and are worth
     reading beside it: `infrastructure/db/order_repository.py`
@@ -29,7 +28,7 @@ that work.
     buys](../explanation/layers.md#what-a-port-buys-the-caching-decorator)
     for why that shape is worth understanding even if the backend you are
     adding is not a cache).
-{%- else %}
+{%- elif cookiecutter.database == "postgres" and cookiecutter.object_storage == "s3" %}
 
     Two real adapters follow the structure below exactly, and are worth
     reading beside it: `infrastructure/db/order_repository.py`
@@ -38,6 +37,60 @@ that work.
     `infrastructure/storage/receipt_store.py` (`S3ReceiptStore`, the same
     shape over `aioboto3`, and the worked example of "one adapter per
     S3-compatible provider" rather than one adapter per vendor).
+{%- elif cookiecutter.database == "postgres" and cookiecutter.cache == "redis" %}
+
+    Two real adapters follow the structure below exactly, and are worth
+    reading beside it: `infrastructure/db/order_repository.py`
+    (`PostgresOrderRepository`, an ordinary adapter over SQLAlchemy — the
+    version of this guide to copy from for a plain storage port), and
+    `infrastructure/cache/order_repository.py` (`CachedOrderRepository`, a
+    *decorating* adapter — it satisfies `OrderRepository` by holding another
+    `OrderRepository` rather than a driver. See [what a port
+    buys](../explanation/layers.md#what-a-port-buys-the-caching-decorator)
+    for why that shape is worth understanding even if the backend you are
+    adding is not a cache).
+{%- elif cookiecutter.object_storage == "s3" and cookiecutter.cache == "redis" %}
+
+    Two real adapters follow the structure below exactly, and are worth
+    reading beside it: `infrastructure/storage/receipt_store.py`
+    (`S3ReceiptStore`, the same shape over `aioboto3`, and the worked
+    example of "one adapter per S3-compatible provider" rather than one
+    adapter per vendor), and `infrastructure/cache/order_repository.py`
+    (`CachedOrderRepository`, a *decorating* adapter — it satisfies
+    `OrderRepository` by holding another `OrderRepository` rather than a
+    driver. See [what a port
+    buys](../explanation/layers.md#what-a-port-buys-the-caching-decorator)
+    for why that shape is worth understanding even if the backend you are
+    adding is not a cache).
+{%- elif cookiecutter.database == "postgres" %}
+
+    One real adapter follows the structure below exactly, and is worth
+    reading beside it: `infrastructure/db/order_repository.py`
+    (`PostgresOrderRepository`, an ordinary adapter over SQLAlchemy — the
+    version of this guide to copy from for a plain storage port).
+{%- elif cookiecutter.object_storage == "s3" %}
+
+    One real adapter follows the structure below exactly, and is worth
+    reading beside it: `infrastructure/storage/receipt_store.py`
+    (`S3ReceiptStore`, the same shape over `aioboto3`, and the worked
+    example of "one adapter per S3-compatible provider" rather than one
+    adapter per vendor).
+{%- elif cookiecutter.cache == "redis" %}
+
+    One real adapter follows the structure below exactly, and is worth
+    reading beside it: `infrastructure/cache/order_repository.py`
+    (`CachedOrderRepository`, a *decorating* adapter — it satisfies
+    `OrderRepository` by holding another `OrderRepository` rather than a
+    driver. See [what a port
+    buys](../explanation/layers.md#what-a-port-buys-the-caching-decorator)
+    for why that shape is worth understanding even if the backend you are
+    adding is not a cache).
+{%- else %}
+
+    No real backend adapter is in this render to copy from — every port
+    here resolves to its in-memory adapter under `infrastructure/memory/`.
+    Start from one of those instead; the shape (a plain class satisfying
+    the port's `Protocol`) is the same either way.
 {%- endif %}
 
 ## What you are actually writing

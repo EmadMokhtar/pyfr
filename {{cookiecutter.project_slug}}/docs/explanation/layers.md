@@ -60,19 +60,19 @@ message is the fastest way to understand what the rule protects.
 There is also a test, `test_layer_purity.py`, that checks the same property
 from a different angle. Two mechanisms for one rule is deliberate: the rule is
 the foundation everything else rests on.
+{%- if cookiecutter.cache == "redis" %}
 
 ## What a port buys: the caching decorator
 
-`OrderRepository` is the clearest demonstration in this codebase of what a
-port is actually for: `container.py` is the only file that decides which
-implementation of it a caller gets, and every caller above that point keeps
-calling `get` and `save` exactly the same way regardless of which one that is.
-{%- if cookiecutter.cache == "redis" %}
-
-`CachedOrderRepository` shows what that buys most clearly.
+`CachedOrderRepository` is the clearest demonstration in this codebase of
+what a port is actually for.
 
 It satisfies `OrderRepository` — the same `Protocol` the in-memory and
+{%- if cookiecutter.database == "postgres" %}
 PostgreSQL adapters satisfy — and it holds *another* `OrderRepository` inside
+{%- else %}
+no other adapters satisfy — and it holds *another* `OrderRepository` inside
+{%- endif %}
 it:
 
 ```python
@@ -101,7 +101,11 @@ was added. `container.py` is the *only* file that knows: it decides whether
 to wrap in one place —
 
 ```python
+{%- if cookiecutter.database == "postgres" %}
+orders: OrderRepository = PostgresOrderRepository(...)
+{%- else %}
 orders: OrderRepository = ...  # whichever adapter this render chose
+{%- endif %}
 if settings.cache is not None:
     orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
 ```
@@ -118,6 +122,14 @@ uses the port at all. `infrastructure/cache/order_repository.py` is what
 makes this safe to add in the first place: every Redis failure is logged and
 swallowed, so a cache that cannot be reached degrades the service, and never
 breaks it.
+{%- else %}
+
+## What a port buys
+
+`OrderRepository` is the clearest demonstration in this codebase of what a
+port is actually for: `container.py` is the only file that decides which
+implementation of it a caller gets, and every caller above that point keeps
+calling `get` and `save` exactly the same way regardless of which one that is.
 {%- endif %}
 
 ## Why domain models are frozen

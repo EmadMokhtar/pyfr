@@ -156,7 +156,8 @@ runs `mc mb` once MinIO reports healthy, because MinIO does not create a
 bucket on demand and the application deliberately does not create its own —
 that would need `CreateBucket` permission in production, on top of the
 `GetObject`/`PutObject` the receipt store actually needs. `just up` waits for
-`minio-bootstrap` to exit successfully before starting the API.
+`minio-bootstrap` to exit successfully before starting the API, the same
+arrangement it already has with the migration container.
 
 ## Tests and schema gates
 

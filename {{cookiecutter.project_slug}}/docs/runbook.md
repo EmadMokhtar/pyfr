@@ -8,10 +8,17 @@ covers:
 ---
 
 # Runbook
+{%- if cookiecutter.database == "postgres" %}
 
-Procedures for the things that go wrong. Each says what you will see, how to
-confirm it, and what to do. Most are about a running service; the last two
-are about a red check on a pull request.
+Seven procedures, for seven things that go wrong. Each says what you will
+see, how to confirm it, and what to do. The first five are about a running
+service; the last two are about a red check on a pull request.
+{%- else %}
+
+Six procedures, for six things that go wrong. Each says what you will
+see, how to confirm it, and what to do. The first four are about a running
+service; the last two are about a red check on a pull request.
+{%- endif %}
 
 **Before anything else:** capture the correlation identifier from the
 failing request. Every log line carries it, and filtering on it hands you
@@ -47,12 +54,17 @@ the same way it did, or they print what it would have run with.
 
 - **Exit 78.** One line per problem, each naming the field, what is wrong
   with it, and the rule that rejected it — and never the value, because for
+{%- if cookiecutter.database == "postgres" %}
   `APP_DATABASE__DSN` that value holds a password:
+{%- else %}
+  `APP_PAYMENT__API_KEY` that value is a secret:
+{%- endif %}
 
     ```
     Invalid configuration:
       http_port: Input should be less than or equal to 65535 (less_than_equal)
     ```
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" %}
 
 - **Exit 0.** One JSON object, keys sorted, holding the configuration the
   service *would* run with. Every `SecretStr` prints as `**********`, and the
@@ -61,6 +73,29 @@ the same way it did, or they print what it would have run with.
   its default was not set where you thought, and a `null` block
   (`"database": null`) means that dependency is not configured at all and
   the in-memory fallback is in use.
+{%- elif cookiecutter.database == "postgres" %}
+
+- **Exit 0.** One JSON object, keys sorted, holding the configuration the
+  service *would* run with. Every `SecretStr` prints as `**********`, and the
+  password inside any URL — `APP_DATABASE__DSN` — is replaced the same way.
+  Read it against what you expected: a field showing its default was not set
+  where you thought, and a `null` block (`"database": null`) means that
+  dependency is not configured at all and the in-memory fallback is in use.
+{%- elif cookiecutter.cache == "redis" %}
+
+- **Exit 0.** One JSON object, keys sorted, holding the configuration the
+  service *would* run with. Every `SecretStr` prints as `**********`, and the
+  password inside any URL — `APP_CACHE__DSN` — is replaced the same way.
+  Read it against what you expected: a field showing its default was not set
+  where you thought, and a `null` block (`"cache": null`) means that
+  dependency is not configured at all and the in-memory fallback is in use.
+{%- else %}
+
+- **Exit 0.** One JSON object, keys sorted, holding the configuration the
+  service *would* run with. Every `SecretStr` prints as `**********`. Read it
+  against what you expected: a field showing its default was not set where
+  you thought.
+{%- endif %}
 
 **Act.** Fix the variable the message names, and run the check again before
 restarting the service. Every variable is listed in
@@ -71,7 +106,6 @@ restarting the service. Every variable is listed in
     saw. The exit-78 message elides the value on purpose, and `model_dump`
     prints URL passwords in clear — the check exists so that nobody needs
     to.
-
 {%- if cookiecutter.database == "postgres" %}
 
 ## A migration is dirty
@@ -118,14 +152,11 @@ Prints the current version and whether the database is marked dirty.
 
 ## A dependency is down
 
-**Symptom.** The symptom differs by dependency, which is the point of this
-section.
+**Symptom.** The symptom differs by dependency, which is the point of this section:
 {%- if cookiecutter.database == "postgres" %}
-Only the database leaves the load balancer; every other dependency fails
-open.
+only one of the four leaves the load balancer.
 {%- else %}
-Every dependency here fails open — none of them takes an instance out of
-load balancing.
+every one of them fails open — none takes an instance out of load balancing.
 {%- endif %}
 
 | Dependency | Symptom |
@@ -146,6 +177,14 @@ load balancing.
 ```bash
 curl -s localhost:8000/readyz | jq
 ```
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+
+`checks` is the gating result (database only). `dependencies` reports the
+cache and object store without gating on either. Each appears there only
+when it is configured — a dependency's field is present whether that
+dependency is up or down, but a service running with neither `APP_CACHE__*`
+nor `APP_STORAGE__*` set returns `dependencies: {}`.
+{%- else %}
 {%- if cookiecutter.database == "postgres" %}
 
 `checks` is the gating result (database only).
@@ -160,6 +199,7 @@ with no `APP_CACHE__*` set omits it from that object entirely.
 `dependencies` reports the object store without gating on it — a service
 running with no `APP_STORAGE__*` set omits it from that object entirely.
 {%- endif %}
+{%- endif %}
 
 **Act, per dependency.**
 {%- if cookiecutter.database == "postgres" %}
@@ -167,12 +207,18 @@ running with no `APP_STORAGE__*` set omits it from that object entirely.
 - **PostgreSQL down:** this is a real outage for every instance that
   cannot reach it. Check the database itself — connectivity, disk,
   replica lag — not the application.
-{%- endif %}
+{%- else %}
+
+{% endif %}
 {%- if cookiecutter.cache == "redis" %}
 - **Redis down:** nothing to do at the application layer. The cache
-  fails open by design; the order repository beneath it is already
-  answering every request correctly. Fix Redis on its own timeline and
-  watch the cache-hit-rate panel in the meantime.
+{%- if cookiecutter.database == "postgres" %}
+  fails open by design; PostgreSQL is already answering every request
+{%- else %}
+  fails open by design; the order repository beneath it is already answering every request
+{%- endif %}
+  correctly. Fix Redis on its own timeline and watch the cache-hit-rate
+  panel in the meantime.
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
 - **S3 / MinIO down:** check the object store. Only receipts are
@@ -342,11 +388,12 @@ Dependabot has a failing check.
    change at once here: `.trivyignore.yaml` entries pinned to findings the
    new version *did* fix are no longer needed and can be dropped, and a
    finding the new version *introduced* may need a new entry, with its own
-   reason and expiry.
 {%- if cookiecutter.database == "postgres" %}
-   The five entries the file carries today all belong to
+   reason and expiry. The five entries the file carries today all belong to
    the `migrate/migrate` binary, so a bump of `Dockerfile.migrations`'s
    `FROM` line is exactly this case.
+{%- else %}
+   reason and expiry.
 {%- endif %}
 
 !!! danger "Do not"

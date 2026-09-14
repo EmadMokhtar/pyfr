@@ -58,7 +58,6 @@ orders already in it. Stop `just dev` first (Ctrl-C) — both serve on port
 ```bash
 just up
 ```
-
 {%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 That builds the image, starts PostgreSQL, Redis, MinIO and a payment stub,
@@ -228,10 +227,11 @@ rule](explanation/layers.md) at work.
 
     With no database configured, the service stores orders in memory, on
     purpose. Restart `just dev` and the order is gone — `just seed` puts the
-    five fixed ones back.
 {%- if cookiecutter.database == "postgres" %}
-    `just up` runs PostgreSQL behind the same
+    five fixed ones back. `just up` runs PostgreSQL behind the same
     interface, and nothing above the storage layer changes when it does.
+{%- else %}
+    five fixed ones back.
 {%- endif %}
 
 ## Run the checks

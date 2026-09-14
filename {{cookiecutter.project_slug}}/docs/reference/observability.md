@@ -21,8 +21,20 @@ service's only commitment is to emit OpenTelemetry data to whatever
 The local stack exists for two reasons: so a developer can see their own
 traces without wiring anything up, and so the dashboards are verified as
 actually working rather than assumed to.
+{%- if cookiecutter.object_storage == "s3" %}
 
 ## What is traced, and what is not
+{%- else %}
+
+## What is traced
+{%- endif %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+
+HTTP requests, SQL statements, outbound calls to the payment provider, and
+**Redis commands** all produce spans. `GET /orders/{id}/receipt`'s calls to
+object storage do **not** — say this plainly, because a reader who assumes
+otherwise will go looking for an S3 span that does not exist.
+{%- else %}
 
 HTTP requests and outbound calls to the payment provider produce spans.
 {%- if cookiecutter.database == "postgres" %}
@@ -35,6 +47,7 @@ So do **Redis commands**.
 `GET /orders/{id}/receipt`'s calls to object storage do **not** — say this
 plainly, because a reader who assumes otherwise will go looking for an S3
 span that does not exist.
+{%- endif %}
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
 
@@ -49,11 +62,13 @@ _make_api_call`) with async equivalents the instrumentor's hooks never see —
 anyway would be worse than not shipping it: a trace search or a dashboard
 built against it would read as "S3 calls are always fast" instead of "S3
 calls are not observed", and the first of those is actively misleading. The
-dependency was removed rather than left in place doing nothing.
-{%- if cookiecutter.cache == "redis" %}
-See
+dependency was removed rather than left in place doing nothing
+{%- if cookiecutter.cache == "redis" -%}
+; see
 `instrument_redis` in `src/{{ cookiecutter.package_name }}/observability/otel.py` for the
 full reasoning kept beside the code it explains.
+{%- else -%}
+.
 {%- endif %}
 {%- endif %}
 
@@ -62,8 +77,13 @@ full reasoning kept beside the code it explains.
 ```bash
 just o11y
 ```
+{%- if cookiecutter.database == "postgres" %}
 
 That starts the database, the API and one `grafana/otel-lgtm` container
+{%- else %}
+
+That starts the API and one `grafana/otel-lgtm` container
+{%- endif %}
 holding Grafana, Prometheus, Tempo, Loki and an OpenTelemetry collector. Open
 <http://localhost:3000> — anonymous access is enabled, so there is no login —
 and look in the **PyFr** folder.
@@ -73,6 +93,24 @@ Telemetry is **off by default**, and the default costs nothing: with
 exporter, opens no socket and starts no background task.
 
 ## Readiness reports optional dependencies, and gates on none
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+
+`/readyz` carries two tiers: `checks`, which decides its status code, and
+`dependencies`, which is reported and never does. The database is the only
+entry in `checks`. The cache and the object store are informational —
+`dependencies` says whether each is reachable, but neither can turn a 200
+into a 503.
+
+The reasoning is worth having here rather than only in the HTTP reference,
+because it is an observability decision as much as an API one: Redis is
+shared across every pod and this cache fails open, so gating on it would make
+every pod report itself unready in the same second — turning a degradation
+the service is built to survive into a total, self-inflicted outage. Losing
+the object store breaks one endpoint, so pulling all traffic off a pod to
+protect that one slice would cost more than it saves. See
+[the full readiness reference](http-api.md#get-readyz-readiness) for the
+response shapes.
+{%- else %}
 
 `/readyz` carries two tiers: `checks`, which decides its status code, and
 `dependencies`, which is reported and never does.
@@ -103,6 +141,7 @@ to protect that one slice would cost more than it saves.
 
 See [the full readiness reference](http-api.md#get-readyz-readiness) for the
 response shapes.
+{%- endif %}
 
 ## The three dashboards
 
@@ -144,7 +183,7 @@ What the panel draws instead: the `grafana/otel-lgtm` image runs a
 span-metrics connector by default, which turns every span into a latency
 histogram. Redis command spans are named after the raw command —
 `GET`, `SET`, `DEL`, the three `CachedOrderRepository` issues — so the panel
-queries `traces_spanmetrics_latency`, filtered to those three span
+queries `traces_spanmetrics_latency_bucket` filtered to those three span
 names. It is a real, useful signal — the span is how you notice a "fast"
 cache read that is actually costing 40 milliseconds, which is exactly the
 kind of problem a fail-open cache hides from every other signal, because the
@@ -222,9 +261,9 @@ Both indicators get all three.
 Every number lives in `src/{{ cookiecutter.package_name }}/observability/slo.py`.
 
 Changing the latency threshold means changing it in **two** places that must
-agree: the histogram boundary in that module, and the `le=` matcher in
+agree: the histogram bucket boundary in that module, and the `le=` matcher in
 `ops/prometheus/rules/slo.yml`. This is not optional bookkeeping. Prometheus
-can only count requests faster than a boundary that exists, so a
+can only count requests faster than a bucket boundary that exists, so a
 threshold with no matching boundary makes the latency indicator not merely
 inaccurate but uncomputable — and silently, because an empty PromQL result is
 not an error.

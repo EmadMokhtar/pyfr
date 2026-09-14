@@ -40,9 +40,11 @@ problem into a full outage, and removing the capacity that might have
 recovered.
 
 ### `GET /readyz` — readiness
+{%- set _checks = '"database": "ok"' if cookiecutter.database == "postgres" else '' -%}
+{%- set _deps = (['"cache": "ok"'] if cookiecutter.cache == "redis" else []) + (['"storage": "ok"'] if cookiecutter.object_storage == "s3" else []) %}
 
 ```json
-{"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "ok", "storage": "ok"}}
+{"status": "ok", "checks": {{ '{' ~ _checks ~ '}' }}, "dependencies": {{ '{' ~ (_deps | join(', ')) ~ '}' }}}
 ```
 
 <!-- exec -->
@@ -56,37 +58,78 @@ Two tiers, and which tier a dependency belongs in is a judgement about
 `checks` is **gating**: it decides the status code. Returns 200 when every
 gating check passes, and **503** when any fails. A failing readiness probe
 removes the instance from load balancing but does not restart it, which is
+{%- if cookiecutter.database == "postgres" %}
 the correct response to "my database is unreachable". The database is the
 only entry in `checks` — a failure looks like this:
 
 ```json
 {"status": "unavailable", "checks": {"database": "error: TimeoutError"}, "dependencies": {}}
 ```
+{%- else %}
+moot here: nothing is ever registered in `checks` in this render, so
+`GET /readyz` can never fail on that account, and always returns 200 as far
+as `checks` is concerned.
+{%- endif %}
 
 `dependencies` is **informational**: it is reported and never changes the
+{%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 status code, whatever it says. The cache and the object store live here, and
 both stay `"ok"` or degrade independently of `checks` — losing either never
 turns into a 503.
 
 ```json
-{"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "error: TimeoutError", "storage": "ok"}}
+{"status": "ok", "checks": {{ '{' ~ _checks ~ '}' }}, "dependencies": {"cache": "error: TimeoutError", "storage": "ok"}}
 ```
+{%- elif cookiecutter.cache == "redis" %}
+status code, whatever it says. The cache lives here, and stays `"ok"` or
+degrades independently of `checks` — losing it never turns into a 503.
+
+```json
+{"status": "ok", "checks": {{ '{' ~ _checks ~ '}' }}, "dependencies": {"cache": "error: TimeoutError"}}
+```
+{%- elif cookiecutter.object_storage == "s3" %}
+status code, whatever it says. The object store lives here, and stays
+`"ok"` or degrades independently of `checks` — losing it never turns into a
+503.
+
+```json
+{"status": "ok", "checks": {{ '{' ~ _checks ~ '}' }}, "dependencies": {"storage": "error: TimeoutError"}}
+```
+{%- else %}
+status code, whatever it says — but nothing is registered here in this
+render, so `dependencies` is always `{}`.
+{%- endif %}
+{%- if cookiecutter.database == "postgres" %}
 
 **Why gate on the database but not the other two.** This is the part of the
 milestone worth remembering, because it is not the obvious choice.
+{%- else %}
+
+**Why the cache and the object store never gate, either.** This is the part
+of the milestone worth remembering, because it is not the obvious choice.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 The cache is informational because it **fails open**: `CachedOrderRepository`
+{%- if cookiecutter.database == "postgres" %}
 swallows every Redis error and falls through to PostgreSQL, so a Redis outage
+{%- else %}
+swallows every Redis error and falls through to the order repository beneath
+it, so a Redis outage
+{%- endif %}
 never produces a wrong answer, only a slower one. Redis is also **shared
 across every pod** — gating on it would make every pod fail the check in the
 same second, taking the whole service out of the load balancer over a
 degradation it was specifically built to survive. A cache that can take the
 service down is worse than no cache at all.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 
 Object storage is informational for a different reason with the same answer.
 Losing it breaks exactly one endpoint, `GET /orders/{id}/receipt` — see below
 — so pulling 100% of traffic off a pod to protect that one slice costs far
 more than it saves.
+{%- endif %}
 
 `checks` is empty and `dependencies` is empty when no database, cache, or
 storage is configured — a service can run with none of the three, on the

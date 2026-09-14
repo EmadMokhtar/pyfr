@@ -508,7 +508,11 @@ DOCS_BACKEND_PAGES = (
 DOCS_BACKEND_WORDS = {
     "database": ("postgres", "migrat", "schema.sql", "golang-migrate"),
     "cache": ("redis",),
-    "object_storage": ("minio", " s3", "bucket"),
+    # "bucket" is deliberately not here: it is also Prometheus's own word for
+    # a histogram bucket (observability.md's "Changing the objectives"
+    # section), so banning it would fail a combination that has nothing to
+    # do with object storage.
+    "object_storage": ("minio", " s3"),
 }
 JUST_CALL = re.compile(r"\bjust\s+([a-z][a-z0-9-]*)")
 DEPENDABOT_ECOSYSTEMS = [

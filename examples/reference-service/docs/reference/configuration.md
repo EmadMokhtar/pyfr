@@ -72,17 +72,14 @@ edit `Field(description=...)` in
 
 <!-- /generated: config-table -->
 
-**`APP_CACHE__DSN` is optional, and absent is a supported configuration, not a
-broken one.** Leave it unset and the service serves every order read straight
-from the order repository beneath it, exactly as if the cache decorator were
-never wrapped around it. This gap does not show up on `/readyz` as a failure —
-see [the readiness change](http-api.md#get-readyz-readiness).
-
-**`APP_STORAGE__BUCKET` is optional, and absent is a supported configuration,
-not a broken one.** Leave it (and the rest of the `storage` block) unset and
-`GET /orders/{id}/receipt` serves from an in-memory store that vanishes on
-restart, instead of 503ing. This gap does not show up on `/readyz` as a
-failure — see [the readiness change](http-api.md#get-readyz-readiness).
+**Both settings are optional, and absent is a supported configuration, not a
+broken one.** Leave `APP_CACHE__DSN` unset and the service serves every order
+read straight from PostgreSQL, exactly as if the cache decorator were never
+wrapped around the repository. Leave `APP_STORAGE__BUCKET` (and the rest of
+the `storage` block) unset and `GET /orders/{id}/receipt` serves from an
+in-memory store that vanishes on restart, instead of 503ing. Neither gap
+shows up on `/readyz` as a failure — see
+[the readiness change](http-api.md#get-readyz-readiness).
 
 ### The database URL carries no driver and no `sslmode`
 
@@ -141,11 +138,9 @@ Invalid configuration:
 
 Each line names the setting, what is wrong with it, and the rule that rejected
 it. The offending **value is deliberately not echoed**. Pydantic's own
-rendering includes it.
-For `APP_DATABASE__DSN` that value is a connection string with a password in
-it — a misconfiguration would otherwise write the database password to the
-startup logs.
-The trade-off is real and applies to
+rendering includes it, and for `APP_DATABASE__DSN` that value is a connection
+string with a password in it — a misconfiguration would otherwise write the
+database password to the startup logs. The trade-off is real and applies to
 every setting: a typo in `APP_HTTP_PORT` is now named but not shown. A blanket
 rule cannot be forgotten the way a list of "settings that hold secrets" can.
 

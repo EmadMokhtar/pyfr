@@ -63,12 +63,8 @@ the foundation everything else rests on.
 
 ## What a port buys: the caching decorator
 
-`OrderRepository` is the clearest demonstration in this codebase of what a
-port is actually for: `container.py` is the only file that decides which
-implementation of it a caller gets, and every caller above that point keeps
-calling `get` and `save` exactly the same way regardless of which one that is.
-
-`CachedOrderRepository` shows what that buys most clearly.
+`CachedOrderRepository` is the clearest demonstration in this codebase of
+what a port is actually for.
 
 It satisfies `OrderRepository` — the same `Protocol` the in-memory and
 PostgreSQL adapters satisfy — and it holds *another* `OrderRepository` inside
@@ -100,7 +96,7 @@ was added. `container.py` is the *only* file that knows: it decides whether
 to wrap in one place —
 
 ```python
-orders: OrderRepository = ...  # whichever adapter this render chose
+orders: OrderRepository = PostgresOrderRepository(...)
 if settings.cache is not None:
     orders = CachedOrderRepository(orders, redis, settings.cache.ttl_seconds)
 ```

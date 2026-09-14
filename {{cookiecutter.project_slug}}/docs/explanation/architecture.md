@@ -81,14 +81,31 @@ That distinction is easy to lose. If a rule can be stated without mentioning
 storage or transport, it belongs in `domain/`. The service layer is
 choreography.
 
+{%- if cookiecutter.database == "postgres" %}
+
 **`infrastructure/`** holds adapters: the only code that knows a specific
 technology. M0 ships an in-memory repository. M1 adds PostgreSQL behind the
 identical interface, and nothing above this layer changes.
+{%- else %}
+
+**`infrastructure/`** holds adapters: the only code that knows a specific
+technology. M0 ships an in-memory repository, and nothing above this layer
+would need to change if a real adapter were added later.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+{%- if cookiecutter.database == "postgres" %}
 
 M4 adds two more adapters, and one of them is a different shape from the
 rest. `infrastructure/storage/` is an ordinary adapter: `S3ReceiptStore`
 satisfies the `ReceiptStore` port over `aioboto3`, the same way
 `PostgresOrderRepository` satisfies `OrderRepository` over SQLAlchemy.
+{%- else %}
+
+`infrastructure/storage/` is an ordinary adapter: `S3ReceiptStore` satisfies
+the `ReceiptStore` port over `aioboto3`, the same shape any adapter in this
+codebase takes.
+{%- endif %}
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 `infrastructure/cache/` is not beside the repository it works with — it
 wraps it. `CachedOrderRepository` satisfies `OrderRepository` and holds

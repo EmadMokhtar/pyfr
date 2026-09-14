@@ -77,6 +77,17 @@ edit `Field(description=...)` in
 {%- endif %}
 
 <!-- /generated: config-table -->
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+
+**Both settings are optional, and absent is a supported configuration, not a
+broken one.** Leave `APP_CACHE__DSN` unset and the service serves every order
+read straight from PostgreSQL, exactly as if the cache decorator were never
+wrapped around the repository. Leave `APP_STORAGE__BUCKET` (and the rest of
+the `storage` block) unset and `GET /orders/{id}/receipt` serves from an
+in-memory store that vanishes on restart, instead of 503ing. Neither gap
+shows up on `/readyz` as a failure — see
+[the readiness change](http-api.md#get-readyz-readiness).
+{%- else %}
 {%- if cookiecutter.cache == "redis" %}
 
 **`APP_CACHE__DSN` is optional, and absent is a supported configuration, not a
@@ -92,6 +103,7 @@ not a broken one.** Leave it (and the rest of the `storage` block) unset and
 `GET /orders/{id}/receipt` serves from an in-memory store that vanishes on
 restart, instead of 503ing. This gap does not show up on `/readyz` as a
 failure — see [the readiness change](http-api.md#get-readyz-readiness).
+{%- endif %}
 {%- endif %}
 {%- if cookiecutter.database == "postgres" %}
 
@@ -153,13 +165,13 @@ Invalid configuration:
 
 Each line names the setting, what is wrong with it, and the rule that rejected
 it. The offending **value is deliberately not echoed**. Pydantic's own
-rendering includes it.
 {%- if cookiecutter.database == "postgres" %}
-For `APP_DATABASE__DSN` that value is a connection string with a password in
-it — a misconfiguration would otherwise write the database password to the
-startup logs.
+rendering includes it, and for `APP_DATABASE__DSN` that value is a connection
+string with a password in it — a misconfiguration would otherwise write the
+database password to the startup logs. The trade-off is real and applies to
+{%- else %}
+rendering includes it. The trade-off is real and applies to
 {%- endif %}
-The trade-off is real and applies to
 every setting: a typo in `APP_HTTP_PORT` is now named but not shown. A blanket
 rule cannot be forgotten the way a list of "settings that hold secrets" can.
 

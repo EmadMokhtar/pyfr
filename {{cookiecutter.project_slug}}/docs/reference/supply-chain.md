@@ -102,15 +102,16 @@ docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.projec
 {%- if cookiecutter.database == "postgres" %}
 
 Each image carries three OCI labels. `org.opencontainers.image.source` is a
-static `LABEL` in each Dockerfile; it is what makes GHCR link the package to
-this repository.
 {%- else %}
 
 The image carries three OCI labels. `org.opencontainers.image.source` is a
-static `LABEL` in the Dockerfile; it is what makes GHCR link the package to
-this repository.
 {%- endif %}
-`org.opencontainers.image.version` and
+{%- if cookiecutter.database == "postgres" %}
+static `LABEL` in each Dockerfile; it is what makes GHCR link the package to
+{%- else %}
+static `LABEL` in the Dockerfile; it is what makes GHCR link the package to
+{%- endif %}
+this repository. `org.opencontainers.image.version` and
 `org.opencontainers.image.revision` are added by `just publish-images`, because
 the version and the commit are only known at publish time.
 {%- if cookiecutter.database == "postgres" %}
@@ -132,7 +133,6 @@ points at from one day to the next.
 ## Reading a scan failure
 
 A failed `just scan` prints, per image, a `Total:` line and a table:
-
 {%- if cookiecutter.database == "postgres" %}
 
 ```
@@ -149,7 +149,7 @@ Total: 1 (HIGH: 1, CRITICAL: 0)
 
 The heading above the table names the target: the operating-system layer
 (`{{ cookiecutter.project_slug }}:ci (debian 13.6)`), a Python package set, or a single
-binary such as `usr/local/bin/migrate`.
+binary such as `usr/local/bin/migrate`. `Status` is always `fixed` in a
 {%- else %}
 
 ```
@@ -165,9 +165,8 @@ Total: 1 (HIGH: 1, CRITICAL: 0)
 ```
 
 The heading above the table names the target: the operating-system layer
-(`{{ cookiecutter.project_slug }}:ci (debian 13.6)`) or a Python package set.
+(`{{ cookiecutter.project_slug }}:ci (debian 13.6)`) or a Python package set. `Status` is always `fixed` in a
 {%- endif %}
-`Status` is always `fixed` in a
 failing scan, and that is by construction. The recipe runs with
 `--ignore-unfixed`: a finding for which no fixed version exists yet is left out
 of the report entirely, because nothing a pull request does can resolve it.
@@ -193,17 +192,17 @@ bump weekly on its own; a red scan is the reason not to wait a week. For a
 Debian package in the operating-system layer, a rebuild against the current
 base image is usually enough — the `python:3.13-slim-trixie` tag moves as
 Debian publishes fixes, so `docker pull python:3.13-slim-trixie` and then
-`just security` again.
 {%- if cookiecutter.database == "postgres" %}
-For the Go binary inside the migrations image, only a
+`just security` again. For the Go binary inside the migrations image, only a
 new `migrate/migrate` release can carry the fix; Dependabot's `docker` entry
 proposes it when one exists.
+{%- else %}
+`just security` again.
 {%- endif %}
 
 **Exempt, only through `.trivyignore.yaml`.** When the fix is not reachable —
 the finding is in code the image never executes, and no release carries the
 patch yet — add an entry with all four fields:
-
 {%- if cookiecutter.database == "postgres" %}
 
 ```yaml
@@ -235,7 +234,6 @@ allow-list in a recipe or a workflow
 
 To see what the file is currently hiding — a `Suppressed Vulnerabilities`
 table after the findings, one row per entry with its statement:
-
 {%- if cookiecutter.database == "postgres" %}
 
 ```bash
@@ -321,7 +319,11 @@ five ecosystems this repository has:
 {%- else %}
 | `docker` | The `FROM` line in `Dockerfile`. |
 {%- endif %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+| `docker-compose` | Every `image:` in `compose.yaml` — PostgreSQL, Redis, MinIO, `mc`, WireMock, `otel-lgtm` and Trivy. |
+{%- else %}
 | `docker-compose` | Every `image:` in `compose.yaml` — every configured backend, WireMock, `otel-lgtm` and Trivy. |
+{%- endif %}
 | `pre-commit` | The `rev:` of the hook repositories that still have one: gitleaks, sqlfluff and pre-commit-hooks. |
 
 Updates arrive weekly, as one grouped pull request per ecosystem, with a
@@ -369,14 +371,12 @@ small in what it can do:
   anything this service runs. Removing pip removed the findings, and a tool
   nobody should run inside a production container.
 - **Distribution security updates applied at build time.** The runtime stage
-  runs `apt-get upgrade` before anything else.
 {%- if cookiecutter.database == "postgres" %}
-  The migrations image runs `apk upgrade`.
-{%- endif %}
-{%- if cookiecutter.database == "postgres" %}
-  The official `python:slim` and `migrate/migrate` tags are
+  runs `apt-get upgrade` before anything else, and the migrations image runs
+  `apk upgrade`. The official `python:slim` and `migrate/migrate` tags are
 {%- else %}
-  The official `python:slim` tag is
+  runs `apt-get upgrade` before anything else. The official `python:slim`
+  tag is
 {%- endif %}
   rebuilt on their own projects' schedules, not the distribution's, so a base
   tag can carry packages whose fixes have been in Debian or Alpine for weeks

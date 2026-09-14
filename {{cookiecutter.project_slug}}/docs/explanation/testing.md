@@ -22,11 +22,19 @@ tests/
   fakes.py hand-written test doubles.
   conftest.py shared fixtures.
 ```
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 Later milestones add `integration/` (real PostgreSQL, Redis and MinIO started
 in Docker for the test session), `contract/` (generated requests checked
 against the published API contract), and `cassettes/` (recorded outbound HTTP
 responses, replayed offline).
+{%- else %}
+
+Later milestones add `integration/` (any real backends this render has,
+started in Docker for the test session), `contract/` (generated requests
+checked against the published API contract), and `cassettes/` (recorded
+outbound HTTP responses, replayed offline).
+{%- endif %}
 
 ## Unit tests carry the weight
 
