@@ -268,9 +268,10 @@ migrate-force version:
 docs-install:
     uv sync --group docs
 
-# Serve a live preview on http://127.0.0.1:8001, rebuilding on save. Not the
-# service's port (8000), so `just dev` and this can
-# run together; PyFr refuses 8001 as an `http_port` answer for that reason.
+# Serve a live preview on http://127.0.0.1:8001, rebuilding on save. It is
+# not the service's port, which is 8000,
+# so `just dev` and this can run together; PyFr refuses 8001 as an
+# `http_port` answer for the same reason.
 docs:
     uv run --group docs mkdocs serve --dev-addr 127.0.0.1:8001
 
