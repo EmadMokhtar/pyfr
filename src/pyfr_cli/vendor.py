@@ -103,7 +103,8 @@ def ensure(
     # A run that died may have left a worktree entry behind -- and, when
     # it died before its clean-up, the worktree itself.
     git.run("worktree", "prune")
-    remove_stale_worktrees(git)
+    for path in remove_stale_worktrees(git):
+        notes.append(f"worktree: removed {path} (left by a killed run)")
     if remote_tip(git, offline=offline) is not None:
         git.run("fetch", "--quiet", REMOTE, BRANCH)
         if not git.branch_exists(BRANCH):
@@ -172,19 +173,22 @@ def _check_range(version: Version, recorded: Version, target: Version) -> None:
         )
 
 
-def remove_stale_worktrees(git: Git) -> None:
-    """Remove every linked worktree that checks out the branch.
+def remove_stale_worktrees(git: Git) -> list[Path]:
+    """Remove the tool's own leftover worktrees of the branch; return their
+    paths. Any other worktree of the branch stops the run.
 
     A run killed before its clean-up (kill -9, a lost connection) leaves
     its temporary worktree on disk, and `git worktree prune` keeps an
     entry whose directory still exists. `worktree add` and `branch
     --force` would then fail with git's message about the branch being
-    used elsewhere. Nobody works in a worktree of this branch -- it holds
-    template output and nothing else -- so any such worktree is a
-    leftover. The main worktree and the one the tool runs in are never
-    removed (`remove --force` would remove the current one too).
+    used elsewhere. Only a worktree in the tool's own layout is removed:
+    one a user made on purpose may hold uncommitted files, and `remove
+    --force` would discard them without a word. The main worktree and
+    the one the tool runs in are never touched (`remove --force` would
+    remove the current one too).
     """
     here = git.toplevel()
+    removed: list[Path] = []
     entries = git.out("worktree", "list", "--porcelain").split("\n\n")
     for entry in entries[1:]:  # the first entry is the main worktree
         lines = entry.splitlines()
@@ -193,7 +197,21 @@ def remove_stale_worktrees(git: Git) -> None:
         path = Path(lines[0].removeprefix("worktree "))
         if path.resolve() == here:
             continue
+        if not _is_tool_worktree(path):
+            raise UpdateError(
+                f"{BRANCH} is checked out in another worktree: {path}",
+                f"git worktree remove {path} (after saving what it holds), "
+                "then run again",
+            )
         git.run("worktree", "remove", "--force", str(path))
+        removed.append(path)
+    return removed
+
+
+def _is_tool_worktree(path: Path) -> bool:
+    """Whether `path` is where update.py puts the branch's worktree: a
+    directory named `worktree` inside a `pyfr-update-*` temporary one."""
+    return path.name == "worktree" and path.parent.name.startswith("pyfr-update-")
 
 
 def describe(git: Git) -> tuple[Version, str]:

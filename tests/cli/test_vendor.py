@@ -362,15 +362,37 @@ def test_ensure_removes_a_worktree_a_killed_run_left_behind(
     # branch or to check it out anywhere else.
     root = git(project, "rev-list", "--max-parents=0", "HEAD")
     git(project, "branch", "--force", "template", root)  # the local copy is behind
-    leftover = tmp_path / "pyfr-update-dead" / "worktree"
+    # The tool's own layout: <tmp>/pyfr-update-*/worktree.
+    leftover = tmp_path / "pyfr-update-abc" / "worktree"
     git(project, "worktree", "add", "-q", str(leftover), "template")
     (leftover / "half-written.txt").write_text("x\n")
     assert not repo.ok("branch", "--force", "template", sha)
     assert not repo.ok("worktree", "add", "-q", str(tmp_path / "wt2"), "template")
     branch = vendor.ensure(repo, V10, V12)
     assert branch.version == V12
+    assert f"worktree: removed {leftover} (left by a killed run)" in branch.notes
     assert git(project, "rev-parse", "template") == sha
     assert "refs/heads/template" not in git(project, "worktree", "list", "--porcelain")
     assert not leftover.exists()
     with vendor.worktree(repo, tmp_path / "wt2") as worktree:
         assert worktree.out("rev-parse", "HEAD") == sha
+
+
+def test_ensure_stops_at_a_worktree_the_user_made_on_template(
+    project: Path, tmp_path: Path
+) -> None:
+    # Not the tool's layout: the user checked the branch out to look at
+    # it, and may have uncommitted files there. Never removed; named.
+    repo = Git(project)
+    vendor.ensure(repo, V10, V12)
+    mine = tmp_path / "mine"
+    git(project, "worktree", "add", "-q", str(mine), "template")
+    (mine / "notes.txt").write_text("keep me\n")
+    with pytest.raises(UpdateError) as stop:
+        vendor.ensure(repo, V10, V12)
+    assert stop.value.cause == f"template is checked out in another worktree: {mine}"
+    assert stop.value.fix == (
+        f"git worktree remove {mine} (after saving what it holds), then run again"
+    )
+    assert (mine / "notes.txt").read_text() == "keep me\n"
+    assert str(mine) in git(project, "worktree", "list", "--porcelain")
