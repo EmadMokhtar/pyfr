@@ -177,6 +177,28 @@ def test_a_custom_port_reaches_every_place_the_port_lives(cookies) -> None:
     assert "== 9000" in test_settings
 
 
+def test_the_docs_carry_the_chosen_port(cookies) -> None:
+    # The eight-combination matrix never varies http_port; this render does,
+    # so a port hard-coded in a page fails here and not in a user's
+    # config-docs-check.
+    root = render(cookies, http_port="9000")
+    offenders = [
+        path.relative_to(root).as_posix()
+        for path in sorted((root / "docs").rglob("*.md"))
+        if "localhost:8000" in path.read_text()
+    ]
+    assert offenders == []
+    configuration = (root / "docs" / "reference" / "configuration.md").read_text()
+    # The generated table's row: `just config-docs-check` regenerates it
+    # from the settings model, whose default is the answer.
+    row = next(
+        line
+        for line in configuration.splitlines()
+        if line.startswith("| `APP_HTTP_PORT` |")
+    )
+    assert "| `9000` |" in row, row
+
+
 def test_a_package_name_at_the_cap_is_format_clean(cookies) -> None:
     assert len(CAP_PACKAGE_NAME) == 25
     result = cookies.bake(extra_context={"project_name": CAP_PROJECT_NAME})
