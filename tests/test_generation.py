@@ -182,24 +182,25 @@ def test_the_reference_answers_render_the_reference_names(cookies) -> None:
     )
 
 
+# 9100: no template file mentions it, and nothing in the stack binds it.
 def test_a_custom_port_reaches_every_place_the_port_lives(cookies) -> None:
-    result = cookies.bake(extra_context={"http_port": "9000"})
+    result = cookies.bake(extra_context={"http_port": "9100"})
     assert result.exit_code == 0, result.exception
     root = result.project_path
-    assert "EXPOSE 9000" in (root / "Dockerfile").read_text()
-    assert '"9000:9000"' in (root / "compose.yaml").read_text()
-    assert "APP_HTTP_PORT=9000" in (root / ".env.example").read_text()
+    assert "EXPOSE 9100" in (root / "Dockerfile").read_text()
+    assert '"9100:9100"' in (root / "compose.yaml").read_text()
+    assert "APP_HTTP_PORT=9100" in (root / ".env.example").read_text()
     settings = (root / "src" / "my_service" / "settings.py").read_text()
-    assert "default=9000" in settings
+    assert "default=9100" in settings
     test_settings = (root / "tests" / "unit" / "test_settings.py").read_text()
-    assert "== 9000" in test_settings
+    assert "== 9100" in test_settings
 
 
 def test_the_docs_carry_the_chosen_port(cookies) -> None:
     # The eight-combination matrix never varies http_port; this render does,
     # so a port hard-coded in a page fails here and not in a user's
     # config-docs-check.
-    root = render(cookies, http_port="9000")
+    root = render(cookies, http_port="9100")
     offenders = [
         path.relative_to(root).as_posix()
         for path in sorted((root / "docs").rglob("*.md"))
@@ -214,7 +215,7 @@ def test_the_docs_carry_the_chosen_port(cookies) -> None:
         for line in configuration.splitlines()
         if line.startswith("| `APP_HTTP_PORT` |")
     )
-    assert "| `9000` |" in row, row
+    assert "| `9100` |" in row, row
 
 
 def test_a_package_name_at_the_cap_is_format_clean(cookies) -> None:

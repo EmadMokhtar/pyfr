@@ -47,7 +47,7 @@ a choice prompt, type the number of the option you want.
 | `database` | `postgres` gives you a PostgreSQL repository, migrations, a migrations image and the schema gates. `none` removes every one of them. | `postgres` (or `none`) |
 | `cache` | `redis` gives you a fail-open Redis cache in front of the order repository. `none` removes it. | `redis` (or `none`) |
 | `object_storage` | `s3` gives you an S3-compatible receipt store, with MinIO in the local stack. `none` removes it. | `s3` (or `none`) |
-| `http_port` | The port the service listens on: in `just dev`, in the compose stack and in the container image. A plain decimal integer between 1 and 65535. | `8000` |
+| `http_port` | The port the service listens on: in `just dev`, in the compose stack and in the container image. A plain decimal integer between 1 and 65535, and not one the project's own stack binds — 8001 (`just docs`), 9099 (the payment stub), 3000, 4317, 4318 and 9090 (the observability profile), nor 5432, 6379, 9000 or 9001 while PostgreSQL, Redis or MinIO is chosen; the generator refuses those and says which service has the port. | `8000` |
 | `license` | Which licence text becomes `LICENSE`. | `Apache-2.0` (or `MIT`, `MPL-2.0`, `Proprietary`) |
 
 Four of the free-text answers — `project_name`, `description`,

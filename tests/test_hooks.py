@@ -51,6 +51,16 @@ def test_default_answers_render(cookies) -> None:
         ({"http_port": "eighty"}, "http_port"),
         # int() accepts a leading zero; the render would not (`default=08000`).
         ({"http_port": "08000"}, "http_port"),
+        # Ports the generated stack binds on the host (compose.yaml and
+        # `just docs`): always, and per chosen backend -- the defaults
+        # choose every backend.
+        ({"http_port": "8001"}, "documentation preview"),
+        ({"http_port": "9099"}, "payment stub"),
+        ({"http_port": "3000"}, "Grafana"),
+        ({"http_port": "5432"}, "PostgreSQL"),
+        ({"http_port": "6379"}, "Redis"),
+        ({"http_port": "9000"}, "MinIO"),
+        ({"http_port": "9001"}, "MinIO console"),
     ],
 )
 def test_bad_answers_are_rejected_before_anything_is_written(
@@ -76,6 +86,14 @@ def test_free_text_may_contain_apostrophes_and_non_ascii(cookies) -> None:
     pyproject = (result.project_path / "pyproject.toml").read_text()
     assert "Emad's caf\u00e9 orders service \u2014 v2." in pyproject
     assert "Zo\u00eb O'Neil" in pyproject
+
+
+def test_a_backend_port_is_free_when_the_backend_is_absent(cookies) -> None:
+    # MinIO's 9000 is refused only when MinIO is in the stack; a project
+    # without object storage may listen there.
+    result = cookies.bake(extra_context={"http_port": "9000", "object_storage": "none"})
+    assert result.exit_code == 0, result.exception
+    assert '"9000:9000"' in (result.project_path / "compose.yaml").read_text()
 
 
 @pytest.mark.parametrize("choice", ["Apache-2.0", "MIT", "MPL-2.0", "Proprietary"])
