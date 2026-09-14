@@ -99,14 +99,36 @@ status code, whatever it says. The object store lives here, and stays
 status code, whatever it says — but nothing is registered here in this
 render, so `dependencies` is always `{}`.
 {%- endif %}
+{%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 {%- if cookiecutter.database == "postgres" %}
 
 **Why gate on the database but not the other two.** This is the part of the
 milestone worth remembering, because it is not the obvious choice.
 {%- else %}
 
-**Why the cache and the object store never gate, either.** This is the part
-of the milestone worth remembering, because it is not the obvious choice.
+**Why the cache and the object store never gate.** This is the part of the
+milestone worth remembering, because it is not the obvious choice.
+{%- endif %}
+{%- elif cookiecutter.cache == "redis" %}
+{%- if cookiecutter.database == "postgres" %}
+
+**Why gate on the database but not the cache.** This is the part of the
+milestone worth remembering, because it is not the obvious choice.
+{%- else %}
+
+**Why the cache never gates.** This is the part of the milestone worth
+remembering, because it is not the obvious choice.
+{%- endif %}
+{%- elif cookiecutter.object_storage == "s3" %}
+{%- if cookiecutter.database == "postgres" %}
+
+**Why gate on the database but not the object store.** This is the part of
+the milestone worth remembering, because it is not the obvious choice.
+{%- else %}
+
+**Why the object store never gates.** This is the part of the milestone
+worth remembering, because it is not the obvious choice.
+{%- endif %}
 {%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 
@@ -130,10 +152,17 @@ Losing it breaks exactly one endpoint, `GET /orders/{id}/receipt` — see below
 — so pulling 100% of traffic off a pod to protect that one slice costs far
 more than it saves.
 {%- endif %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 `checks` is empty and `dependencies` is empty when no database, cache, or
 storage is configured — a service can run with none of the three, on the
 in-memory repository, no cache decorator, and the in-memory receipt store.
+{%- else %}
+
+`checks` is empty and `dependencies` is empty whenever none of this render's
+optional backends is configured — the service runs on its in-memory
+adapters either way.
+{%- endif %}
 
 Two further details are deliberate.
 

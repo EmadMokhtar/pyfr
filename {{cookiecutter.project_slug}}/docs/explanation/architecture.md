@@ -28,10 +28,16 @@ src/<package>/
 
   infrastructure/     adapters: the only code that knows a storage technology
     memory/             the in-memory repository (M0)
+{%- if cookiecutter.database == "postgres" %}
     db/                 the PostgreSQL repository (M1)
+{%- endif %}
     http/               the outbound payment gateway (M3)
+{%- if cookiecutter.cache == "redis" %}
     cache/              a Redis decorator OVER the repository, not beside it (M4)
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
     storage/            the S3-compatible receipt store (M4)
+{%- endif %}
 
   api/                the only code that knows HTTP exists
     deps.py             FastAPI dependencies reading from application state

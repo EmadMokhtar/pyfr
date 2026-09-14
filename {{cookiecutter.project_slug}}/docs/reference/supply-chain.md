@@ -374,15 +374,19 @@ small in what it can do:
 {%- if cookiecutter.database == "postgres" %}
   runs `apt-get upgrade` before anything else, and the migrations image runs
   `apk upgrade`. The official `python:slim` and `migrate/migrate` tags are
-{%- else %}
-  runs `apt-get upgrade` before anything else. The official `python:slim`
-  tag is
-{%- endif %}
   rebuilt on their own projects' schedules, not the distribution's, so a base
   tag can carry packages whose fixes have been in Debian or Alpine for weeks
   — the scan gate's first run on a pull request found twelve fixed findings
   in a base that had scanned clean the day before, once the vulnerability
   database caught up with a Debian point release. Upgrading at build time
+{%- else %}
+  runs `apt-get upgrade` before anything else. The official `python:slim`
+  tag is rebuilt on its own project's schedule, not the distribution's, so a
+  base tag can carry packages whose fixes have been in Debian for weeks —
+  the scan gate's first run on a pull request found twelve fixed findings in
+  a base that had scanned clean the day before, once the vulnerability
+  database caught up with a Debian point release. Upgrading at build time
+{%- endif %}
   makes the image as current as the archive on the day it is built. The cost
   is that two builds days apart can differ in package versions; the SBOM
   records which versions a given image carries.

@@ -123,8 +123,13 @@ The cache is informational only.
 {%- if cookiecutter.object_storage == "s3" %}
 The object store is informational only.
 {%- endif %}
+{%- if cookiecutter.cache == "redis" or cookiecutter.object_storage == "s3" %}
 `dependencies` says whether each configured one is reachable, but none of
 them can turn a 200 into a 503.
+{%- else %}
+There is nothing optional here to report — `dependencies` is always `{}`
+in this render.
+{%- endif %}
 {%- if cookiecutter.cache == "redis" %}
 
 The reasoning is worth having here rather than only in the HTTP reference,

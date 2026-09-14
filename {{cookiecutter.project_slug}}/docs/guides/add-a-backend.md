@@ -206,23 +206,67 @@ container.readiness.register("mysql", check_mysql)
 ```
 
 **`register_informational`** is reported but never changes the status code —
+{%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 the choice M4 makes for both the cache and the object store:
 
 ```python
 container.readiness.register_informational("cache", check_redis)
 ```
+{%- elif cookiecutter.cache == "redis" %}
+the choice M4 makes for the cache:
+
+```python
+container.readiness.register_informational("cache", check_redis)
+```
+{%- elif cookiecutter.object_storage == "s3" %}
+the choice M4 makes for the object store:
+
+```python
+container.readiness.register_informational("storage", check_s3)
+```
+{%- else %}
+a good choice whenever losing the dependency should be visible without
+taking the instance out of load balancing:
+
+```python
+container.readiness.register_informational("mysql", check_mysql)
+```
+{%- endif %}
 
 Ask two questions before picking. **Does losing it make this instance unable
 to do useful work?** If yes — the primary datastore, say — gate on it. **Is
 it shared across every pod, and does the code already survive its loss?** If
 so, gating is actively harmful: every pod fails the check in the same
 instant, and a degradation the service was built to tolerate becomes a total
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 outage instead. That is exactly the cache's situation —
 `CachedOrderRepository` fails open, so PostgreSQL already answers every
 request when Redis is down — and it is why the cache is informational, not
 gating. The object store is informational for a related but distinct reason:
 losing it breaks one endpoint, not the whole instance, so taking all traffic
 off the pod to protect that one endpoint would cost more than it saves.
+{%- else %}
+outage instead.
+{%- if cookiecutter.cache == "redis" %}
+
+That is exactly the cache's situation —
+{%- if cookiecutter.database == "postgres" %}
+`CachedOrderRepository` fails open, so PostgreSQL already answers every
+request when Redis is down — and it is why the cache is informational, not
+gating.
+{%- else %}
+`CachedOrderRepository` fails open, so the order repository already answers
+every request when Redis is down — and it is why the cache is informational,
+not gating.
+{%- endif %}
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+
+The object store is informational for a related but distinct reason:
+losing it breaks one endpoint, not the whole instance, so taking all traffic
+off the pod to protect that one endpoint would cost more than it saves.
+{%- endif %}
+{%- endif %}
 
 Checks in both tiers run concurrently, each under a short timeout, so
 registering in either never multiplies the endpoint's worst-case latency.
@@ -230,7 +274,12 @@ registering in either never multiplies the endpoint's worst-case latency.
 Do **not** add either tier to `/healthz`. A liveness probe that checks a
 dependency restarts every instance at once when that dependency hiccups,
 turning a small problem into an outage — the same reasoning that keeps a
+{%- if cookiecutter.cache == "redis" %}
 gating `/readyz` check off Redis, one level more severe.
+{%- else %}
+gating `/readyz` check off a shared, fail-open dependency, one level more
+severe.
+{%- endif %}
 
 ## 6. Test it
 

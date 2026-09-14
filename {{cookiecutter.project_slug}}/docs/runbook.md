@@ -153,8 +153,10 @@ Prints the current version and whether the database is marked dirty.
 ## A dependency is down
 
 **Symptom.** The symptom differs by dependency, which is the point of this section:
-{%- if cookiecutter.database == "postgres" %}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 only one of the four leaves the load balancer.
+{%- elif cookiecutter.database == "postgres" %}
+only the database leaves the load balancer; every other dependency fails open.
 {%- else %}
 every one of them fails open — none takes an instance out of load balancing.
 {%- endif %}
@@ -208,7 +210,6 @@ running with no `APP_STORAGE__*` set omits it from that object entirely.
   cannot reach it. Check the database itself — connectivity, disk,
   replica lag — not the application.
 {%- else %}
-
 {% endif %}
 {%- if cookiecutter.cache == "redis" %}
 - **Redis down:** nothing to do at the application layer. The cache
