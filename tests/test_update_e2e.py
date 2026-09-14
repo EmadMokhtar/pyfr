@@ -382,6 +382,49 @@ def test_a_fresh_clone_fetches_the_pushed_template_branch(
     assert recorded_version(clone) == "100.1.0"
 
 
+def test_a_pending_template_branch_is_carried_forward(
+    project: Path,
+    template_remote: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    git(project, "push", "-q", "origin", "main")  # the first week is on origin
+    assert (
+        run(project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0")[0]
+        == 0
+    )
+    # The weekly workflow's situation a week later: its pull request for
+    # v100.1.0 was never merged, so origin's main still records v100.0.0,
+    # while origin/template sits at v100.1.0 -- and v100.2.0 is out now.
+    # The branch is a pending update, not a disagreement: the sync goes on
+    # from it, and the merge base is still the recorded version's commit.
+    clone = tmp_path / "workflow"
+    git(tmp_path, "clone", "-q", str(tmp_path / "origin.git"), str(clone))
+    git(clone, "config", "user.name", "Workflow")
+    git(clone, "config", "user.email", "workflow@example.com")
+    assert recorded_version(clone) == "100.0.0"
+    code, out, _ = run(
+        clone, monkeypatch, capsys, "update", *template, "--to", "v100.2.0"
+    )
+    assert code == 0, out
+    assert "template: committed v100.1.0 -> v100.2.0" in out
+    assert "created from root commit" not in out
+    assert "conflict:" not in out
+    assert (
+        (clone / "ruff.toml")
+        .read_text()
+        .endswith("# template v100.1.0\n# template v100.2.0\n")
+    )
+    assert recorded_version(clone) == "100.2.0"
+    # Both versions' changes arrived, with the team's work intact.
+    assert (clone / "TEMPLATE_NOTES.md").exists()
+    assert '"httpx>=0.27",' in (clone / "pyproject.toml").read_text()
+    assert not (clone / "tests" / "unit" / "test_order_repository.py").exists()
+    assert trailer(clone, "origin/template") == "v100.2.0"
+
+
 def test_the_project_s_own_ignore_file_is_honoured(
     project: Path,
     template_remote: Path,

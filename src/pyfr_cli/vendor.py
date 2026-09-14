@@ -127,10 +127,23 @@ def ensure(
             f'"{git.subject(roots[0])}"'
         )
     version, base = describe(git)
-    if version not in (recorded, target):
+    # The branch may sit anywhere from the recorded version to the target,
+    # inclusive. Between the two it is a pending update -- the weekly
+    # workflow synced and pushed it, and the project has not merged it yet
+    # -- and the sync continues from it. Below the recorded version, the
+    # branch was recreated (origin/template deleted, then rebuilt from the
+    # root) and the answers file knows better; `commit_for` would fail
+    # later anyway, this says why now.
+    if version > target:
         raise UpdateError(
-            f"{BRANCH} is at {version}, but {answers.FILE} records {recorded}",
-            f"the two must agree; see {GUIDE} for re-pointing the branch",
+            f"{BRANCH} is already at {version}, past --to {target}",
+            f"pass a --to of at least {version}, or none for the newest",
+        )
+    if version < recorded:
+        raise UpdateError(
+            f"{BRANCH} is at {version} but {answers.FILE} records {recorded}, "
+            "which is newer",
+            f"see {GUIDE} for re-pointing the branch",
         )
     return Branch(version, base, created, notes)
 

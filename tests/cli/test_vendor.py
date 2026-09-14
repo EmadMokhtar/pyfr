@@ -60,13 +60,15 @@ def rendered(tmp_path: Path) -> Path:
 IGNORE = Ignore(["/.pyfr-answers.yml", "/README.md"])
 
 
-def update_branch(project: Path, rendered: Path, tmp_path: Path) -> str:
+def update_branch(
+    project: Path, rendered: Path, tmp_path: Path, target: Version = V12
+) -> str:
     """One full round: ensure, sync, commit -- as update.py will do it."""
     repo = Git(project)
-    branch = vendor.ensure(repo, V10, V12)
+    branch = vendor.ensure(repo, V10, target)
     with vendor.worktree(repo, tmp_path / "wt") as worktree:
         vendor.sync(rendered, worktree, IGNORE)
-        return vendor.commit(worktree, branch.version, V12)
+        return vendor.commit(worktree, branch.version, target)
 
 
 def test_ensure_creates_the_branch_from_the_root_commit(project: Path) -> None:
@@ -99,13 +101,39 @@ def test_ensure_refuses_a_repository_with_two_roots(project: Path) -> None:
     assert vendor.GUIDE in stop.value.fix
 
 
-def test_ensure_refuses_a_branch_whose_version_matches_neither_side(
-    project: Path,
-) -> None:
+def test_ensure_refuses_a_branch_below_the_recorded_version(project: Path) -> None:
+    # origin/template was deleted and the branch rebuilt from the root
+    # (v0.10.0) while the project already records v0.11.0.
     with pytest.raises(UpdateError) as stop:
-        vendor.ensure(Git(project), Version(0, 9, 0), V12)
-    assert "template is at v0.10.0" in stop.value.cause
-    assert "records v0.9.0" in stop.value.cause
+        vendor.ensure(Git(project), Version(0, 11, 0), V12)
+    assert stop.value.cause == (
+        "template is at v0.10.0 but .pyfr-answers.yml records v0.11.0, which is newer"
+    )
+    assert vendor.GUIDE in stop.value.fix
+
+
+def test_ensure_refuses_a_branch_above_the_target(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    update_branch(project, rendered, tmp_path)  # the branch is at v0.12.0
+    with pytest.raises(UpdateError) as stop:
+        vendor.ensure(Git(project), V10, Version(0, 11, 0))
+    assert stop.value.cause == "template is already at v0.12.0, past --to v0.11.0"
+    assert stop.value.fix == "pass a --to of at least v0.12.0, or none for the newest"
+
+
+def test_ensure_accepts_a_branch_between_recorded_and_target(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    # The weekly workflow synced and pushed v0.11.0; the project has not
+    # merged it yet and still records v0.10.0; v0.12.0 is out now. The
+    # sync continues from the branch, and the merge base is still v0.10.0.
+    sha = update_branch(project, rendered, tmp_path, target=Version(0, 11, 0))
+    branch = vendor.ensure(Git(project), V10, V12)
+    assert branch.version == Version(0, 11, 0)
+    assert not branch.created
+    assert vendor.commit_for(Git(project), V10, branch.base) == branch.base
+    assert vendor.commit_for(Git(project), Version(0, 11, 0), branch.base) == sha
 
 
 def test_sync_and_commit_write_the_render_respecting_the_ignore_list(
