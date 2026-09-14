@@ -1,5 +1,5 @@
-site_name: Reference Service
-site_description: The PyFr reference service.
+site_name: "Reference Service"
+site_description: "The PyFr reference service."
 # The project's own GitHub Pages site by default; PyFr's repository builds
 # this same tree under its own site and sets SITE_URL to say so.
 site_url: !ENV [SITE_URL, "https://emadmokhtar.github.io/reference-service/"]

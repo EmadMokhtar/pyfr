@@ -54,4 +54,8 @@ exclude_path = [
     "examples/reference-service/.venv",
     "docs/superpowers",
     "docs/adr/template.md",  # A skeleton to copy, not a page to read; placeholder link is intentionally unresolvable. Already excluded from mkdocs.yml.
+    # The template body's Markdown carries Jinja inside its URLs, so the
+    # rendered example is what gets checked instead; without this,
+    # nightly.yml's '**/*.md' sweep would also catch the template body's.
+    "{{cookiecutter.project_slug}}",
 ]

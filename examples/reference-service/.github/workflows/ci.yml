@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `labeled`/`unlabeled` are not default trigger types, but the
+    # docs-freshness job's `no-docs-needed` escape hatch is worthless without
+    # them: with no rerun, adding the label leaves the already-failed check
+    # red.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 # Every job reads the repository and nothing else; a job that needs more
 # declares it itself.
@@ -102,6 +107,121 @@ jobs:
       - uses: actions/checkout@v7
       - uses: extractions/setup-just@v4
       - run: just o11y-gates
+
+  docs:
+    # The site build, with `--strict`: a broken internal link or a renamed
+    # heading anchor fails this job. The drift check of the generated
+    # configuration reference runs in the `gates` job instead.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install the documentation toolchain
+        run: uv sync --group docs
+
+      - name: Build the site
+        run: just docs-build
+
+  docs-freshness:
+    # Blunt backstop for stale prose. The `no-docs-needed` label is the escape
+    # hatch for refactors and internal-only changes; a label is used rather
+    # than a commit trailer because pull requests are squash-merged, which
+    # rewrites the message.
+    if: >-
+      github.event_name == 'pull_request' &&
+      !contains(github.event.pull_request.labels.*.name, 'no-docs-needed')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `git diff base...head` needs both sides of the history.
+          fetch-depth: 0
+
+      - name: Check that documentation was updated
+        env:
+          # Passed via env rather than interpolated into the script body, so
+          # nothing from the event payload can be read as shell.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # The script's defaults are this project's own trees: `src/` for
+        # source, and `docs/`, `README.md` and `mkdocs.yml` for what counts
+        # as documentation.
+        run: python3 scripts/check_docs_updated.py "$BASE_SHA" HEAD
+
+  docs-warnings:
+    # Advisory only -- review dates and path coupling. Never fails; see
+    # docs/contributing.md for what has to be true before it does.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `just docs-freshness` diffs base...head, which needs real history.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install just
+        uses: extractions/setup-just@v4
+
+      - name: Install the documentation toolchain
+        # `scripts/check_docs_freshness.py` does `import yaml` directly.
+        # PyYAML is declared as a direct `dev` dependency (pyproject.toml)
+        # precisely so that does not depend on MkDocs happening to pull it
+        # in transitively; `uv sync` installs the default `dev` group
+        # alongside whichever `--group` is named explicitly.
+        run: uv sync --group docs
+
+      - name: Report documentation freshness
+        env:
+          # Passed via env rather than interpolated into the script body, so
+          # nothing from the event payload can be read as shell.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        # Calls the same `just docs-freshness` recipe a developer runs
+        # locally, rather than invoking scripts/check_docs_freshness.py
+        # directly.
+        run: just docs-freshness "$BASE_SHA" HEAD
+
+  links:
+    # External links only; internal ones are `mkdocs build --strict`'s job
+    # in the `docs` job above. Separate from that job because this one
+    # depends on the internet being well, and a network blip should not
+    # read as a broken site.
+    #
+    # Deliberately NOT `just links`, unlike every other gate in this file.
+    # This is a recorded exemption, not an oversight: the
+    # `lycheeverse/lychee-action@v2` action supplies the `lychee` binary
+    # itself, which this runner does not otherwise have -- installing it
+    # some other way just to shell out to `just links` would add a step
+    # for no benefit. `lychee.toml` still stays the single definition of
+    # the check's behaviour either way, since the action is pointed at the
+    # same config file and the same paths that recipe uses.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check external links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md
+          fail: true
+
+  docs-examples:
+    # The documented `curl` examples, against a real running stack.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
+      - run: just docs-examples
 
   build:
     # Every image for linux/amd64 AND linux/arm64, with no output: proves

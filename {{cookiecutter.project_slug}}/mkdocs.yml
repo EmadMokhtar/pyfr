@@ -1,5 +1,5 @@
-site_name: {{ cookiecutter.project_name }}
-site_description: {{ cookiecutter.description }}
+site_name: "{{ cookiecutter.project_name }}"
+site_description: "{{ cookiecutter.description }}"
 # The project's own GitHub Pages site by default; PyFr's repository builds
 # this same tree under its own site and sets SITE_URL to say so.
 site_url: !ENV [SITE_URL, "https://{{ cookiecutter.github_org | lower }}.github.io/{{ cookiecutter.project_slug }}/"]

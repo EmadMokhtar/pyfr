@@ -3,11 +3,7 @@ name: Docs
 # Requires a one-time manual setting: Settings -> Pages -> Source =
 # "GitHub Actions". Until that is set, `deploy` fails with an opaque error
 # even though `build` succeeds, and every published documentation link stays
-# dead. See docs/contributing.md, "One-time repository settings".
-#
-# The deploy carries two sites: PyFr's, and the reference service's own
-# documentation under `reference-service/` -- the site every generated
-# project ships, rendered from the template (spec §9.2).
+# dead. See README.md, "Continuous integration and releases".
 
 on:
   push:
@@ -43,10 +39,7 @@ jobs:
       - name: Install the documentation toolchain
         run: uv sync --group docs
 
-      - name: Build both sites
-        # `just docs-build` builds PyFr's site into site/ and the reference
-        # service's rendered site into site/reference-service/ -- one
-        # definition of the build, the same one a contributor runs.
+      - name: Build the site
         run: just docs-build
 
       - uses: actions/configure-pages@v6
@@ -60,7 +53,9 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
+{%- raw %}
       url: ${{ steps.deployment.outputs.page_url }}
+{%- endraw %}
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5

@@ -320,7 +320,10 @@ jobs:
       - name: Check external links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md
+          # The template body's Markdown carries Jinja inside its URLs, so
+          # the rendered example -- examples/reference-service/ -- is what
+          # gets checked instead.
+          args: --config lychee.toml --no-progress 'docs/**/*.md' README.md 'examples/reference-service/docs/**/*.md' examples/reference-service/README.md
           fail: true
 
   docs-examples:

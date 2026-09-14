@@ -88,6 +88,7 @@ RAW_GUARDED_FILES = frozenset(
         ".github/workflows/ci.yml",
         ".github/workflows/nightly.yml",
         ".github/workflows/release.yml",
+        ".github/workflows/docs.yml",
     }
 )
 

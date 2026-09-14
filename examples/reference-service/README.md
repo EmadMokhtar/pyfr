@@ -414,23 +414,28 @@ deliberately not distroless: the start command needs a shell to expand
 
 ## Continuous integration and releases
 
-Three workflows under `.github/workflows/` and a Dependabot schedule ship
+Four workflows under `.github/workflows/` and a Dependabot schedule ship
 with the project and run from the first push:
 
 | Workflow | Runs | What it does |
 |---|---|---|
-| `ci.yml` | every push to `main` and every pull request | `just check`, `just test-integration`, `just gates`, `just contract-gates` and `just o11y-gates` as separate jobs, so a failure names its gate; a two-architecture build of every image; `just audit`, `just scan` and `just sbom` |
+| `ci.yml` | every push to `main` and every pull request | `just check`, `just test-integration`, `just gates`, `just contract-gates` and `just o11y-gates` as separate jobs, so a failure names its gate; a two-architecture build of every image; `just audit`, `just scan` and `just sbom`; the documentation site build, the documentation-freshness gate, the external-link check and the documented examples |
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
+| `docs.yml` | every push to `main`, or by hand | builds the documentation site with `mkdocs build --strict` and deploys it to GitHub Pages |
 
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
 
-Three settings live in the GitHub interface, not in this repository. The
+Five settings live in the GitHub interface, not in this repository. The
 workflow-token permission is not one of them: each workflow declares what
 it needs in its own `permissions:` key, so the repository can stay at
 GitHub's default.
 
+- **Settings → Pages → Source = "GitHub Actions".** Without it `docs.yml`'s
+  deploy job fails with an opaque error while its build job succeeds.
+- **A `no-docs-needed` label must exist**, or the documentation-freshness
+  check has no escape hatch.
 - **A `RELEASE_TOKEN` secret, only if a ruleset on `main` requires a pull
   request.** The workflow token cannot pass such a ruleset (`GH013`), and
   on a user-owned repository GitHub does not let the Actions app be
