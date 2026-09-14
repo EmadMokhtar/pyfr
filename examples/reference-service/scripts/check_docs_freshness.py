@@ -152,10 +152,10 @@ def changed_files(base: str, head: str) -> set[str]:
     """Paths changed between `base` and `head`, as git reports them.
 
     `--relative` makes the paths relative to the CURRENT directory rather
-    than the repository root, so this script serves a generated project
-    run from its own root and this repository's reference service run
-    from `examples/reference-service/` with the same `covers:` paths --
-    neither carries a prefix the other one does not.
+    than the repository root, so the same `covers:` paths serve this
+    script from any directory the project is checked out in, or from a
+    subdirectory of a larger repository that vendors it -- neither run
+    carries a prefix the other one does not.
     """
     completed = subprocess.run(
         ["git", "diff", "--name-only", "--relative", f"{base}...{head}"],

@@ -335,8 +335,9 @@ reference service's: `{{ cookiecutter.project_slug }}`,
 `{{ cookiecutter.github_org }}` where the project is named, and PyFr's own
 URLs literal. `tests/test_generation.py` renders the default answers and
 fails on `reference-service`, `reference_service`, `Reference Service` or
-`emadmokhtar` in any rendered page, outside PyFr's two URLs — which is
-also why a template page can never link to the reference service's site.
+`emadmokhtar` in any rendered page, the README, the scripts, `mkdocs.yml`
+or the workflows, outside PyFr's two URLs — which is also why a template
+page can never link to the reference service's site.
 
 ### Front matter
 

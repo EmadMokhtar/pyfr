@@ -719,12 +719,23 @@ def test_the_two_extreme_renders_build_their_sites(cookies, answers) -> None:
 # links back to the template it came from.
 IDENTITY_LEAKS = ("reference-service", "reference_service", "Reference Service")
 PYFR_URLS = ("github.com/EmadMokhtar/pyfr", "emadmokhtar.github.io/pyfr/")
+# Where a render speaks about itself: the site, the README, the scripts'
+# docstrings and comments, the site's configuration and the workflows.
+IDENTITY_TREES = ("docs", "README.md", "scripts", "mkdocs.yml", ".github")
+
+
+def identity_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    for name in IDENTITY_TREES:
+        path = root / name
+        files.extend(files_under(path) if path.is_dir() else [path])
+    return files
 
 
 def test_the_docs_carry_the_answers_not_the_reference_identity(cookies) -> None:
     root = render(cookies)  # default answers: my-service, my_service, your-org
     offenders = []
-    for path in sorted((root / "docs").rglob("*.md")):
+    for path in identity_files(root):
         text = path.read_text()
         for line in text.splitlines():
             stripped = line
