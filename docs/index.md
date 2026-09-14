@@ -39,6 +39,8 @@ new repository to disk.
     debug Jinja and Python at the same time. (Jinja is the placeholder
     language cookiecutter uses.)
 
+    See the [roadmap](roadmap.md) for what each milestone delivered.
+
     You can generate a project today — [Getting started](getting-started.md)
     — and you can read the reference service, run it, and copy from it.
     Everything on this site describes code that exists and runs today.
