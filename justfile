@@ -112,13 +112,22 @@ typecheck:
 
 # Build the pyfr-cli wheel and run its console script from it, exactly as
 # CI does (M8 spec, section 8.4). Needs the network: uvx resolves the
-# wheel's dependencies into a throwaway environment.
+# wheel's dependencies into a throwaway environment. The version the
+# script prints must be pyproject.toml's: `pyfr --version` reads the
+# installed package's metadata, so a mismatch means the wheel was built
+# from something else.
 wheel:
     #!/usr/bin/env bash
     set -euo pipefail
     rm -rf dist
     uv build --wheel
-    uvx --from dist/pyfr_cli-*.whl pyfr --version
+    expected="$(uv version --short)"
+    printed="$(uvx --from dist/pyfr_cli-*.whl pyfr --version)"
+    echo "$printed"
+    if [ "$printed" != "pyfr $expected" ]; then
+        echo "wheel: pyfr --version printed '$printed', but pyproject.toml says $expected" >&2
+        exit 1
+    fi
 
 # Audit the documentation and release toolchain's lock the same way the
 # reference service audits its own -- see that justfile's `audit` for the
