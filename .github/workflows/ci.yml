@@ -193,16 +193,15 @@ jobs:
 
   docs:
     # `just check` at the repository root: the documentation site build
-    # (`docs-build`, --strict), the root project's own test suite (`test`)
-    # -- the hooks' tests and the generation tests that render the
-    # template -- and the golden diff (`regen-check`), then `just
-    # typecheck` through `just check` and the wheel build, which the
-    # `golden` job above also runs on its own so a mismatch is named by a
-    # job of its own. Job id kept as `docs`
-    # rather than renamed: the documentation build is still most of what
-    # this job does, and renaming a job id changes what GitHub calls a
-    # required status check, which this repository cannot see or verify
-    # from here.
+    # (`docs-build`, --strict), `just typecheck` (mypy over the published
+    # package), the root project's own test suite (`test`) -- the hooks'
+    # tests, the pyfr-cli tests and the generation tests that render the
+    # template -- and the golden diff (`regen-check`), which the `golden` job
+    # above also runs on its own so a mismatch is named by a job of its own.
+    # Then the wheel build (`just wheel`). Job id kept as `docs` rather than
+    # renamed: the documentation build is still most of what this job does,
+    # and renaming a job id changes what GitHub calls a required status check,
+    # which this repository cannot see or verify from here.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

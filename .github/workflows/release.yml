@@ -449,6 +449,7 @@ jobs:
     needs: release
     if: needs.release.outputs.version != ''
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write   # the OpenID Connect token Trusted Publishing verifies
@@ -465,14 +466,20 @@ jobs:
 
       - name: Decide whether PyPI already has this version
         id: pypi
+        # 200: already there, nothing to do. 404: not yet, publish. Anything
+        # else -- a timeout, an outage -- is unknown, and the job fails
+        # rather than guessing; a rerun asks again.
         run: |
-          if curl --fail --silent --show-error --output /dev/null \
-              "https://pypi.org/pypi/pyfr-cli/${VERSION}/json"; then
-            echo "pyfr-cli ${VERSION} is on PyPI already."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              --max-time 30 --retry 3 --retry-all-errors \
+              "https://pypi.org/pypi/pyfr-cli/${VERSION}/json") || status="000"
+          case "$status" in
+            200) echo "pyfr-cli ${VERSION} is on PyPI already."
+                 echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+            404) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "PyPI answered HTTP ${status}; cannot tell whether ${VERSION} is published." >&2
+                 exit 1 ;;
+          esac
 
       - name: Build the sdist and the wheel
         if: steps.pypi.outputs.publish == 'true'
