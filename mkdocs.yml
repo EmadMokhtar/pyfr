@@ -69,6 +69,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
   - Decisions:
       - Overview: adr/README.md
       - 0002 cookiecutter over Copier and cruft: adr/0002-cookiecutter-over-copier-and-cruft.md

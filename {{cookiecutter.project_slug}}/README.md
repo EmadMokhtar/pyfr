@@ -82,6 +82,11 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just contract-release` | Promote `openapi.json` to the baseline. Only at a release — never to silence a red `contract-gates` |
 | `just test-record` | Re-record the outbound HTTP cassettes against the local payment stub — see [Outbound payments](#outbound-payments) |
 | `just mutants` / `just mutants-gate` | Mutation testing over `domain/` and `services/`, and the gate against the recorded floor |
+| `just docs-install` | Install the documentation toolchain (`uv sync --group docs`) |
+| `just docs` | Serve a live preview of the documentation site on <http://127.0.0.1:8001>, rebuilding on save |
+| `just docs-build` | Build the site into `site/` with `mkdocs build --strict`, exactly as CI's `docs` job and `docs.yml` do — a broken internal link or a renamed heading anchor fails it |
+| `just links` | Check every external link in `docs/` and this README with `lychee`, against `lychee.toml` — needs the `lychee` binary (`brew install lychee`); CI's `links` job gets it from the action |
+| `just docs-freshness [BASE] [HEAD]` | Advisory warnings only, never a failure: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not — what CI's `docs-warnings` job runs; not CI's `docs-freshness` job, which runs `scripts/check_docs_updated.py` |
 | `just docs-examples` | Start the compose stack, run every marked `curl` example in `docs/` against it, then tear it down — pass or fail |
 | `just redis-cli` | An interactive `redis-cli` session against the running compose cache |
 | `just minio-console` | Print, and try to open, the MinIO web console — see [Object storage](#object-storage) |

@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-13
+last_reviewed: 2026-09-14
 covers:
   - scripts/regen.py
   - tests/reference-answers.yaml
@@ -63,3 +63,7 @@ hand.
 - `ruff`, `mypy` and `import-linter` cannot run on the template body. They
   run on the example on every push, and — from PR 5 — on three sampled
   renders on merge.
+- The documentation follows the same rule: pages about the service live in
+  the template body and are rendered into the example's `docs/`; PyFr's
+  own site links to that render as the documentation every generated
+  project ships.

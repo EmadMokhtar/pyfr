@@ -1,69 +1,55 @@
 ---
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-14
 ---
 
 # Glossary
 
-Terms used across this site, each in one line.
+Terms used across this site, each in one line. This site is about PyFr —
+the template, how it is built and how a project is generated from it.
+Terms about the service a generated project runs — port, adapter,
+readiness, Problem Details, error budget, and the rest — are in the
+[reference service's glossary](https://emadmokhtar.github.io/pyfr/reference-service/glossary/),
+which every generated project carries for itself.
 
 | Term | Meaning |
 | --- | --- |
-| ADR | Architecture Decision Record — a one-page note recording a decision, its context, and its consequences. |
-| Adapter | A technology-specific implementation of a port, such as a PostgreSQL repository. |
-| ASGI | Asynchronous Server Gateway Interface — the contract between a Python web server and an application; it lets tests call the app directly, with no network. |
-| Cardinality | How many distinct values a field can take. A raw URL path has unbounded cardinality; a route template does not. |
-| Composition root | The single place where an application constructs and connects its dependencies. |
-| Conventional Commits | A commit message format (`feat:`, `fix:`, `feat!:`) that machines can read to decide version bumps. |
+| ADR | Architecture Decision Record — a one-page note recording a decision, its context, and its consequences. PyFr's own are 0002, 0003 and 0017; the rest belong to the service. |
+| Answers | The values given to the twelve prompts. `tests/reference-answers.yaml` holds the fixed set the reference service is rendered from; a generated project records its own in `.pyfr-answers.yml`. |
+| Backend combination | One choice for each of the three backend prompts — `database`, `cache`, `object_storage` — so eight combinations in all. "Everything on" is the default; "everything off" is `none` three times. |
+| Commitizen | The tool that checks each commit message against Conventional Commits, decides the next version from the commits since the last tag, writes the changelog and tags the release. Pinned once, in `uv.lock`, and run through `uv run --locked cz`. |
+| Conventional Commits | A commit message format (`feat:`, `fix:`, `feat!:`) that machines can read to decide version bumps. Required for every commit and every pull request title. |
 | cookiecutter | The tool that turns a project template plus your answers into a new repository. |
-| Copier | An alternative template tool with updates built in; considered and rejected. |
-| cruft | A tool adding update support to cookiecutter templates; considered and rejected. |
-| Correlation identifier | One value bound to every log line a single request produces. |
-| CVE | Common Vulnerabilities and Exposures — the public naming scheme for known vulnerabilities; `CVE-2026-56854` is one entry. |
-| CycloneDX | The SBOM format Trivy writes — one JSON document listing every component in an image, with versions. |
-| Dependabot | GitHub's own dependency-update service. Opens a pull request when a pinned version has a newer release. |
-| Diátaxis | A documentation framework separating tutorials, how-to guides, reference, and explanation. |
-| Drift gate | A build check that fails when a generated artifact no longer matches the code that produces it. |
-| Entity | An object with an identity that persists through change, such as an `Order`. |
-| Error budget | The amount of failure a service level objective permits — for example 0.1% of requests over 30 days. |
-| Frozen | Immutable after construction. Assigning to a field raises instead of changing the value. |
-| GHCR | GitHub Container Registry — `ghcr.io`, where the release workflow pushes the two images. |
-| gitleaks | A scanner that blocks commits containing secrets. |
-| Hypothesis | The property-based testing library used for domain invariants. |
-| import-linter | The tool that enforces the dependency rule by reading the import graph. |
-| Jinja | The placeholder language cookiecutter uses; `{{ }}` marks a substitution. |
-| just | A command runner. A `justfile` holds named recipes; `just <name>` runs one. |
-| Liveness | "Is this process alive?" — the question `/healthz` answers, without checking dependencies. |
-| Log agent | A platform process that reads containers' standard output and forwards it to a log store. |
+| Copier | An alternative template tool with updates built in; considered and rejected in [ADR 0002](adr/0002-cookiecutter-over-copier-and-cruft.md). |
+| `covers:` | Front-matter key on a documentation page listing the paths the page describes. A change to one of them without a change to the page is reported by the freshness check. |
+| cruft | A tool adding update support to cookiecutter templates; considered and rejected in the same record. |
+| Dependabot | GitHub's own dependency-update service. Opens a pull request when a pinned version has a newer release. It edits the rendered example, because it cannot parse Jinja, and `just adopt` carries the change into the template. |
+| Diátaxis | A documentation framework separating tutorials, how-to guides, reference, and explanation. Both sites follow it. |
+| Everything-on render | The render produced by the default answers: PostgreSQL, Redis and S3 all chosen. It is the same shape as the reference service. |
+| Full-suite tests | M7's fifth pull request: generate a project in continuous integration for three sampled combinations — everything on, everything off, PostgreSQL only — then `uv sync` and run its entire lint, type-check and test suite. Slow, so they run on merge and nightly rather than on every push. |
+| Generation tests | `tests/test_generation.py`: render every backend combination and assert what each render must satisfy — no unchosen backend left behind, no surviving template syntax, `ruff` clean, the site builds. Run on every push. |
+| GHCR | GitHub Container Registry — `ghcr.io`, where a project's release workflow pushes its container images. |
+| Golden diff | `just regen-check`: render the template with the reference answers and compare the result with the committed `examples/reference-service/`, byte for byte, `uv.lock` excepted. Any difference fails the build with the file named. CI's `golden` job. |
+| Hook | A script cookiecutter runs around a render. `hooks/pre_gen_project.py` refuses bad answers before any file is written; `hooks/post_gen_project.py` prunes the unchosen backends, keeps the chosen licence, and — outside regeneration — runs `git init`, `uv sync`, `pre-commit install` and the first commit. |
+| Jinja | The placeholder language cookiecutter uses; `{{ }}` marks a substitution and `{% if %}` a conditional block. |
+| just | A command runner. A `justfile` holds named recipes; `just <name>` runs one. The root has one, the template body has another. |
+| `just adopt` | Copy a line-for-line change Dependabot made in the rendered example back into the template file that renders it, then copy the root workflows' action pins into the template's workflows, and regenerate. Anything that is not a replaced line is refused and made by hand. |
+| `just regen` | Render the template with the reference answers into `examples/reference-service/`. The only way that directory changes. |
+| `last_reviewed` | Front-matter key on a documentation page: the date someone last read the page against the code. Older than 180 days, the freshness check warns. |
+| Left-strip tag | A Jinja block tag written `{%- … %}`: the dash removes the newline and whitespace before it, so the tag's own line vanishes from the render. Every conditional in the template body uses this form. |
+| lychee | The external-link checker. `just links` runs it over both sites' Markdown; CI's `links` job does the same from the action. |
 | Merge base | The most recent commit two branches share — the "before" state a three-way merge compares both sides against. |
-| Multi-architecture image | One image tag that holds a build per CPU architecture (`amd64`, `arm64`), so every machine pulls the same tag and gets its own. |
-| Mutation testing | Introducing small deliberate bugs to check whether the tests actually catch them. |
-| mypy | The static type checker. Strict on `domain/` and `services/`, lenient elsewhere. |
-| OCI image index | The manifest list behind a multi-architecture tag: one entry per platform, each pointing at that platform's image. OCI is the Open Container Initiative, which standardises image formats. |
-| OpenTelemetry | The vendor-neutral standard for traces, metrics, and logs. |
-| OTLP | OpenTelemetry Protocol — the wire format those signals are sent in. |
-| pip-audit | A tool that checks pinned Python packages against the PyPI advisory database. Runs here over a `uv export`, without pip. |
-| Port | An interface owned by the domain, describing what it needs without saying how. |
-| Problem Details | RFC 9457 — the internet standard shape for a JSON error body. |
-| Property-based testing | Generating many random inputs to check that a rule holds, rather than testing fixed examples. |
-| Protocol | Python's structural interface — satisfied by having the right methods, with no inheritance. |
-| Pydantic | The validation library. Used in the domain layer as a validation tool, not as a web framework. |
-| QEMU | A processor emulator. In CI it lets an `amd64` runner build the `arm64` side of a multi-architecture image. |
-| Readiness | "Can this instance serve traffic right now?" — the question `/readyz` answers. |
-| RED metrics | Rate, Errors, Duration — the three signals a request-serving service needs. |
-| Redaction | Replacing a value with `[REDACTED]` before a log record is rendered. Done by field name, in the shared processor chain. |
-| Repository | An interface for loading and saving entities, expressed in domain terms. |
-| ruff | The linter and formatter. |
-| SBOM | Software Bill of Materials — a machine-readable inventory of everything inside a built artifact. |
-| Semantic conventions | Agreed standard names for telemetry fields, so dashboards work across services and languages. |
-| SemVer | Semantic Versioning — `MAJOR.MINOR.PATCH`, where a major bump means a breaking change. |
-| SLI | Service Level Indicator — a measured number describing user-visible quality. |
-| SLO | Service Level Objective — the target for an SLI over a window. |
-| structlog | The structured logging library. A record is key/value data rendered at the end, not a pre-formatted string. |
-| Testcontainers | A library that starts real dependencies in Docker for the duration of a test run. |
+| MkDocs | The static-site generator behind both documentation sites, with the Material theme. `mkdocs build --strict` turns every warning into a failure. |
+| `no-docs-needed` | A pull-request label that switches off the hard documentation gate for a refactor or an internal-only change. |
+| pip-audit | A tool that checks pinned Python packages against the PyPI advisory database. `just audit` runs it over the root `uv.lock`; the reference service runs it over its own. |
+| Pruning | Removing everything that belongs to an unchosen backend from a render: whole files and directories by the post-generation hook's `PRUNED` table, lines inside mixed files by Jinja `{%- if %}` blocks. |
+| `.pyfr-answers.yml` | A file the template writes into every generated project, recording the answers and the template version it was rendered from. M8's template updates read it. Kept committed and unedited. |
+| Reference answers | `tests/reference-answers.yaml`: the fixed, everything-on answers `examples/reference-service/` is rendered from, with the names the reference service has carried since M0. |
+| Reference service | `examples/reference-service/`: the complete, running service rendered from the template with the reference answers, and never edited by hand. Its site is the worked example of the documentation every generated project ships. |
+| Render | The output of running cookiecutter over the template body with one set of answers. The reference service is one render; the generation tests make eight more. |
+| SemVer | Semantic Versioning — `MAJOR.MINOR.PATCH`, where a major bump means a breaking change. Below 1.0.0, a breaking change bumps the minor number instead. |
+| Squash merge | Merging a pull request as one commit whose message is the pull request title. Why the title must be a Conventional Commit. |
+| Template body | `{{cookiecutter.project_slug}}/`: the directory cookiecutter renders, and the only source of truth for the service. Its name is itself a placeholder, replaced by the project slug. |
 | Three-way merge | A merge using the merge base plus both sides, so a tool can tell "they changed it" apart from "you changed it". |
-| Trivy | A scanner that finds known vulnerabilities in container images. |
-| uv | A fast Python package and project manager. The only Python tool PyFr requires. |
-| Value object | An object defined only by its values, with no identity, such as `Money`. |
-| VCR / cassette | Recording real HTTP responses to a file and replaying them in later test runs. |
-| Vendor branch | A branch holding pristine upstream output and nothing else, merged in to receive upstream changes. |
-| Walking skeleton | A thin but complete end-to-end implementation, proving the architecture before features are added. |
+| uv | A fast Python package and project manager. The only Python tool PyFr requires; `uvx` runs cookiecutter through it without an install. |
+| Vendor branch | A branch holding pristine upstream output and nothing else, merged in to receive upstream changes. How M8's template updates work. |
+| Walking skeleton | A thin but complete end-to-end implementation, proving the architecture before features are added. M0 was one. |

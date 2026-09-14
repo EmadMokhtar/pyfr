@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-13
+last_reviewed: 2026-09-14
 ---
 
 # Decision records
@@ -19,6 +19,15 @@ destroys the only account of why the software is the way it is.
 
 For the same reason, records are exempt from the review-date warning that
 covers every other page on this site. A decision does not go stale.
+
+## Adding one
+
+Copy [`template.md`](template.md), take the next number, and add it to the
+nav in `mkdocs.yml`. The numbering is shared with the service's records —
+the next number is the one after the highest on either site, so 0018
+follows 0017 wherever it is written. Write it when the decision is made,
+while the alternatives are still fresh — a record written six months later
+is a reconstruction, and it shows.
 
 ## The records
 
