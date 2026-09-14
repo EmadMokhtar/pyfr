@@ -201,11 +201,9 @@ only. After it, the base for the *second* update must be the template
 commit the first merged — and a squash-merged pull request (this
 repository's own practice, and most teams') discards the merge commit, so
 that template commit survives nowhere unless the branch itself was pushed.
-Rebuilding from the root would make the second update re-merge everything
-the first already merged, conflicting on every file both sides touched.
-So the tool pushes `template` to `origin` before it merges, and every
-machine — a laptop, the weekly workflow's fresh checkout — starts by
-fetching it.
+The pushed branch keeps that commit alive; section 4.7 says how the merge
+is told to use it. Every machine — a laptop, the weekly workflow's fresh
+checkout — starts by fetching it.
 
 **Finding it**, in order:
 
@@ -235,9 +233,10 @@ noisier merge.
 **The branch's version** is the tip's trailer, or the base's answers file.
 It must equal the recorded version or the target; anything else means the
 answers file and the branch disagree, and the tool stops and says so. When
-the tip already records the target, sections 4.4 and 4.5 are skipped — a
-re-run after a conflicted merge, or a laptop picking up what the weekly
-workflow already pushed.
+the tip already records the target, sections 4.4 and 4.5 are skipped — the
+render still runs, because step 10's answers file comes from it, but the
+sync, commit and push do not — a re-run after a conflicted merge, or a
+laptop picking up what the weekly workflow already pushed.
 
 ### 4.4 Render
 
@@ -288,11 +287,18 @@ Pyfr-Template-Version: v0.12.0
 ```
 
 `--allow-empty`: when nothing in the body changed for these answers, the
-trailer still records the version. Then `git push origin template`, unless
-`--no-push`. A rejected push (another machine advanced the branch in
-between) stops the run with exit 2; a re-run fetches and continues. The
-worktree is removed in a `finally`; `git worktree prune` at the start of
-every run clears what a killed run left.
+trailer still records the version.
+
+The commit passes `--no-verify`, as does every commit this tool makes: the
+worktree shares `.git/hooks`, where the generator installed pre-commit,
+and the project's hooks must not run against the pristine template in a
+directory that has no environment. CI runs the gates on the pull request.
+
+Then `git push origin template`, unless `--no-push`. A rejected push
+(another machine advanced the branch in between) stops the run with exit
+2; a re-run fetches and continues. The worktree is removed in a `finally`;
+`git worktree prune` at the start of every run clears what a killed run
+left.
 
 ### 4.6 Migration scripts
 
@@ -311,6 +317,21 @@ leave are committed as `chore: prepare for template v0.12.0` so the merge
 starts from a clean tree; section 6 gives the scripts' contract.
 
 ### 4.7 Merge and record
+
+**Pinning the merge base.** The base must be the template commit at the
+*recorded* version — call it `T_prev`: the root commit on a first update,
+otherwise the `template` commit whose trailer names the recorded version.
+Git would pick it by itself only if `T_prev` is in `HEAD`'s history, and
+after a squash-merged update pull request it is not: the squash discards
+the merge commit, `git merge-base` falls back to the root, and every hunk
+the team resolved last time conflicts again (verified in the PR 1 plan).
+So when `T_prev` is not an ancestor of `HEAD`, the tool adds it as a
+temporary extra parent — `git replace --graft HEAD <HEAD's parents>
+T_prev`, a replacement object under `refs/replace/` that changes how git
+reads the commit, not the commit itself — runs the merge, and deletes the
+graft. The merge commit's parents are the real `HEAD` and the template
+commit; nothing of the graft remains. This is what makes `origin/template`
+necessary: `T_prev` must exist somewhere.
 
 ```
 git merge --no-ff --no-commit template
@@ -409,11 +430,12 @@ groups.
 
 ### 5.2 `.pyfr-update-ignore`
 
-The paths an update never touches. Gitignore syntax: blank lines and `#`
-comments are skipped, a trailing `/` names a directory and everything under
-it, `*` and `**` as in `.gitignore`, `!` negates. The tool applies it in
-step 4.5 — the template side never changes these paths, so the merge never
-forms an opinion about them.
+The paths an update never touches. Gitignore syntax: blank lines and lines
+starting with `#` are skipped (a `#` after a pattern is part of the
+pattern, as in `.gitignore`), a trailing `/` names a directory and
+everything under it, `*` and `**` as in `.gitignore`, `!` negates. The tool
+applies it in step 4.5 — the template side never changes these paths, so
+the merge never forms an opinion about them.
 
 The generated default, rendered for the answers (`<package>` is
 `package_name`; the `migrations/` and `schema.sql` lines appear only when
@@ -421,19 +443,28 @@ The generated default, rendered for the answers (`<package>` is
 
 ```
 # Paths `just update` leaves exactly as this project has them: yours from
-# the first day, or artifacts of your code. Add paths as you diverge.
+# the first day, or artifacts of your code. Add paths as you diverge --
+# one gitignore pattern per line, comments on their own lines.
 # Everything not listed is template-owned and receives fixes by default.
-.pyfr-answers.yml        # written by the update itself
-.pyfr-update-ignore      # this file
+
+# Written by the update itself.
+.pyfr-answers.yml
+# This file.
+.pyfr-update-ignore
 README.md
 CHANGELOG.md
-uv.lock                  # resolver output; run `uv lock` after an update that touched pyproject.toml
-migrations/              # your schema
+# Resolver output; run `uv lock` after an update that touched pyproject.toml.
+uv.lock
+# Your schema.
+migrations/
 schema.sql
-openapi.json             # an artifact of your code
-openapi.baseline.json    # promoted by your release workflow
-docs/adr/                # your decisions
-src/<package>/domain/    # the example slice, then your business model
+# Artifacts of your code: the contract, and the baseline your release promotes.
+openapi.json
+openapi.baseline.json
+# Your decisions.
+docs/adr/
+# The example slice, then your business model.
+src/<package>/domain/
 src/<package>/services/
 src/<package>/api/v1/
 ```
@@ -659,8 +690,10 @@ Scenarios, each a test:
 2. **Squash-merge survival**: squash the merge commit into one ordinary
    commit (`git reset --soft` to the pre-merge commit, commit), tag
    `v100.2.0` on the remote with one more template change, update again —
-   exit 0, no conflict, because the base came from `origin/template`.
-   This is decision M8-3's proof.
+   exit 0, no conflict, because the merge base was pinned to the template
+   commit at the recorded version, which `origin/template` keeps alive
+   (section 4.7). This is the proof of decision M8-3 and of the pinned
+   base.
 3. **Conflict and resume**: edit the `ruff.toml` line the template also
    changes; update → exit 1; `conflict: ruff.toml` printed;
    `.pyfr-answers.yml` staged at the new version; the state file exists;

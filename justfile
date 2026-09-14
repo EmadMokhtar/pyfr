@@ -97,12 +97,18 @@ regen-check:
 adopt:
     uv run --group dev python scripts/regen.py --adopt
 
-# ruff over the root's own Python -- hooks/, scripts/, tests/. ruff.toml's
-# extend-exclude keeps it out of the template body; the example is linted
-# with its own ruff.toml, by its own `just lint`.
-lint:
+# ruff over the root's own Python -- hooks/, scripts/, src/, tests/ --
+# then mypy over the published package. ruff.toml's extend-exclude keeps
+# both out of the template body; the example is linted with its own
+# ruff.toml, by its own `just lint`.
+lint: typecheck
     uv run --group dev ruff check .
     uv run --group dev ruff format --check .
+
+# mypy --strict over src/pyfr_cli, the one package this repository
+# publishes (pyproject.toml's [tool.mypy] names the files).
+typecheck:
+    uv run --group dev mypy
 
 # Audit the documentation and release toolchain's lock the same way the
 # reference service audits its own -- see that justfile's `audit` for the
@@ -142,4 +148,4 @@ docs-freshness base="origin/main" head="HEAD":
     cd examples/reference-service && uv run --group docs python scripts/check_docs_freshness.py {{base}} {{head}}
 
 # Everything CI checks at the repository level.
-check: docs-build test regen-check
+check: docs-build typecheck test regen-check

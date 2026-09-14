@@ -4,7 +4,7 @@
 # root's hooks lint examples/reference-service/ with that project's copy.
 line-length = 88
 target-version = "py313"
-src = ["scripts", "tests"]
+src = ["scripts", "tests", "src"]
 # The template body is Jinja, not Python; it is linted as its render, in
 # examples/reference-service/ -- which this file must NOT exclude: the
 # pre-commit hooks pass the example's files with --force-exclude, and an
@@ -47,6 +47,9 @@ select = [
 # fixed literal, never input.
 "scripts/*" = ["S603", "S607"]
 "hooks/*" = ["S603", "S607"]
+# src/pyfr_cli shells out to git and uv the same way; every argument list
+# is a fixed literal or a path the tool computed.
+"src/*" = ["S603", "S607"]
 
 [lint.isort]
-known-first-party = ["regen", "check_site_links"]
+known-first-party = ["regen", "check_site_links", "pyfr_cli", "cli"]

@@ -1,30 +1,66 @@
-# The PyFr repository's own tooling, not a distributable package.
+# The PyFr repository's own project: the documentation toolchain, the
+# template's test suite, and -- since M8 -- the `pyfr-cli` package.
 #
-# PyFr v1 is a cookiecutter template (see docs/explanation/why-a-template.md):
-# nothing here is published to a package index, and a generated service
-# imports no PyFr package. This file exists so `uv` has a project to sync —
-# today that is the documentation toolchain; M7 adds the template's own test
-# suite (cookiecutter, pytest-cookies) to a `dev` group beside it.
+# PyFr v1 is a cookiecutter template (see docs/explanation/why-a-template.md).
+# A generated service imports no PyFr package and has no runtime
+# dependency on this repository (spec D1). What IS published, to PyPI, is
+# `pyfr-cli`: the development-time tool a generated project runs through
+# `uvx` to pull in a newer template version (M8 spec, section 3). It is
+# built from src/pyfr_cli/ only; hooks/, scripts/, tests/ and the template
+# body never enter the wheel.
 #
 # The reference service has its own, entirely separate `pyproject.toml` under
 # examples/reference-service/. The two are never synced together.
 [project]
-name = "pyfr"
+name = "pyfr-cli"
 version = "0.10.0"
-description = "PyFr — a cookiecutter template for production-ready Python microservices"
+description = "PyFr — a cookiecutter template for production-ready Python microservices, and the tool that keeps a generated project up to date with it"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { file = "LICENSE" }
+dependencies = [
+    # Renders the template at the target version inside `pyfr update`;
+    # the same range the template's own tests render with.
+    "cookiecutter>=2.6,<3",
+    # .pyfr-answers.yml, the one file an update reads and rewrites.
+    "pyyaml>=6.0",
+    # .pyfr-update-ignore uses gitignore syntax; pathspec is the
+    # pure-Python implementation of gitignore matching.
+    "pathspec>=0.12",
+]
+
+[project.scripts]
+pyfr = "pyfr_cli.__main__:main"
+
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pyfr_cli"]
+
+[tool.hatch.build.targets.sdist]
+# The sdist is the wheel's source and nothing else: not the template body,
+# not the example, not the tests.
+only-include = ["src/pyfr_cli", "README.md", "LICENSE"]
 
 [tool.uv]
-# No build-system section below, so uv already treats this as a virtual
-# project. Stated explicitly so the intent survives someone later adding
-# dependencies here and wondering why nothing installs `pyfr` itself.
-package = false
 # Never resolve to a pre-release unless a requirement names one; the same
 # rule as the template's pyproject.toml, for the same reason (PR #32). No
 # requirement here names one, so this lock holds no pre-releases at all.
 prerelease = "explicit"
+
+[tool.mypy]
+# The published tool is type-checked strictly; nothing else at the root is
+# (hooks/ and scripts/ are checked by their tests). `just typecheck`.
+strict = true
+python_version = "3.13"
+files = ["src/pyfr_cli"]
+
+[[tool.mypy.overrides]]
+# cookiecutter ships no type information.
+module = ["cookiecutter.*"]
+ignore_missing_imports = true
 
 [tool.commitizen]
 name = "cz_conventional_commits"
@@ -78,25 +114,16 @@ dev = [
     # `uv run --locked --group dev cz` (ADR 0014).
     "commitizen==4.18.0",
     "pytest>=8.3",
-    # `just docs-freshness` runs the example's scripts/check_docs_freshness.py
-    # from the root's environment, and that script does `import yaml`
-    # directly; scripts/regen.py and tests/test_generation.py import it too.
-    # Declared here rather than left to arrive transitively through the
-    # `docs` group's MkDocs: `dev` must be installable, and usable, on its
-    # own, without a `docs` sync alongside it. Floor matches what uv.lock
-    # already resolves.
-    "pyyaml>=6.0.3",
-    # The template's own tests render it (pytest-cookies wraps cookiecutter's
-    # Python API) and scripts/regen.py renders it for the golden diff. Both
-    # run from this group so the version that renders the example is the
-    # version in uv.lock.
-    "cookiecutter>=2.6,<3",
     "pytest-cookies>=0.7",
     # The repository's git hooks (.pre-commit-config.yaml at the root). Until
     # M7 the reference service's configuration doubled as the repository's;
     # now the service's is written for a generated project and cannot run
     # nested inside this repository (Verified Fact 1 of the M7 PR 1 plan).
     "pre-commit>=4.0",
+    # `just typecheck`: mypy --strict over src/pyfr_cli. types-pyyaml is
+    # the stub package for pyyaml, which ships no type information.
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
     # The root has Python of its own -- hooks/, scripts/, tests/ -- and its
     # hooks must not depend on the example's environment, which does not
     # exist between the move and the first regeneration. A second ruff pin,
