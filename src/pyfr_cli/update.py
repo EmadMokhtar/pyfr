@@ -157,7 +157,8 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         clean = _merge(git, previous, body, recorded.version, target, out)
         # Step 10, clean or not: the answers file is an ignored path, so the
         # merge never touched it, and staged here it rides in the merge commit.
-        answers.install(rendered.project, project)
+        # `template` is the URL this update used, recorded or --template.
+        answers.install(rendered.project, project, template)
         git.run("add", answers.FILE)
         # Same for the ignore file, when the project has none yet: the
         # built-in default ignores it, so the merge could not bring it.

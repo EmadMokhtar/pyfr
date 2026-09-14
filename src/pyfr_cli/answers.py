@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import shutil
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,21 +72,48 @@ def context(
     return recorded, defaulted
 
 
-def install(rendered_project: Path, project: Path) -> None:
+# The `_template:` line of an answers file, wherever it is in the file.
+TEMPLATE_LINE = re.compile(r"^_template:[^\n]*$", re.MULTILINE)
+
+
+def install(rendered_project: Path, project: Path, template: str) -> None:
     """Step 10: the render's answers file -- the recorded answers, the new
-    prompts' defaults, the target version -- becomes the project's."""
-    shutil.copyfile(rendered_project / FILE, project / FILE)
+    prompts' defaults, the target version -- becomes the project's.
+
+    Except for `_template`: the render carries the URL the template body
+    hard-codes, upstream's, while this update rendered `template` -- the
+    URL the project recorded, or --template. The version written here is
+    that repository's, so its URL is what stays recorded: a fork stays
+    pointed at itself. Only that line is rewritten; every other byte of
+    the render's file is kept.
+    """
+    text = (rendered_project / FILE).read_text()
+    if _value_in(text, "_template") != template:
+        # yaml decides the quoting, for a URL that needs any.
+        line = yaml.safe_dump({"_template": template}).rstrip("\n")
+        text, found = TEMPLATE_LINE.subn(lambda _match: line, text, count=1)
+        if not found:
+            text += line + "\n"
+    (project / FILE).write_text(text)
 
 
 def version_in(text: str) -> Version | None:
     """The _template_version an answers file's text records, if any."""
+    value = _value_in(text, "_template_version")
+    if value is None:
+        return None
+    try:
+        return Version.parse(value)
+    except ValueError:
+        return None
+
+
+def _value_in(text: str, key: str) -> str | None:
+    """The value of `key` in an answers file's text, as a string, if any."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError:
         return None
-    if not isinstance(data, dict) or "_template_version" not in data:
+    if not isinstance(data, dict) or key not in data:
         return None
-    try:
-        return Version.parse(str(data["_template_version"]))
-    except ValueError:
-        return None
+    return str(data[key])

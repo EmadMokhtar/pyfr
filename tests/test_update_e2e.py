@@ -291,12 +291,12 @@ def test_a_clean_update_merges_the_template_and_keeps_the_team_s_work(
     moved = (project / "config" / "lychee.toml").read_text()
     assert "# team note\n" in moved
     assert moved.endswith("# migrated by after.py to v100.1.0\n")
-    # ... and the answers record the new version and the new prompt.
+    # ... and the answers record the new version, the new prompt, and the
+    # template URL this update used -- not the body's hard-coded upstream one.
     assert recorded_version(project) == "100.1.0"
-    assert (
-        yaml.safe_load((project / ".pyfr-answers.yml").read_text())["team_channel"]
-        == "#platform"
-    )
+    written = yaml.safe_load((project / ".pyfr-answers.yml").read_text())
+    assert written["team_channel"] == "#platform"
+    assert written["_template"] == str(template_remote)
 
     # The commits: prepare (before.py), the merge with the changelog body,
     # finish (after.py).
