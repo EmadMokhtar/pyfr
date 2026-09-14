@@ -125,6 +125,27 @@ def test_render_surfaces_a_recorded_choice_the_target_no_longer_offers(
     assert "flavour" in stop.value.cause
 
 
+@pytest.mark.parametrize("before", [None, "0"])
+def test_a_failed_render_restores_pyfr_regen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, before: str | None
+) -> None:
+    # Whatever the variable was before -- unset, or set to another value
+    # by the caller's own environment -- it is that again afterwards.
+    template = write_template(tmp_path / "template")
+    if before is None:
+        monkeypatch.delenv("PYFR_REGEN", raising=False)
+    else:
+        monkeypatch.setenv("PYFR_REGEN", before)
+    with pytest.raises(UpdateError):
+        render.render(
+            template,
+            Version(1, 1, 0),
+            recorded(tmp_path, flavour="hot"),
+            tmp_path / "out",
+        )
+    assert os.environ.get("PYFR_REGEN") == before
+
+
 def test_prompts_are_the_non_underscore_keys(tmp_path: Path) -> None:
     template = write_template(tmp_path / "template")
     assert list(render.prompts(template)) == ["project_slug", "flavour", "greeting"]
