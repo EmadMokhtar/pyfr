@@ -4,6 +4,7 @@ and the cheap answers. The full flow is tests/test_update_e2e.py."""
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 import pytest
@@ -105,3 +106,71 @@ def test_a_merge_in_progress_that_is_not_ours_is_refused(project: Path) -> None:
     assert not update.Git(project).ok("merge", "other")
     error = refused(project, "a merge is in progress")
     assert "git merge --abort" in error.fix
+
+
+def test_resume_after_an_aborted_merge_starts_over(project: Path) -> None:
+    # No real merge happened; the state file alone says one was in progress.
+    # recorded (v0.10.0) != state.to (v0.11.0), so this is the "aborted"
+    # branch: clear the state and fall through to the normal flow.
+    state_path = update.state.path(update.Git(project))
+    state_path.write_text(
+        json.dumps(
+            {"from": "v0.9.0", "to": "v0.11.0", "phase": "merging", "graft": None}
+        )
+    )
+    code, out = run(project)
+    assert code == 0
+    assert out == (
+        "resume: the previous merge was aborted; starting over\n"
+        "already current at v0.10.0\n"
+    )
+    assert not state_path.exists()
+
+
+def test_resume_with_a_clean_uncommitted_merge_reports_no_conflicts(
+    project: Path,
+) -> None:
+    # A killed run can leave a merge that finished with zero conflicts but
+    # was never committed (git merge --no-commit always stops before the
+    # commit, clean or not). The next run must tell this apart from a real
+    # conflict and not print CONFLICT_HELP, which talks about files to
+    # resolve when there are none.
+    git(project, "branch", "other")
+    git(project, "switch", "-q", "other")
+    (project / "extra.txt").write_text("extra\n")
+    commit_all(project, "feat: extra file")
+    git(project, "switch", "-q", "main")
+    git(project, "merge", "--no-ff", "--no-commit", "other")
+    state_path = update.state.path(update.Git(project))
+    state_path.write_text(
+        json.dumps(
+            {"from": "v0.10.0", "to": "v0.11.0", "phase": "merging", "graft": None}
+        )
+    )
+    code, out = run(project)
+    assert code == 1
+    assert "an uncommitted merge is waiting" in out
+    assert "conflict:" not in out
+
+
+def test_resume_after_the_merge_refuses_a_dirty_tree(project: Path) -> None:
+    # recorded == state.to: the merge was already committed and only the
+    # after-scripts remain. An edit made after that commit must not be
+    # swept into the "finish" commit.
+    updated = (project / ".pyfr-answers.yml").read_text().replace("0.10.0", "0.11.0")
+    (project / ".pyfr-answers.yml").write_text(updated)
+    commit_all(project, "chore: record 0.11.0")
+    state_path = update.state.path(update.Git(project))
+    state_path.write_text(
+        json.dumps(
+            {
+                "from": "v0.10.0",
+                "to": "v0.11.0",
+                "phase": "after-scripts",
+                "graft": None,
+            }
+        )
+    )
+    (project / "README.md").write_text("dirty\n")
+    error = refused(project, "uncommitted changes")
+    assert "reset --hard" in error.fix

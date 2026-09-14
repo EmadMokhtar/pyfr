@@ -81,12 +81,7 @@ def update(project: Path, options: Options, out: TextIO) -> int:
             f"a {operation} is in progress",
             f"finish it, or abort it with git {operation} --abort, then run again",
         )
-    if git.has_tracked_changes():
-        raise UpdateError(
-            "the working tree has uncommitted changes",
-            "commit or discard them first: a clean tree is what makes every "
-            "step of the update reversible with git reset --hard HEAD",
-        )
+    _require_clean(git)
 
     available = versions.remote_versions(template, git)
     target = versions.resolve_target(options.to, available)
@@ -137,13 +132,19 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         _commit_changes(git, f"chore: prepare for template {target}", out)
 
         body = _changelog(clone, recorded.version, target, template)
+        # Recorded before the merge starts: a run killed between here and the
+        # merge commit (Ctrl-C, or a broken pipe under `pyfr update | head`)
+        # must still leave a state file behind. Otherwise the next run either
+        # sees a committed merge with no state and silently skips the
+        # after-scripts, or sees an uncommitted tool merge and reports it as
+        # a foreign one.
+        state.save(git, state.State(recorded.version, target, "merging"))
         clean = _merge(git, previous, body, recorded.version, target, out)
         # Step 10, clean or not: the answers file is an ignored path, so the
         # merge never touched it, and staged here it rides in the merge commit.
         answers.install(rendered.project, project)
         git.run("add", answers.FILE)
         if not clean:
-            state.save(git, state.State(recorded.version, target, "merging"))
             out.write(CONFLICT_HELP)
             return 1
         git.run(
@@ -182,6 +183,15 @@ def _preconditions(git: Git, project: Path) -> None:
         )
 
 
+def _require_clean(git: Git) -> None:
+    if git.has_tracked_changes():
+        raise UpdateError(
+            "the working tree has uncommitted changes",
+            "commit or discard them first: a clean tree is what makes every "
+            "step of the update reversible with git reset --hard HEAD",
+        )
+
+
 def _resume(
     git: Git,
     project: Path,
@@ -194,11 +204,17 @@ def _resume(
     committed and the after-scripts remain (run them, 0), or the merge was
     aborted (clear the state and start over: None)."""
     if git.operation_in_progress() == "merge":
-        for path in git.out("diff", "--name-only", "--diff-filter=U").splitlines():
-            out.write(f"conflict: {path}\n")
-        out.write(CONFLICT_HELP)
+        conflicts = _report_conflicts(git, out)
+        if conflicts:
+            out.write(CONFLICT_HELP)
+        else:
+            out.write(
+                "merge: an uncommitted merge is waiting; commit it with git "
+                "commit, then run pyfr update again\n"
+            )
         return 1
     if recorded.version == pending.to_version:
+        _require_clean(git)
         out.write(f"resume: finishing the update to {pending.to_version}\n")
         with tempfile.TemporaryDirectory(prefix="pyfr-update-") as scratch:
             clone = render.clone_template(
@@ -222,6 +238,16 @@ def _ungraft(git: Git, pending: state.State) -> None:
     ref behind; drop it before anything reads history."""
     if pending.graft is not None:
         git.run("replace", "--delete", pending.graft, check=False)
+
+
+def _report_conflicts(git: Git, out: TextIO) -> list[str]:
+    """The unmerged paths of the merge in progress, printed as `conflict:`
+    lines and returned -- empty when a killed run left a clean merge
+    uncommitted rather than a real conflict."""
+    paths = git.out("diff", "--name-only", "--diff-filter=U").splitlines()
+    for path in paths:
+        out.write(f"conflict: {path}\n")
+    return paths
 
 
 def _merge(
@@ -257,20 +283,25 @@ def _merge(
     finally:
         if grafted is not None:
             git.run("replace", "--delete", grafted, check=False)
+    if result.returncode != 0 and git.operation_in_progress() != "merge":
+        # Refused before it started: untracked files in the way, typically.
+        # Nothing is in progress, so the state this run just saved is stale
+        # and would otherwise be mistaken for a real paused merge.
+        state.clear(git)
+        raise UpdateError(
+            f"git merge could not start: {result.stderr.strip()}",
+            "move the files it names out of the way, then run again",
+        )
+    # Written only once the merge is actually in progress (or done): a
+    # could-not-start merge above must leave no prepared message behind for
+    # git to pre-fill into the user's next manual commit.
     message = f"chore: update template {recorded} -> {target}\n"
     if body:
         message += f"\n{body}"
     (git.git_dir() / "MERGE_MSG").write_text(message)
     if result.returncode == 0:
         return True
-    if git.operation_in_progress() != "merge":
-        # Refused before it started: untracked files in the way, typically.
-        raise UpdateError(
-            f"git merge could not start: {result.stderr.strip()}",
-            "move the files it names out of the way, then run again",
-        )
-    for path in git.out("diff", "--name-only", "--diff-filter=U").splitlines():
-        out.write(f"conflict: {path}\n")
+    _report_conflicts(git, out)
     return False
 
 
