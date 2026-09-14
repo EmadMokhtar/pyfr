@@ -31,9 +31,9 @@ Run these from the project root.
 | `just precommit` | Run the pre-commit hooks over the project's tracked files. |
 | `just check` | Everything above, then `git diff --exit-code`. Run this before pushing. |
 {%- if cookiecutter.database == "postgres" %}
-| `just check-all` | Everything `just check` does, plus the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
+| `just check-all` | Everything `just check` does, plus the site build, the container tier, all five schema gates and the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
 {%- else %}
-| `just check-all` | Everything `just check` does, plus the container tier, the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
+| `just check-all` | Everything `just check` does, plus the site build, the container tier, the configuration drift check, the SLO rule gates, and the contract gates. Needs Docker. |
 {%- endif %}
 | `just up` | Build the image and start the container stack. Once the API is healthy, a one-shot `seed` container creates five fixed orders through it — see [Getting started](../getting-started.md#start-with-data-in-it). |
 | `just down` | Stop the stack and remove its volumes, the seed's state included. |

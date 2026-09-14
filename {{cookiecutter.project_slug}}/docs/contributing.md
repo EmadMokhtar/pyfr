@@ -54,10 +54,11 @@ contract or observability:
 just check-all
 ```
 
-That is `check`, then `test-integration`, `gates`, `o11y-gates` and
-`contract-gates` — the five gates CI runs as separate jobs, in one local
-command. It needs Docker: the integration tier starts real containers, and
-the contract gate runs `oasdiff` in one.
+That is `check`, then `docs-build`, `test-integration`, `gates`,
+`o11y-gates` and `contract-gates` — the six gates CI runs as separate
+jobs (`check`, `docs`, `integration`, `gates`, `o11y-gates` and
+`contract`), in one local command. It needs Docker: the integration tier
+starts real containers, and the contract gate runs `oasdiff` in one.
 
 `just security` is the other check worth running before a pull request that
 touches a dependency or a Dockerfile. It builds every image this project

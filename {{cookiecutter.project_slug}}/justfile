@@ -390,17 +390,20 @@ check: lint typecheck imports test precommit
     git diff --exit-code
 
 # What running every gate locally, in one command, looks like. CI does not
-# call this recipe itself — `ci.yml` runs `check`, `test-integration`,
-# `gates`, `o11y-gates` and `contract-gates` as five separate jobs, in
-# parallel, so one failure names the gate that broke instead of an opaque
-# `check-all` exit code. This recipe is for a developer who wants the same
-# coverage before opening the pull request, without waiting on CI to say so.
-# Separate from `check` so the fast loop stays fast and usable without
-# Docker.
+# call this recipe itself — `ci.yml` runs `check`, `docs-build`,
+# `test-integration`, `gates`, `o11y-gates` and `contract-gates` as six
+# separate jobs (`check`, `docs`, `integration`, `gates`, `o11y-gates`,
+# `contract`), in parallel, so one failure names the gate that broke
+# instead of an opaque `check-all` exit code. This recipe is for a
+# developer who wants the same coverage before opening the pull request,
+# without waiting on CI to say so. Separate from `check` so the fast loop
+# stays fast and usable without Docker.
 #
-# Everything `check` does, plus the container tier and the three gate
-# recipes -- the five jobs CI runs separately, as one local command.
-check-all: check test-integration gates o11y-gates contract-gates
+# The site build comes first among the additions: it is the one that needs
+# no Docker, so it fails fast. `just --list` shows the line below.
+#
+# Everything `check` does, plus the site build, the container tier and the three gate recipes -- the six jobs CI runs separately, as one local command.
+check-all: check docs-build test-integration gates o11y-gates contract-gates
 
 # Audit every pinned dependency in uv.lock against the PyPI advisory
 # database. `uv export` writes the lock as a fully hashed requirements

@@ -131,7 +131,7 @@ the ids. `just seed` does the same against `just dev`.
 | `just typecheck` | mypy — strict on domain and services |
 | `just imports` | Verify the layer dependency rule |
 | `just check` | lint, typecheck, imports, test, precommit, then `git diff --exit-code` — fails loudly if any pre-commit hook (ruff-format, uv-lock, and others mutate files) changed the tree instead of silently passing on a second run; needs no Docker; run this before pushing |
-| `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same five gates CI runs as separate jobs, in one local command; run it before a pull request that touches the schema, the adapter, the API contract, or observability |
+| `just check-all` | `check`, plus `docs-build`, `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same six gates CI runs as separate jobs (`check`, `docs`, `integration`, `gates`, `o11y-gates`, `contract`), in one local command; run it before a pull request that touches the schema, the adapter, the API contract, observability, or the documentation |
 | `just up` / `just down` | Start / stop the container stack; `up` seeds five orders once the API is healthy, `down` removes the volumes, the seed's state included |
 | `just seed` | Create the same five orders against `just dev` (`localhost:${APP_HTTP_PORT}`), idempotently — state in `.seed-state.json`, ignored by git |
 {%- if cookiecutter.database == "postgres" %}
