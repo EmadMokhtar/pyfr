@@ -110,6 +110,9 @@ def test_ensure_refuses_a_branch_below_the_recorded_version(project: Path) -> No
         "template is at v0.10.0 but .pyfr-answers.yml records v0.11.0, which is newer"
     )
     assert vendor.GUIDE in stop.value.fix
+    # The branch this run created is gone again, so the next run does not
+    # report it as "exists locally but not on origin".
+    assert not Git(project).branch_exists("template")
 
 
 def test_ensure_refuses_a_branch_above_the_target(
@@ -305,6 +308,8 @@ def test_a_base_without_an_answers_file_is_an_error(project: Path) -> None:
     with pytest.raises(UpdateError) as stop:
         vendor.ensure(Git(project), V10, V12)
     assert "has no .pyfr-answers.yml" in stop.value.cause
+    # A branch the user made is theirs to keep, refused or not.
+    assert Git(project).branch_exists("template")
 
 
 def test_commit_for_finds_the_commit_that_renders_a_version(
@@ -333,3 +338,28 @@ def test_remote_tip_matches_only_the_full_branch_name(project: Path) -> None:
     git(project, "branch", "template", root)
     git(project, "push", "-q", "origin", "template")
     assert vendor.remote_tip(repo) == root
+
+
+def test_ensure_removes_a_worktree_a_killed_run_left_behind(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    repo = Git(project)
+    sha = update_branch(project, rendered, tmp_path)
+    vendor.push(repo)
+    # A run killed before its clean-up: the worktree is still on disk, so
+    # `git worktree prune` keeps its entry, and git refuses to move the
+    # branch or to check it out anywhere else.
+    root = git(project, "rev-list", "--max-parents=0", "HEAD")
+    git(project, "branch", "--force", "template", root)  # the local copy is behind
+    leftover = tmp_path / "pyfr-update-dead" / "worktree"
+    git(project, "worktree", "add", "-q", str(leftover), "template")
+    (leftover / "half-written.txt").write_text("x\n")
+    assert not repo.ok("branch", "--force", "template", sha)
+    assert not repo.ok("worktree", "add", "-q", str(tmp_path / "wt2"), "template")
+    branch = vendor.ensure(repo, V10, V12)
+    assert branch.version == V12
+    assert git(project, "rev-parse", "template") == sha
+    assert "refs/heads/template" not in git(project, "worktree", "list", "--porcelain")
+    assert not leftover.exists()
+    with vendor.worktree(repo, tmp_path / "wt2") as worktree:
+        assert worktree.out("rev-parse", "HEAD") == sha

@@ -100,8 +100,10 @@ def ensure(
     """
     notes: list[str] = []
     created = False
-    # A run that died may have left a worktree entry behind.
+    # A run that died may have left a worktree entry behind -- and, when
+    # it died before its clean-up, the worktree itself.
     git.run("worktree", "prune")
+    remove_stale_worktrees(git)
     if remote_tip(git, offline=offline) is not None:
         git.run("fetch", "--quiet", REMOTE, BRANCH)
         if not git.branch_exists(BRANCH):
@@ -132,14 +134,27 @@ def ensure(
             f"{BRANCH}: created from root commit {roots[0][:12]} "
             f'"{git.subject(roots[0])}"'
         )
-    version, base = describe(git)
-    # The branch may sit anywhere from the recorded version to the target,
-    # inclusive. Between the two it is a pending update -- the weekly
-    # workflow synced and pushed it, and the project has not merged it yet
-    # -- and the sync continues from it. Below the recorded version, the
-    # branch was recreated (origin/template deleted, then rebuilt from the
-    # root) and the answers file knows better; `commit_for` would fail
-    # later anyway, this says why now.
+    try:
+        version, base = describe(git)
+        _check_range(version, recorded, target)
+    except UpdateError:
+        # A branch this run created and then refused would make the next
+        # run say "exists locally but not on origin" and then fail the
+        # same way; deleting it leaves the repository as it was found.
+        if created:
+            git.run("branch", "-D", BRANCH, check=False)
+        raise
+    return Branch(version, base, created, notes)
+
+
+def _check_range(version: Version, recorded: Version, target: Version) -> None:
+    """The branch may sit anywhere from the recorded version to the target,
+    inclusive. Between the two it is a pending update -- the weekly
+    workflow synced and pushed it, and the project has not merged it yet
+    -- and the sync continues from it. Below the recorded version, the
+    branch was recreated (origin/template deleted, then rebuilt from the
+    root) and the answers file knows better; `commit_for` would fail
+    later anyway, this says why now."""
     if version > target:
         raise UpdateError(
             f"{BRANCH} is already at {version}, past --to {target}",
@@ -151,7 +166,30 @@ def ensure(
             "which is newer",
             f"see {GUIDE} for re-pointing the branch",
         )
-    return Branch(version, base, created, notes)
+
+
+def remove_stale_worktrees(git: Git) -> None:
+    """Remove every linked worktree that checks out the branch.
+
+    A run killed before its clean-up (kill -9, a lost connection) leaves
+    its temporary worktree on disk, and `git worktree prune` keeps an
+    entry whose directory still exists. `worktree add` and `branch
+    --force` would then fail with git's message about the branch being
+    used elsewhere. Nobody works in a worktree of this branch -- it holds
+    template output and nothing else -- so any such worktree is a
+    leftover. The main worktree and the one the tool runs in are never
+    removed (`remove --force` would remove the current one too).
+    """
+    here = git.toplevel()
+    entries = git.out("worktree", "list", "--porcelain").split("\n\n")
+    for entry in entries[1:]:  # the first entry is the main worktree
+        lines = entry.splitlines()
+        if f"branch refs/heads/{BRANCH}" not in lines:
+            continue
+        path = Path(lines[0].removeprefix("worktree "))
+        if path.resolve() == here:
+            continue
+        git.run("worktree", "remove", "--force", str(path))
 
 
 def describe(git: Git) -> tuple[Version, str]:
