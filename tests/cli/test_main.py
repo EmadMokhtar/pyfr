@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,8 @@ def test_version_prints_the_package_version(
 def test_version_is_the_project_version() -> None:
     # importlib.metadata reads the installed distribution; uv installs the
     # project editable on every `uv run`, so this is pyproject.toml's value.
-    assert __version__.count(".") == 2
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    assert __version__ == tomllib.loads(pyproject.read_text())["project"]["version"]
 
 
 def test_update_check_reports_the_versions_and_exits_by_state(

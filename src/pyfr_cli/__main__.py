@@ -11,7 +11,11 @@ from pathlib import Path
 from pyfr_cli import __version__, update
 from pyfr_cli.errors import UpdateError
 
-TEMPLATE_HELP = "the template repository (default: _template in .pyfr-answers.yml)"
+TEMPLATE_HELP = (
+    "the template repository (default: _template in .pyfr-answers.yml) -- its "
+    "hooks and migration scripts run with your permissions, so it must be a "
+    "repository you trust"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:

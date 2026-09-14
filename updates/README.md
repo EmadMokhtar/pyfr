@@ -27,11 +27,14 @@ Either file may be absent. Nothing here is rendered into a project:
   `subprocess`, so a file the template moved is moved in the project too
   and git merges the two renames as one file. It may edit files. `pyfr
   update` commits what it leaves staged or modified as
-  `chore: prepare for template <target>`; a new file must be `git add`ed
-  by the script itself.
+  `chore: prepare for template <target>`.
 - **`after.py`** rewrites contents once the template's version of a file
   is in place. `pyfr update` commits what it changed as
   `chore: finish template <target>`.
+- **New files need `git add`.** Both commits stage with `git add --update`,
+  which takes changed and deleted tracked files only. A file a script
+  creates must be `git add`ed by the script itself, in `before.py` and in
+  `after.py` alike.
 - **Idempotent.** Running a script twice must equal running it once: a
   failed update is re-run, and a script that already did its work exits 0
   without doing it again. Check before you act (`if dst.exists(): exit(0)`).

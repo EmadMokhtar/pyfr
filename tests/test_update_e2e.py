@@ -31,7 +31,6 @@ ANSWERS = {
         (ROOT / "tests" / "reference-answers.yaml").read_text()
     ).items()
 }
-PACKAGE = ANSWERS["package_name"]
 
 # The fixture template's history, newest first, as Commitizen would write it.
 CHANGELOG = {
@@ -519,6 +518,8 @@ def test_squash_merged_history_does_not_conflict_again(
     assert git(project, "rev-parse", f"{merge}^2") == git(
         project, "rev-parse", "template"
     )
+    # The state file, which recorded the graft, is gone with it.
+    assert not (project / ".git" / "pyfr-update.json").exists()
 
 
 def test_a_conflict_pauses_the_update_and_the_same_command_resumes(
