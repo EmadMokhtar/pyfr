@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.9.0 (2026-09-14)
+
+### Feat
+
+- give a generated project its own documentation site and split pyfr's docs (m7 pr 4) (#48)
+
 ## v0.8.0 (2026-09-13)
 
 ### Feat
