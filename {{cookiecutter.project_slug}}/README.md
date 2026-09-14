@@ -1,4 +1,5 @@
 # {{ cookiecutter.project_name }}
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 {{ cookiecutter.description }} Generated from
 [PyFr](https://github.com/EmadMokhtar/pyfr). It persists orders to a real PostgreSQL database with the
@@ -7,17 +8,60 @@ circuit-breaking HTTP client, caches order reads in Redis behind a fail-open
 decorator, and renders and stores one receipt per order in S3-compatible
 object storage. All four dependencies are optional and absent by default —
 the service starts and serves correctly with none of them configured.
+{%- else %}
+
+{{ cookiecutter.description }} Generated from
+[PyFr](https://github.com/EmadMokhtar/pyfr). It authorises payment over a
+retrying, circuit-breaking HTTP client.
+{%- if cookiecutter.database == "postgres" %}
+It persists orders to a real PostgreSQL database with the schema under
+migration control.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
+It caches order reads in Redis behind a fail-open decorator.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+It renders and stores one receipt per order in S3-compatible object storage.
+{%- endif %}
+Every optional dependency is absent by default — the service starts and
+serves correctly with none of them configured.
+{%- endif %}
 
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/) — the only Python tool you need
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 - Docker, for `just up`, for the integration test tier (`just test-integration`,
   `just gates`) — real containers throughout: PostgreSQL, Redis and MinIO — and
   for `just security`, which scans the built images
+{%- elif cookiecutter.database == "postgres" %}
+- Docker, for `just up`, for the integration test tier (`just test-integration`,
+  `just gates`) — real containers throughout — and for `just security`, which
+  scans the built images
+{%- else %}
+- Docker, for `just up`, for the integration test tier (`just test-integration`)
+  — real containers throughout — and for `just security`, which scans the
+  built image
+{%- endif %}
 - [just](https://github.com/casey/just) — the command runner
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 - PostgreSQL 18, Redis 8 and MinIO — none installed locally; pulled as
   `postgres:18-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
   `just up` and by the integration tests
+{%- else %}
+{%- if cookiecutter.database == "postgres" %}
+- PostgreSQL 18 — not installed locally; pulled as `postgres:18-alpine` by
+  `just up` and by the integration tests
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
+- Redis 8 — not installed locally; pulled as `redis:8-alpine` by `just up` and
+  by the integration tests
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+- MinIO — not installed locally; pulled as the pinned `quay.io/minio/minio`
+  image by `just up` and by the integration tests
+{%- endif %}
+{%- endif %}
 
 ## Five-minute start
 
@@ -26,6 +70,7 @@ uv sync                    # or: just install
 uv run pre-commit install  # one-time: wires up the lint and commit-msg hooks
 just dev                   # http://localhost:{{ cookiecutter.http_port }}/docs — in-memory repository
 ```
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 `just up` is the containerized alternative: one command starts PostgreSQL,
 Redis and MinIO, waits for PostgreSQL and MinIO to report healthy, applies
@@ -36,6 +81,24 @@ API reports healthy, a one-shot `seed` container creates five fixed orders
 through it and exits, so `GET /api/v1/orders/<id>` has something to return
 before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 `just seed` does the same against `just dev`.
+{%- else %}
+
+`just up` is the containerized alternative: one command builds the image,
+starts whichever backends this project has and a payment stub, and starts
+the API.
+{%- if cookiecutter.database == "postgres" %}
+Every migration is applied before the API starts, so there is no window
+where the API is up against a schema that is not there yet.
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
+The receipts bucket is created before the API starts, so there is no window
+where the API is up against a bucket that does not exist yet.
+{%- endif %}
+Once the API reports healthy, a one-shot `seed` container creates five fixed
+orders through it and exits, so `GET /api/v1/orders/<id>` has something to
+return before anyone has typed a `POST`; `docker compose logs seed` prints
+the ids. `just seed` does the same against `just dev`.
+{%- endif %}
 
 ## Commands
 
@@ -46,10 +109,15 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just test` | Run the unit and api tiers — no containers, no Docker needed |
 | `just test-integration` | Run the container-backed integration tier (needs Docker) |
 | `just test-all` | Run every tier: unit, api and integration |
+{%- if cookiecutter.database == "postgres" %}
 | `just gates` | All five schema governance gates, plus the configuration reference drift check — see [Database](#database) |
+{%- else %}
+| `just gates` | The configuration reference drift check — see [Configuration](#configuration) |
+{%- endif %}
 | `just config-docs` | Regenerate `.env.example` and the configuration table from `settings.py` — see [Configuration](#configuration) |
 | `just config-docs-check` | Fail if either generated file has drifted from `settings.py`. Runs as part of `just gates` |
 | `just config-check` | Print the resolved configuration as JSON with every secret and URL password masked, or exit 78 with the same message the service prints when it refuses to start — see [Configuration](#configuration) |
+{%- if cookiecutter.database == "postgres" %}
 | `just schema-snapshot` | Regenerate the committed `schema.sql` after a migration change |
 | `just migrate` | Apply every outstanding migration |
 | `just migrate-new NAME` | Write a new `.up.sql` / `.down.sql` pair |
@@ -57,6 +125,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just migrate-down [N]` | Roll back N steps (default 1) |
 | `just migrate-version` | Current version, and whether it is dirty |
 | `just migrate-force VERSION` | Clear a dirty flag — read the justfile comment first |
+{%- endif %}
 | `just lint` | ruff check and format check |
 | `just fmt` | Fix lint issues and format |
 | `just typecheck` | mypy — strict on domain and services |
@@ -65,14 +134,28 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just check-all` | `check`, plus `test-integration`, `gates`, `o11y-gates` and `contract-gates` — the same five gates CI runs as separate jobs, in one local command; run it before a pull request that touches the schema, the adapter, the API contract, or observability |
 | `just up` / `just down` | Start / stop the container stack; `up` seeds five orders once the API is healthy, `down` removes the volumes, the seed's state included |
 | `just seed` | Create the same five orders against `just dev` (`localhost:${APP_HTTP_PORT}`), idempotently — state in `.seed-state.json`, ignored by git |
+{%- if cookiecutter.database == "postgres" %}
 | `just build-images` | Build both container images for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning |
+{%- else %}
+| `just build-images` | Build the service's container image for this machine's architecture without starting it, exactly as CI's `security` job and the release workflow do before scanning |
+{%- endif %}
 | `just audit` | pip-audit over every pin in `uv.lock`, reading a `uv export` so nothing is resolved or installed — see [Supply chain](#supply-chain) |
+{%- if cookiecutter.database == "postgres" %}
 | `just scan` | Trivy over both built images; fails on a fixed HIGH or CRITICAL finding, exemptions only through `.trivyignore.yaml` — needs Docker |
+{%- else %}
+| `just scan` | Trivy over the built image; fails on a fixed HIGH or CRITICAL finding, exemptions only through `.trivyignore.yaml` — needs Docker |
+{%- endif %}
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
 | `just security` | `build-images`, `audit`, `scan`, `sbom` — what CI's `security` job runs; not part of `check-all` because its result changes with the advisory databases, not the code |
+{%- if cookiecutter.database == "postgres" %}
 | `just build-multiarch` | Build both images for `linux/amd64` and `linux/arm64` with no output — what CI's `build` job runs |
 | `just publish-images VERSION` | Push both platforms of both images to GHCR (GitHub Container Registry) under `VERSION` — run by the release workflow, not by hand |
 | `just scan-published VERSION` | Scan the pushed images for both platforms — release workflow only |
+{%- else %}
+| `just build-multiarch` | Build the image for `linux/amd64` and `linux/arm64` with no output — what CI's `build` job runs |
+| `just publish-images VERSION` | Push both platforms of the image to GHCR (GitHub Container Registry) under `VERSION` — run by the release workflow, not by hand |
+| `just scan-published VERSION` | Scan the pushed image for both platforms — release workflow only |
+{%- endif %}
 | `just promote-latest VERSION` | Point `latest` at the scanned `VERSION` — release workflow only |
 | `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag — read-only |
 | `just next-version` | Preview the version the next release would choose — read-only; the release itself runs in CI (`.github/workflows/release.yml`) |
@@ -88,29 +171,44 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just links` | Check every external link in `docs/` and this README with `lychee`, against `lychee.toml` — needs the `lychee` binary (`brew install lychee`); CI's `links` job gets it from the action |
 | `just docs-freshness [BASE] [HEAD]` | Advisory warnings only, never a failure: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not — what CI's `docs-warnings` job runs; not CI's `docs-freshness` job, which runs `scripts/check_docs_updated.py` |
 | `just docs-examples` | Start the compose stack, run every marked `curl` example in `docs/` against it, then tear it down — pass or fail |
+{%- if cookiecutter.cache == "redis" %}
 | `just redis-cli` | An interactive `redis-cli` session against the running compose cache |
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 | `just minio-console` | Print, and try to open, the MinIO web console — see [Object storage](#object-storage) |
+{%- endif %}
 
 ## Endpoints
 
 | Path | Purpose |
 |---|---|
 | `GET /healthz` | Liveness. Never checks a dependency. |
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 | `GET /readyz` | Readiness. Gates on the database only; reports the cache and object storage without gating on either — see [Readiness: two tiers](#readiness-two-tiers). |
+{%- else %}
+| `GET /readyz` | Readiness. Two tiers: `checks` decides the status code, `dependencies` is reported without gating — see [Readiness: two tiers](#readiness-two-tiers). |
+{%- endif %}
 | `GET /startupz` | Whether startup has finished. |
 | `POST /api/v1/orders` | Place an order. |
 | `GET /api/v1/orders/{order_id}` | Fetch an order. |
+{%- if cookiecutter.object_storage == "s3" %}
 | `GET /api/v1/orders/{order_id}/receipt` | Fetch the order's receipt, rendering and storing it on first request — see [Object storage](#object-storage). |
+{%- else %}
+| `GET /api/v1/orders/{order_id}/receipt` | Fetch the order's receipt, rendering it on first request and holding it in memory until a restart. |
+{%- endif %}
 | `GET /docs` | Interactive API documentation. |
 
 ### Readiness: two tiers
+{%- set _checks = '"database": "ok"' if cookiecutter.database == "postgres" else '' -%}
+{%- set _deps = (['"cache": "ok"'] if cookiecutter.cache == "redis" else []) + (['"storage": "ok"'] if cookiecutter.object_storage == "s3" else []) %}
 
 `/readyz`'s response carries `checks` (gating — decides the status code) and
 `dependencies` (informational — reported, never decisive):
 
 ```json
-{"status": "ok", "checks": {"database": "ok"}, "dependencies": {"cache": "ok", "storage": "ok"}}
+{"status": "ok", "checks": {{ '{' ~ _checks ~ '}' }}, "dependencies": {{ '{' ~ (_deps | join(', ')) ~ '}' }}}
 ```
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 
 Only the database is gating. The cache and the object store are always
 informational, and that split is deliberate rather than an oversight:
@@ -128,6 +226,70 @@ Verified against a real stack, not just reasoned about: with Redis stopped, an
 order read still returned 200; with MinIO stopped, the receipt endpoint
 returned 503 while the order endpoint kept returning 200; with either
 stopped, `/readyz` itself still returned 200.
+{%- else %}
+{%- if cookiecutter.database == "postgres" %}
+
+Only the database is gating.
+{%- else %}
+
+Nothing is gating: `checks` is always empty, so `/readyz` never returns 503
+on that account.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+The cache and the object store are always informational, and that is
+deliberate rather than an oversight:
+{%- elif cookiecutter.cache == "redis" %}
+The cache is always informational, and that is deliberate rather than an
+oversight:
+{%- elif cookiecutter.object_storage == "s3" %}
+The object store is always informational, and that is deliberate rather than
+an oversight:
+{%- else %}
+Nothing is registered in `dependencies`, so it is always `{}`; the two tiers
+stay so that a dependency added later lands in the right one.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
+
+- The cache **fails open** — `CachedOrderRepository` swallows every Redis
+{%- if cookiecutter.database == "postgres" %}
+  error and falls through to PostgreSQL — and Redis is **shared across every
+  pod**. Gating on it would make every pod report itself unready in the same
+  second, turning a degradation the service is built to survive into a total,
+  self-inflicted outage.
+{%- else %}
+  error and falls through to the repository it wraps — and Redis is **shared
+  across every pod**. Gating on it would make every pod report itself unready
+  in the same second, turning a degradation the service is built to survive
+  into a total, self-inflicted outage.
+{%- endif %}
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" and cookiecutter.cache == "redis" %}
+- Losing object storage breaks exactly one endpoint
+  (`GET /orders/{id}/receipt`), so taking 100% of traffic off a pod to
+  protect that one endpoint would cost far more than it saves.
+{%- elif cookiecutter.object_storage == "s3" %}
+
+- Losing object storage breaks exactly one endpoint
+  (`GET /orders/{id}/receipt`), so taking 100% of traffic off a pod to
+  protect that one endpoint would cost far more than it saves.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
+
+Verified against a real stack, not just reasoned about: with Redis stopped, an
+order read still returned 200; with MinIO stopped, the receipt endpoint
+returned 503 while the order endpoint kept returning 200; with either
+stopped, `/readyz` itself still returned 200.
+{%- elif cookiecutter.cache == "redis" %}
+
+Verified against a real stack, not just reasoned about: with Redis stopped, an
+order read still returned 200, and `/readyz` itself still returned 200.
+{%- elif cookiecutter.object_storage == "s3" %}
+
+Verified against a real stack, not just reasoned about: with MinIO stopped,
+the receipt endpoint returned 503 while the order endpoint kept returning
+200, and `/readyz` itself still returned 200.
+{%- endif %}
+{%- endif %}
 
 ## Contract governance
 
@@ -166,6 +328,7 @@ src/{{ cookiecutter.package_name }}/
 
 The arrows point inward: `infrastructure` and `api` import `domain`, never
 the reverse. `just imports` fails the build if that stops being true.
+{%- if cookiecutter.database == "postgres" %}
 
 ## Database
 
@@ -209,8 +372,11 @@ edited in place, after it may already be applied elsewhere. All five run with
 Alembic appears in the development dependencies **only** as the comparison engine
 behind the model drift gate. There is no `alembic/` directory and no Alembic
 migration; golang-migrate owns the schema.
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 
 ## Cache
+{%- if cookiecutter.database == "postgres" %}
 
 `CachedOrderRepository` is a decorator, not a second adapter beside
 `PostgresOrderRepository` — it satisfies `OrderRepository` and holds another
@@ -218,6 +384,15 @@ migration; golang-migrate owns the schema.
 removed by editing `container.py` alone: nothing above the infrastructure
 layer — not the service, not the router, not the domain — imports `redis` or
 knows a cache exists.
+{%- else %}
+
+`CachedOrderRepository` is a decorator, not a second adapter beside
+`InMemoryOrderRepository` — it satisfies `OrderRepository` and holds another
+`OrderRepository` inside it. That is the whole reason it can be added and
+removed by editing `container.py` alone: nothing above the infrastructure
+layer — not the service, not the router, not the domain — imports `redis` or
+knows a cache exists.
+{%- endif %}
 
 It is **fail open** by rule, not by accident: every Redis failure (a
 connection error, a timeout, an unparseable cached payload) is logged and
@@ -225,19 +400,35 @@ swallowed, and the wrapped repository answers instead. There is no setting
 that changes this, because a cache that can make a request *fail* has made
 the service strictly worse than having no cache at all. Verified against a
 real stack: with Redis stopped, an order read still returned 200.
+{%- if cookiecutter.database == "postgres" %}
 
 Reads check Redis first and populate it on a miss. Saves write to PostgreSQL
 first and then delete the cache key — never the other way around, because
 delete-then-save leaves a window where a concurrent reader can repopulate the
 cache with the value that is about to become stale.
+{%- else %}
+
+Reads check Redis first and populate it on a miss. Saves write to the wrapped
+repository first and then delete the cache key — never the other way around,
+because delete-then-save leaves a window where a concurrent reader can
+repopulate the cache with the value that is about to become stale.
+{%- endif %}
 
 ```
 just redis-cli   an interactive redis-cli session against the running compose cache
 ```
+{%- if cookiecutter.database == "postgres" %}
 
 Leave `APP_CACHE__DSN` unset to run with no cache at all — every order read
 goes straight to PostgreSQL, the same supported arrangement `database` above
 has with the in-memory repository. `just up` points it at the compose Redis.
+{%- else %}
+
+Leave `APP_CACHE__DSN` unset to run with no cache at all — every order read
+goes straight to the order repository. `just up` points it at the compose
+Redis.
+{%- endif %}
+{%- endif %}
 
 ## Outbound payments
 
@@ -254,19 +445,26 @@ just test-record   re-record the outbound cassettes against the local payment st
 just mutants       mutation testing over domain/ and services/
 just mutants-gate  fail the build if the mutation score falls below the recorded floor
 ```
+{%- if cookiecutter.database == "postgres" %}
 
 Leave `APP_PAYMENT__BASE_URL` unset to run on the in-memory gateway, which
 authorises everything — the same arrangement `database` above has with the
 in-memory repository. `just up` points it at a local WireMock stub instead.
+{%- else %}
+
+Leave `APP_PAYMENT__BASE_URL` unset to run on the in-memory gateway, which
+authorises everything. `just up` points it at a local WireMock stub instead.
+{%- endif %}
 
 Two things are worth knowing rather than assuming. The recorded cassettes
 prove this adapter still parses that stub's wire format; they cannot detect
 the real provider changing, because the stub is static and nothing about it
 changes on its own. And if this process dies between a successful
 authorisation and a successful save, the payment provider is left holding
-an authorisation with no order to match it — a gap M3 records rather than
-closes, because closing it needs an outbox or a reconciliation job, and
-message queues are excluded from this project entirely.
+an authorisation with no order to match it — a gap this project records
+rather than closes, because closing it needs an outbox or a reconciliation
+job, and message queues are excluded from this project entirely.
+{%- if cookiecutter.object_storage == "s3" %}
 
 ## Object storage
 
@@ -289,10 +487,26 @@ returned 503 while the order endpoint kept returning 200.
 ```
 just minio-console   print, and try to open, the MinIO web console (minioadmin / minioadmin)
 ```
+{%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" %}
 
 Leave the `APP_STORAGE__*` block unset to run with no object store at all —
 receipts are held in memory and vanish on restart, the same supported
 arrangement `database` and `cache` have with their own in-memory fallbacks.
+{%- elif cookiecutter.database == "postgres" %}
+
+Leave the `APP_STORAGE__*` block unset to run with no object store at all —
+receipts are held in memory and vanish on restart, the same supported
+arrangement `database` above has with its in-memory repository.
+{%- elif cookiecutter.cache == "redis" %}
+
+Leave the `APP_STORAGE__*` block unset to run with no object store at all —
+receipts are held in memory and vanish on restart, the same supported
+arrangement `cache` above has when `APP_CACHE__DSN` is unset.
+{%- else %}
+
+Leave the `APP_STORAGE__*` block unset to run with no object store at all —
+receipts are held in memory and vanish on restart.
+{%- endif %}
 `just up` starts MinIO and a one-shot `minio-bootstrap` container that
 creates the bucket, because MinIO does not create one on demand and the
 application deliberately does not create its own — that would need
@@ -305,8 +519,13 @@ real MinIO container and produced zero spans for any `aioboto3` call — traced
 `ListBuckets`, `PutObject` and `GetObject` all succeeded and all produced
 nothing, because `aiobotocore`'s async client replaces the exact method the
 instrumentor patches. The dependency was removed rather than shipped doing
+{%- if cookiecutter.cache == "redis" %}
 nothing; see `instrument_redis` in `src/{{ cookiecutter.package_name }}/observability/otel.py`
 for the full measurement. Redis commands, by contrast, are traced normally.
+{%- else %}
+nothing.
+{%- endif %}
+{%- endif %}
 
 ## Observability
 
@@ -325,6 +544,7 @@ objective rules from `ops/` mounted in. Grafana is on
 Make a request and you can follow it three ways: as a trace in Tempo, as log
 lines carrying that trace's `trace_id`, and as metrics on the service-health
 dashboard.
+{%- if cookiecutter.cache == "redis" %}
 
 The service-health dashboard's Redis panel is titled "Redis command latency
 (p50/p99)", not "Redis pool usage" — that was the original plan, and it
@@ -336,11 +556,13 @@ histogram through the span-metrics connector `grafana/otel-lgtm` runs by
 default — a real, useful signal (it is how a "fast" cache read that is
 actually costing 40ms gets noticed), just not the saturation signal that was
 asked for.
+{%- endif %}
 
 `just o11y-gates` validates the objective rules with `promtool`, which runs
 from inside the pinned image rather than needing its own install.
 
 ## Configuration
+{%- if cookiecutter.database == "postgres" %}
 
 Every variable is prefixed `APP_`; nested settings use `__`. Copy
 `.env.example` to `.env` to start. The whole `APP_DATABASE__*` block ships
@@ -356,6 +578,16 @@ variables are set — with any one of `APP_DATABASE__POOL_SIZE` or
 `APP_DATABASE__STATEMENT_TIMEOUT_MS` present but `APP_DATABASE__DSN`
 missing, settings validation fails outright (`dsn`: "Field required")
 instead of falling back to the in-memory repository.
+{%- else %}
+
+Every variable is prefixed `APP_`; nested settings use `__`. Copy
+`.env.example` to `.env` to start. Every optional block ships commented out
+there, like `APP_OTEL__ENDPOINT`: the justfile sets `dotenv-load := true`,
+so a `.env` naming a backend that is not actually running would make
+`just dev` silently pick that backend's adapter instead of the in-memory one.
+Uncomment a block once what it points at is actually reachable — `just up`
+provides every backend without needing a block set at all.
+{%- endif %}
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -365,18 +597,28 @@ instead of falling back to the in-memory repository.
 | `APP_LOG__LEVEL` | `info` | Root log level |
 | `APP_LOG__LEVELS` | `{}` | Per-logger overrides, as JSON |
 | `APP_LOG__REDACT_FIELDS` | the fifteen names in `.env.example` (`password`, `token`, `authorization`, `card_number`, …) | Field names whose values are replaced by `[REDACTED]` before a record is rendered, as a JSON array — matched by name at any depth, ignoring case and treating `-` and `_` alike. Setting it **replaces** the default list. Keys only: a secret interpolated into the message string is not seen, so put secrets in fields, never in the event string |
+{%- if cookiecutter.database == "postgres" %}
 | `APP_DATABASE__DSN` | unset (commented out in `.env.example`) | PostgreSQL connection string, read by the **application only** — `just up`'s migrate service and every `just migrate-*` recipe carry their own hardcoded URL in `compose.yaml` and never read this one, so there is no golang-migrate/SQLAlchemy drift to worry about here. Unset selects the in-memory repository (see [Database](#database)); when set, store it WITHOUT a `+asyncpg` driver suffix and WITHOUT an `sslmode` parameter — `infrastructure/db/engine.py` adds `+asyncpg` itself, and `sslmode` is a libpq parameter asyncpg does not understand, rejected at settings-validation time (exit 78, naming the field) rather than reaching asyncpg as a raw error |
 | `APP_DATABASE__POOL_SIZE` | `10` | The hard ceiling on concurrent database connections this instance opens. `infrastructure/db/engine.py` pins SQLAlchemy's `max_overflow` to `0`, so this is an exact number, not this plus SQLAlchemy's own default overflow of 10 — the difference matters when this figure is used for capacity planning against the database's own `max_connections` |
 | `APP_DATABASE__STATEMENT_TIMEOUT_MS` | `5000` | PostgreSQL `statement_timeout`, applied per connection — a runaway query is cancelled by the server rather than holding a pooled connection forever |
+{%- endif %}
 | `APP_OTEL__ENABLED` | `false` | Turn on OpenTelemetry traces and metrics — see [Observability](#observability). Off by default; with it off nothing OpenTelemetry is built at all |
 | `APP_OTEL__LOGS_ENABLED` | `false` | Export logs over OTLP too, in addition to standard output. Doubles log ingest if enabled alongside a platform log agent — leave it off in production |
 | `APP_OTEL__ENDPOINT` | unset | The OTLP collector endpoint. **Required** when `APP_OTEL__ENABLED` is true |
 | `APP_PAYMENT__BASE_URL` | unset | The payment provider's base URL — see [Outbound payments](#outbound-payments). Leave unset for the in-memory gateway, which authorises everything |
+{%- if cookiecutter.cache == "redis" and cookiecutter.database == "postgres" %}
 | `APP_CACHE__DSN` | unset | Redis connection string — see [Cache](#cache). Leave unset to run with no cache at all; every order read goes straight to PostgreSQL |
+{%- elif cookiecutter.cache == "redis" %}
+| `APP_CACHE__DSN` | unset | Redis connection string — see [Cache](#cache). Leave unset to run with no cache at all; every order read goes straight to the order repository |
+{%- endif %}
+{%- if cookiecutter.cache == "redis" %}
 | `APP_CACHE__TTL_SECONDS` | `300` | How long a cached order stays valid. A safety net, not the primary invalidation path — saving an order deletes its cache entry outright |
+{%- endif %}
+{%- if cookiecutter.object_storage == "s3" %}
 | `APP_STORAGE__BUCKET` | unset | The S3 bucket receipts are stored in — see [Object storage](#object-storage). Required, along with the access key pair, once any `APP_STORAGE__*` variable is set |
 | `APP_STORAGE__ENDPOINT_URL` | unset | **Leave unset for real Amazon S3** — botocore derives the endpoint from the region itself. **Set it for everything else** — MinIO, Cloudflare R2, Ceph. This one field is the whole of "one adapter per provider" |
 | `APP_STORAGE__ACCESS_KEY_ID` / `APP_STORAGE__SECRET_ACCESS_KEY` | unset | `SecretStr`, so neither can reach a log line or a traceback by accident |
+{%- endif %}
 
 Invalid configuration stops the process at startup with exit code 78 and a
 readable message, rather than causing a 500 response later. `just config-check`
@@ -386,6 +628,7 @@ exits 78 with that message or prints the configuration the service would
 start with, as JSON, with every `SecretStr` and every URL password masked.
 
 ## Supply chain
+{%- if cookiecutter.database == "postgres" %}
 
 ```
 just audit             pip-audit over uv.lock — no Docker
@@ -401,6 +644,21 @@ fails the scan again. There is no skip flag anywhere else. The five entries
 there today are all in the `migrate/migrate` Go binary, in code `migrate up`
 never runs; a Dependabot bump of that base image is the moment to re-scan
 and drop them.
+{%- else %}
+
+```
+just audit             pip-audit over uv.lock — no Docker
+just scan              Trivy over the built image — fails on a fixed HIGH or CRITICAL finding
+just sbom              a CycloneDX bill of materials for the image, into sbom/
+just security          build-images, then all three — what CI's security job runs
+just build-multiarch   the image for linux/amd64 and linux/arm64, no output — what CI's build job runs
+```
+
+A finding is exempted only through `.trivyignore.yaml`, where every entry
+names a reason, a path and an `expired_at` date; after that date the finding
+fails the scan again. There is no skip flag anywhere else. The file ships
+with no entries.
+{%- endif %}
 
 On release, the repository's workflow builds and scans the
 single-architecture images first, then builds every image for both

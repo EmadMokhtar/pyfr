@@ -100,8 +100,13 @@ from your own `seed` output rather than from this page.
 
 The seed is idempotent (running it again changes nothing): the ids it issued
 are kept in a small state file, and a second `just up` finds every order still
+{%- if cookiecutter.database == "postgres" %}
 there and prints `exists` instead of `created`. `just down` removes the state
 with the database, so the next `just up` seeds again.
+{%- else %}
+there and prints `exists` instead of `created`. `just down` removes the state
+with the rest of the volumes, so the next `just up` seeds again.
+{%- endif %}
 
 The same five orders are available without Docker. With `just dev` running in
 one terminal, in another:

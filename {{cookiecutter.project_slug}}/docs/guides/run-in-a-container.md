@@ -52,9 +52,9 @@ Other properties worth knowing:
     `python:3.13-slim-trixie`. Both are Debian trixie, and that is load-bearing:
     a virtual environment built against one version of the C library is not
     safe to run on an older one. If you change one base image, change both.
+{%- if cookiecutter.database == "postgres" %}
 
 ## Pull the published images instead of building
-{%- if cookiecutter.database == "postgres" %}
 
 Every release pushes both images to GHCR (the GitHub Container Registry), for
 `linux/amd64` and `linux/arm64`, tagged with the repository's version and
@@ -65,6 +65,8 @@ docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.projec
 docker pull ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations:vX.Y.Z
 ```
 {%- else %}
+
+## Pull the published image instead of building
 
 Every release pushes the image to GHCR (the GitHub Container Registry), for
 `linux/amd64` and `linux/arm64`, tagged with the repository's version and
@@ -128,9 +130,16 @@ A bad environment exits 78 with the same message the service would have
 printed — the field, what is wrong with it, and the rule that rejected it,
 never the value. A good one prints the configuration the service would start
 with, as one JSON object, with every `SecretStr` and every URL password
+{%- if cookiecutter.database == "postgres" %}
 masked. Compare it with what you meant to set. Add `--no-deps` to skip
 starting the databases, which the check does not need. Outside compose,
 `just config-check` does the same against `.env` on the host.
+{%- else %}
+masked. Compare it with what you meant to set. Add `--no-deps` to skip
+starting the services `app` depends on, which the check does not need.
+Outside compose, `just config-check` does the same against `.env` on the
+host.
+{%- endif %}
 
 ## The health check
 

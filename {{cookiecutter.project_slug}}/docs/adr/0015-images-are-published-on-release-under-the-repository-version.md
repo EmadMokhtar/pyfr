@@ -15,11 +15,18 @@ registry. The images could be tagged with the service's own `0.1.0`,
 pushed on every merge, or pushed on release under the repository's tag.
 
 ## Decision
+{%- if cookiecutter.database == "postgres" %}
 
 `release.yml` pushes `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}` and
 `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations`, for
 `linux/amd64` and `linux/arm64`, tagged with the release's `vX.Y.Z` after
 `scan` has passed on the same commit's local images. `latest` is created
+{%- else %}
+
+`release.yml` pushes `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}`, for
+`linux/amd64` and `linux/arm64`, tagged with the release's `vX.Y.Z` after
+`scan` has passed on the same commit's local image. `latest` is created
+{%- endif %}
 afterwards from that pushed index, and only once `scan-published` has
 passed on the pushed digests for both platforms — the artifact people
 pull is what gets verified, and `latest` never names an unscanned image.

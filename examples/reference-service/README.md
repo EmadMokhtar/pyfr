@@ -264,9 +264,9 @@ prove this adapter still parses that stub's wire format; they cannot detect
 the real provider changing, because the stub is static and nothing about it
 changes on its own. And if this process dies between a successful
 authorisation and a successful save, the payment provider is left holding
-an authorisation with no order to match it — a gap M3 records rather than
-closes, because closing it needs an outbox or a reconciliation job, and
-message queues are excluded from this project entirely.
+an authorisation with no order to match it — a gap this project records
+rather than closes, because closing it needs an outbox or a reconciliation
+job, and message queues are excluded from this project entirely.
 
 ## Object storage
 

@@ -291,6 +291,7 @@ BACKEND = {
             "tests/integration/test_db_instrumentation.py",
             "tests/integration/test_schema_drift.py",
             "tests/integration/test_schema_gates.py",
+            "docs/adr/0004-golang-migrate-owns-the-schema.md",
         ),
     },
     "cache": {
@@ -306,6 +307,7 @@ BACKEND = {
             "tests/unit/test_cached_order_repository.py",
             "tests/integration/test_cached_order_repository.py",
             "tests/integration/test_redis_instrumentation.py",
+            "docs/adr/0006-the-cache-is-fail-open-always.md",
         ),
     },
     "object_storage": {
@@ -527,6 +529,7 @@ DOCS_BACKEND_PAGES = (
     "docs/guides/run-in-a-container.md",
     "docs/glossary.md",
     "mkdocs.yml",
+    "README.md",
 )
 DOCS_BACKEND_WORDS = {
     "database": ("postgres", "migrat", "schema.sql", "golang-migrate"),
