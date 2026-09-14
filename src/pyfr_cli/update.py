@@ -192,6 +192,14 @@ def _preconditions(git: Git, project: Path) -> None:
             f"{project} is not the repository root ({git.toplevel()} is)",
             "cd to the root and run again",
         )
+    # Before the branch and root checks: both read HEAD, and a repository
+    # with no commits has none to read.
+    if not git.ok("rev-parse", "--verify", "--quiet", "HEAD"):
+        raise UpdateError(
+            "the repository has no commits",
+            "commit the generated project first: git add -A && "
+            "git commit -m 'chore: generate the project from pyfr'",
+        )
     if git.current_branch() is None:
         raise UpdateError(
             "HEAD is detached", "switch to a branch first: git switch main"
@@ -290,6 +298,17 @@ def _merge(
     grafted: str | None = None
     if not git.ok("merge-base", "--is-ancestor", previous, "HEAD"):
         head = git.out("rev-parse", "HEAD")
+        if _has_replacement(git, head):
+            # The graft would replace the user's ref, and the state file
+            # would then send the next run's clean-up to delete it. Nothing
+            # has started, so the state saved for this merge goes too.
+            state.clear(git)
+            raise UpdateError(
+                "HEAD already has a replacement ref (git replace), which the "
+                "merge would have to change",
+                f"remove it with git replace -d {head[:12]}, or update from a "
+                "commit without one",
+            )
         parents = git.out("rev-parse", f"{head}^@").split()
         state.save(git, state.State(recorded, target, "merging", graft=head))
         git.run("replace", "--graft", head, *parents, previous)
@@ -323,6 +342,11 @@ def _merge(
         return True
     _report_conflicts(git, out)
     return False
+
+
+def _has_replacement(git: Git, sha: str) -> bool:
+    """Whether a `git replace` ref exists for the commit `sha`."""
+    return bool(git.out("replace", "--list", sha))
 
 
 def _commit_changes(git: Git, message: str, out: TextIO) -> None:

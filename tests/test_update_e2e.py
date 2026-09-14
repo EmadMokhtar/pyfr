@@ -522,6 +522,39 @@ def test_squash_merged_history_does_not_conflict_again(
     assert not (project / ".git" / "pyfr-update.json").exists()
 
 
+def test_a_replacement_ref_on_head_is_refused_before_the_merge(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    template = ("--template", str(template_remote))
+    assert (
+        run(project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0")[0]
+        == 0
+    )
+    # A squash-merged update, as above, so the next merge needs a graft ...
+    before_merge = git(project, "rev-parse", "HEAD~1^1")
+    git(project, "reset", "-q", "--soft", before_merge)
+    commit_all(project, "chore: update template v100.0.0 -> v100.1.0 (#7)")
+    # ... and the user already has a replacement ref on HEAD, which the
+    # graft would overwrite and the next run's clean-up would then delete.
+    git(project, "replace", "--graft", "HEAD")
+    head = git(project, "rev-parse", "HEAD")
+    code, _, err = run(
+        project, monkeypatch, capsys, "update", *template, "--to", "v100.2.0"
+    )
+    assert code == 2
+    assert "HEAD already has a replacement ref" in err
+    assert f"git replace -d {head[:12]}" in err
+    # The user's ref is untouched and nothing is left half done.
+    assert git(project, "replace", "-l") == head
+    assert git(project, "rev-parse", "HEAD") == head
+    assert Git(project).operation_in_progress() is None
+    assert git(project, "status", "--porcelain") == ""
+    assert not (project / ".git" / "pyfr-update.json").exists()
+
+
 def test_a_conflict_pauses_the_update_and_the_same_command_resumes(
     project: Path,
     template_remote: Path,

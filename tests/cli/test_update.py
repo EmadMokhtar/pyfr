@@ -68,6 +68,19 @@ def test_not_a_repository(tmp_path: Path, template: Path) -> None:
     refused(loose, "not inside a git repository")
 
 
+def test_a_repository_with_no_commits_is_refused(
+    tmp_path: Path, template: Path
+) -> None:
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    git(fresh, "init", "-q", "-b", "main")
+    (fresh / ".pyfr-answers.yml").write_text(
+        f'_template: {template}\n_template_version: "0.10.0"\n'
+    )
+    error = refused(fresh, "the repository has no commits")
+    assert "git commit" in error.fix
+
+
 def test_must_run_at_the_repository_root(project: Path) -> None:
     sub = project / "src"
     sub.mkdir()
@@ -174,3 +187,17 @@ def test_resume_after_the_merge_refuses_a_dirty_tree(project: Path) -> None:
     (project / "README.md").write_text("dirty\n")
     error = refused(project, "uncommitted changes")
     assert "reset --hard" in error.fix
+
+
+def test_has_replacement_sees_only_a_replace_ref_for_that_commit(
+    project: Path,
+) -> None:
+    repo = update.Git(project)
+    first = git(project, "rev-parse", "HEAD")
+    (project / "README.md").write_text("second\n")
+    second = commit_all(project, "second")
+    assert not update._has_replacement(repo, first)
+    assert not update._has_replacement(repo, second)
+    git(project, "replace", "--graft", second)  # the user made it a root
+    assert update._has_replacement(repo, second)
+    assert not update._has_replacement(repo, first)
