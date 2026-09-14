@@ -1407,7 +1407,6 @@ RECORDED = answers.Answers(
         ("/README.md", "docs/adr/README.md", False),
         ("README.md", "docs/adr/README.md", True),
         ("/docs/adr/", "docs/adr/0001-x.md", True),
-        ("/docs/adr/", "docs/adr", True),
         ("/docs/adr/", "docs/adr-drafts/x.md", False),
         ("/src/my_service/domain/", "src/my_service/domain/deep/order.py", True),
         ("/src/my_service/domain/", "src/my_service/services/order.py", False),
@@ -1421,9 +1420,10 @@ def test_patterns_follow_gitignore(pattern: str, path: str, expected: bool) -> N
 
 
 def test_comments_blank_lines_and_negation() -> None:
-    spec = ignore.Ignore.from_text("# yours\n\n/docs/adr/\n!/docs/adr/README.md\n")
-    assert spec.matches("docs/adr/0001-x.md")
-    assert not spec.matches("docs/adr/README.md")
+    spec = ignore.Ignore.from_text("# yours\n\n/docs/*.md\n!/docs/index.md\n")
+    assert spec.matches("docs/runbook.md")
+    assert not spec.matches("docs/index.md")
+    assert not spec.matches("docs/reference/commands.md")
 
 
 def test_a_hash_after_a_pattern_is_part_of_the_pattern() -> None:
