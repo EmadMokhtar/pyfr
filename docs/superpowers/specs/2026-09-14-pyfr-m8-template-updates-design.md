@@ -766,8 +766,10 @@ dependencies.
 
 - The PyPI publish: verified by the first release after PR 1.
 - The workflow's `gh` steps: the shell is thin and every branch is a
-  tested exit code. Verified once by `workflow_dispatch` on a freshly
-  generated project as the last step of PR 2.
+  tested exit code. The clean-merge path is verified once by
+  `workflow_dispatch` on a project generated at `v0.10.0` as the last step
+  of PR 2; the conflict path needs two releases whose template bodies
+  differ, and is verified the same way in PR 3, once `v0.12.0` exists.
 - The full-suite tests stay as they are: `just update-check` against real
   PyPI works only after the first publish and needs the network, so it is
   not added to them.
