@@ -290,7 +290,7 @@ Three things about it differ from the rest of the root tooling:
   holds its unit tests; `tests/test_update_e2e.py` builds a two-version
   template in a temporary directory and runs real updates through it,
   with no network. `just wheel` builds the wheel and runs `pyfr --version`
-  from it, as CI's `build` job does.
+  from it, as CI's `docs` job does.
 - **It must work for every version a project can record.** A project
   generated at v0.7.0 has an answers file and nothing else. The tool
   installs `.pyfr-update-ignore` when it is missing, and every error
@@ -377,7 +377,7 @@ with:
 ```
 | `just lint` | `just typecheck`, then `ruff check` and `ruff format --check` over the root's own Python: `hooks/`, `scripts/`, `src/`, `tests/`. The template body is excluded; the example is linted by its own `just lint`. |
 | `just typecheck` | `mypy --strict` over `src/pyfr_cli/`, the one package this repository publishes. Part of `just lint` and of `just check`. |
-| `just wheel` | Build the `pyfr-cli` wheel and run `pyfr --version` from it, exactly as CI's `build` job does; the version it prints must be `pyproject.toml`'s. Needs the network. |
+| `just wheel` | Build the `pyfr-cli` wheel and run `pyfr --version` from it, exactly as CI's `docs` job does; the version it prints must be `pyproject.toml`'s. Needs the network. |
 ```
 
 Replace the `just check` row:
@@ -391,9 +391,9 @@ with:
 
 - [ ] **Step 8: Check the CI job name used above**
 
-Run: `grep -n "^  build:" -A 12 .github/workflows/ci.yml | grep -n "just wheel"`
+Run: `awk '/^  docs:$/,/^  docs-freshness:$/' .github/workflows/ci.yml | grep -c "just wheel"`
 
-Expected: one line containing `just wheel` (the `build` job runs it). If the recipe runs in a differently named job, replace `build` with that job's name in the two places Step 5 and Step 7 mention it.
+Expected: `1` — the `docs` job (its id is `docs`, kept for the branch ruleset; its comment says it also type-checks and builds the wheel) runs `just wheel`. If it prints `0`, find the job with `grep -n "just wheel" -B 40 .github/workflows/ci.yml | grep "^[0-9]*-  [a-z-]*:$" | tail -1` and use that name in the two places Step 5 and Step 7 mention `docs`.
 
 - [ ] **Step 9: Build**
 
@@ -1041,4 +1041,4 @@ Report to the user: PR `N`'s URL, CI state, the four run links, the issue and PR
 
 **Placeholders.** The plan uses `N`, `RUN`, `ISSUE`, `PRNUM`, `M` for numbers that exist only at execution time; each is defined where it first appears and the step says where the value comes from. No "TBD"/"add appropriate …" steps.
 
-**Consistency.** The ADR file name `0018-the-updater-is-a-published-cli.md` is identical in Tasks 1, 2 and 3 and matches spec 7.2. The anchor `#working-on-pyfr-cli` (Task 2, Step 3) is checked in Task 2, Step 9. The verify-repository clone path `$S/verify` is defined in Task 6, Step 3 and reused unchanged in Steps 8–9. The CI job name `build` for `just wheel` is checked in Task 2, Step 8 before it is relied on.
+**Consistency.** The ADR file name `0018-the-updater-is-a-published-cli.md` is identical in Tasks 1, 2 and 3 and matches spec 7.2. The anchor `#working-on-pyfr-cli` (Task 2, Step 3) is checked in Task 2, Step 9. The verify-repository clone path `$S/verify` is defined in Task 6, Step 3 and reused unchanged in Steps 8–9. The CI job name `docs` for `just wheel` is checked in Task 2, Step 8 before it is relied on.
