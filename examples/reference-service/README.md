@@ -428,7 +428,7 @@ with the project and run from the first push:
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
 | `docs.yml` | every push to `main`, or by hand | builds the documentation site with `mkdocs build --strict` and deploys it to GitHub Pages |
-| `template-update.yml` | 06:23 UTC on Mondays, or by hand | asks whether a newer PyFr template version exists and, if so, runs `just update` on a branch: a clean merge becomes a pull request with the template's changelog in its body, a merge with conflicts becomes an issue naming the files — see [Update from the template](docs/guides/update-from-template.md) |
+| `template-update.yml` | 06:23 UTC on Mondays, or by hand | asks whether a newer PyFr template version exists and, if so, runs `pyfr update` (the command behind `just update`) on a branch: a clean merge becomes a pull request with the template's changelog in its body, a merge with conflicts becomes an issue naming the files — see [Update from the template](docs/guides/update-from-template.md) |
 
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.

@@ -54,7 +54,8 @@ template — plus a `chore: prepare …` or `chore: finish …` commit when the
 release shipped a migration script. Run `just check`, then push.
 
 `just update-check` exits 1 when a newer version exists and 0 when this
-project is current; the weekly workflow runs it first.
+project is current. The weekly workflow runs the same check, `pyfr
+update-check` through `uvx`, as its first step.
 
 ## When the merge conflicts
 

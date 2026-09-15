@@ -792,7 +792,7 @@ def test_a_project_without_the_ignore_file_receives_it(
     installed = project / ".pyfr-update-ignore"
     assert installed.read_text().startswith("# Paths `just update` leaves")
     assert "/src/reference_service/domain/" in installed.read_text()
-    # It rode in the merge commit, like the answers file. `git show
+    # The merge commit carries it, like the answers file. `git show
     # --name-only` on a merge commit hides paths whose content matches one
     # parent exactly -- true here, since the installed file is byte-for-byte
     # what the template side already has -- so tree membership is checked
