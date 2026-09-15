@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 covers:
   - justfile
   - scripts/regen.py
@@ -26,10 +26,12 @@ pyfr/
   examples/reference-service/  rendered from the template; never edited by hand
   scripts/regen.py             the regeneration loop: regen, regen-check, adopt
   scripts/check_site_links.py  the links between the two sites, and into the repository
-  tests/                       PyFr's own tests: the hooks, the render, the golden diff
+  src/pyfr_cli/                the updater a generated project runs: `pyfr update`, `pyfr update-check`
+  updates/                     migration scripts, one directory per template release that needs one
+  tests/                       PyFr's own tests: the hooks, the render, the golden diff, pyfr-cli
   mkdocs.yml  pyproject.toml   this site and the root toolchain
   justfile                     repository commands — see Commands below
-  .github/workflows/           continuous integration, the full suite, publishing
+  .github/workflows/           continuous integration, the full suite, publishing (GHCR and PyPI)
   .github/dependabot.yml       automated dependency updates
 ```
 
@@ -54,9 +56,11 @@ change](#documentation-ships-with-the-change) says which job runs which.
 
 The repository root and the reference service are **two separate Python
 projects**, each with its own `pyproject.toml`, and they are never synced
-together. The root project holds the documentation toolchain and the
-template toolchain — cookiecutter, the hooks' and generation tests, the
-regeneration script; it is not a package and nothing is published from it.
+together. The root project holds the documentation toolchain, the template
+toolchain — cookiecutter, the hooks' and generation tests, the
+regeneration script — and one package: `pyfr-cli`, the updater a generated
+project runs as `just update`, published to PyPI by every release
+([Working on `pyfr-cli`](#working-on-pyfr-cli)).
 
 ## Working on the template
 
@@ -89,7 +93,8 @@ root's `.pre-commit-config.yaml` owns the hooks here, and `just precommit`
 at the root runs them over every tracked file.
 
 The template also ships a generated project's `.github/` — `ci.yml`,
-`nightly.yml`, `release.yml`, `docs.yml` and `dependabot.yml`. In this
+`nightly.yml`, `release.yml`, `docs.yml`, `template-update.yml` and
+`dependabot.yml`. In this
 repository their render at `examples/reference-service/.github/` is output
 and inert: GitHub runs workflows from a repository's root only, and the
 root's own workflows test the example through `working-directory`. Edit
@@ -291,6 +296,65 @@ project runs is one Dependabot sees here. Between a `ci(deps)` merge and
 `adopt.yml`'s commit, another pull request's `docs` job can fail that
 test — its merge ref has the new root pins and the old template pins;
 re-run it once the adopted commit is on `main`.
+
+## Working on `pyfr-cli`
+
+`src/pyfr_cli/` is the updater every generated project runs as `just
+update` — `uvx --from pyfr-cli@latest pyfr update` — and the one package
+this repository publishes. The design is the M8 specification in
+[`docs/superpowers/specs/`](https://github.com/EmadMokhtar/pyfr/blob/main/docs/superpowers/specs/2026-09-14-pyfr-m8-template-updates-design.md);
+the decision is [ADR 0018](adr/0018-the-updater-is-a-published-cli.md).
+
+Three things about it differ from the rest of the root tooling:
+
+- **Its version is the template's.** `pyproject.toml`'s `version`,
+  `cookiecutter.json`'s `_template_version` and the git tag move together
+  in `cz bump`, and `release.yml`'s `publish-pypi` job uploads the wheel
+  with PyPI Trusted Publishing once the tag is pushed. Never edit the
+  version by hand and never publish by hand: `just update` relies on the
+  newest release on PyPI being the newest template tag.
+- **It is typed and tested harder than the tooling.** `just typecheck`
+  runs `mypy --strict` over it and is part of `just lint`; `tests/cli/`
+  holds its unit tests; `tests/test_update_e2e.py` builds a two-version
+  template in a temporary directory and runs real updates through it,
+  with no network. `just wheel` builds the wheel and runs `pyfr --version`
+  from it, as CI's `docs` job does.
+- **It must work for every version a project can record.** A project
+  generated at v0.7.0 has an answers file and nothing else. The tool
+  installs `.pyfr-update-ignore` when it is missing, and every error
+  message points at the guide each project carries,
+  `docs/guides/update-from-template.md`. When you change what the tool
+  needs from a project, the end-to-end test's oldest scenario is the one
+  to extend first.
+
+### Writing a migration script
+
+Most template changes reach a project through the merge. A change a merge
+cannot express — a file that moves, a setting that changes shape — ships a
+script under `updates/<version>/`, where `<version>` is the tag of the
+release that needs it: `before.py` runs on the project's tree before the
+merge, `after.py` after the merge is committed. Either may be absent.
+[`updates/README.md`](https://github.com/EmadMokhtar/pyfr/blob/main/updates/README.md)
+is the contract; in short:
+
+- **Standard library only.** The scripts run with `uv run --no-project
+  python`, so nothing from the project's environment is installed first.
+- **Idempotent** — running twice equals running once. A failed update is
+  re-run, and a script that already did its work exits 0 without doing it
+  again. Check before you act.
+- `before.py` moves things so the merge lines up (`git mv` through
+  `subprocess`); `after.py` rewrites contents once the template's version
+  of a file is in place. The tool commits what each leaves — `git add`
+  any file you create, because the commit stages tracked files only.
+- **Exit non-zero to stop the update.** Whatever the script writes to
+  stderr is shown to the user.
+- **A deleted file is not an error.** Teams delete example files; a script
+  that finds its target missing exits 0.
+
+Test one the way `tests/test_update_e2e.py` tests its fixture scripts:
+generate at the previous version, edit the project the way a team would,
+update, assert the tree. `updates/` sits outside the template body, so a
+script is never rendered into a project.
 
 ## Working on the documentation
 
@@ -586,8 +650,8 @@ under — what M8 will read to bring it up to date.
 
 ## One-time repository settings
 
-Seven settings live in the GitHub interface, not in this repository, so they
-are easy to miss when standing up a fork. The repository's default
+Seven settings live in the GitHub interface and one on pypi.org, not in
+this repository, so they are easy to miss when standing up a fork. The repository's default
 workflow-token permission is *not* one of them: every workflow that writes
 declares the permission it needs in its own `permissions:` key, which
 GitHub honours whatever the repository default says — a project generated
@@ -633,6 +697,14 @@ images with the workflow token alone.
   tells you about a new advisory between two weekly runs, and security
   updates are what opens a pull request for it the same day rather than at
   the next weekly run.
+- **A pending publisher on pypi.org for `pyfr-cli`, before the first
+  release.** Project `pyfr-cli`, owner `EmadMokhtar`, repository `pyfr`,
+  workflow `release.yml`, no environment. `release.yml`'s `publish-pypi`
+  job uploads with Trusted Publishing — PyPI accepts a short-lived token
+  GitHub mints for the run — so no PyPI token is stored. Without the
+  publisher that job fails and every other release job still succeeds; it
+  runs last and nothing depends on it. A fork publishes under its own
+  package name, or not at all: `pyfr-cli` is this repository's.
 
 ### The first release run was not like the others
 
@@ -670,18 +742,20 @@ are not interchangeable.
 | `just docs` | Live preview of PyFr's site on <http://127.0.0.1:8000>, rebuilding as you save. |
 | `just docs-build` | Build both sites into `site/` with `--strict`, exactly as CI and `docs.yml` do: PyFr's at the top, and the reference service's rendered site — built from `examples/reference-service/` with its own toolchain and its own `mkdocs.yml`, with `SITE_URL` set to its nested address, `REPO_URL` and `REPO_NAME` pointing its header at this repository, and `EDIT_URI` pointing its edit links at the template body — under `site/reference-service/`; then `scripts/check_site_links.py` resolves every link between the two sites against that tree, and every link into this repository's tree on GitHub against the checkout. |
 | `just links` | Dead external links, via [`lychee`](https://github.com/lycheeverse/lychee), over the root `docs/`, the root `README.md` and the rendered example's `docs/` and `README.md`. Needs the `lychee` binary locally (`brew install lychee`); CI's `links` job gets it from the action instead, against the same `lychee.toml` and the same paths. |
-| `just test` | This repository's own tests (`tests/`) — the hooks' tests, the generation-test matrix that renders all eight backend combinations and checks each one, `scripts/regen.py`'s tests and the golden diff — with both the `dev` and `docs` groups, because the generation tests build a render's site with the root's MkDocs. Needs no Docker. |
+| `just test` | This repository's own tests (`tests/`) — the hooks' tests, the generation-test matrix that renders all eight backend combinations and checks each one, `scripts/regen.py`'s tests, the golden diff, `pyfr-cli`'s unit tests (`tests/cli/`) and the end-to-end update test — with both the `dev` and `docs` groups, because the generation tests build a render's site with the root's MkDocs. Needs no Docker. |
 | `just test-full-suite [combination]` | The full-suite tests: three combinations rendered for real, synced, committed and run through their own `just check-all`. Slow; needs Docker and the network. `combination` is one of `everything-on`, `everything-off`, `postgres-only`. CI runs them on merge to `main` and nightly, never on a pull request — see [above](#the-full-suite-tests). |
 | `just precommit` | The repository's git hooks over every tracked file — the reference service's own `just precommit` skips itself when it finds it is nested inside this repository. |
 | `just regen` | Regenerate `examples/reference-service/` from the template with the answers in `tests/reference-answers.yaml`; run this after every change to `{{cookiecutter.project_slug}}/` and commit the result. |
 | `just regen-check` | The golden diff: render and compare, writing nothing. CI's `golden` job. |
 | `just adopt` | Copy Dependabot's edits to the rendered example back into the template, then check; only for line-for-line replacements — anything else fails with the file name and is made in the template by hand. Then, in the other direction, copy the root workflows' action pins into the template's workflows and regenerate the example — Dependabot's `github-actions` updates land in `/.github/workflows` only. |
 | `just audit` | pip-audit over the root `uv.lock` — the documentation and release toolchain — with the same flags as the reference service's own `audit`. CI's `security` job runs both. |
-| `just lint` | `ruff check` and `ruff format --check` over the root's own Python: `hooks/`, `scripts/`, `tests/`. The template body is excluded; the example is linted by its own `just lint`. |
+| `just lint` | `just typecheck`, then `ruff check` and `ruff format --check` over the root's own Python: `hooks/`, `scripts/`, `src/`, `tests/`. The template body is excluded; the example is linted by its own `just lint`. |
+| `just typecheck` | `mypy --strict` over `src/pyfr_cli/`, the one package this repository publishes. Part of `just lint` and of `just check`. |
+| `just wheel` | Build the `pyfr-cli` wheel and run `pyfr --version` from it, exactly as CI's `docs` job does; the version it prints must be `pyproject.toml`'s. Needs the network. |
 | `just changelog` | Preview the changelog entry the next release would write, from Conventional Commit history. Read-only. |
 | `just next-version` | Preview the version number the next release would choose. Read-only — the release itself runs in CI (`.github/workflows/release.yml`). |
 | `just docs-freshness [base] [head]` | The **advisory** warnings only: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not. Runs the example's `scripts/check_docs_freshness.py` twice — at the root over `docs/` with `--exclude docs/superpowers/`, then inside `examples/reference-service/` over the rendered pages; defaults to `origin/main HEAD`. Never fails. **This is not CI's `docs-freshness` job** — see [above](#just-docs-freshness-is-not-cis-docs-freshness-job). |
-| `just check` | `docs-build`, `test` and `regen-check` — everything CI's `docs` job checks at the repository level. Run before pushing a documentation, template or repository-tooling change. |
+| `just check` | `docs-build`, `typecheck`, `test` and `regen-check` — everything CI checks at the repository level without Docker. Run before pushing a documentation, template, `pyfr-cli` or repository-tooling change. |
 
 !!! warning "Two different servers, one port"
 
