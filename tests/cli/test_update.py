@@ -201,3 +201,65 @@ def test_has_replacement_sees_only_a_replace_ref_for_that_commit(
     git(project, "replace", "--graft", second)  # the user made it a root
     assert update._has_replacement(repo, second)
     assert not update._has_replacement(repo, first)
+
+
+def _pending(graft: str | None) -> update.state.State:
+    # The version fields are not read by _ungraft; any valid pair will do.
+    version = update.Version.parse("v0.10.0")
+    return update.state.State(version, version, "merging", graft=graft)
+
+
+def _create_real_graft(project: Path) -> str:
+    """Leave a real `git replace --graft` on HEAD -- the shape a run that
+    died between grafting and un-grafting leaves behind. `commit-tree`
+    makes the stand-in for the previous version's template commit directly,
+    without touching the working tree or index, and different enough from
+    HEAD's real parent that git accepts the graft as a real change (one
+    that changes nothing is refused as a no-op). Returns HEAD's sha, the
+    grafted one."""
+    (project / "README.md").write_text("second\n")
+    head = commit_all(project, "second")
+    empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    other_root = git(project, "commit-tree", empty_tree, "-m", "fake base")
+    git(project, "replace", "--graft", head, other_root)
+    return head
+
+
+def test_ungraft_with_no_replacement_ref_is_a_silent_no_op(project: Path) -> None:
+    # The common case: the previous run already deleted the ref and only
+    # the state file's record of it is stale.
+    repo = update.Git(project)
+    head = git(project, "rev-parse", "HEAD")
+    update._ungraft(repo, _pending(head))  # must not raise
+
+
+def test_ungraft_deletes_a_real_graft(project: Path) -> None:
+    repo = update.Git(project)
+    head = _create_real_graft(project)
+    assert git(project, "replace", "-l") == head
+    update._ungraft(repo, _pending(head))
+    assert git(project, "replace", "-l") == ""
+
+
+def test_ungraft_raises_when_the_delete_fails_and_the_ref_is_still_there(
+    project: Path,
+) -> None:
+    # Forcing a real permission failure without root: chmod .git/refs/replace
+    # read-only so git cannot unlink the loose ref file inside it -- the
+    # same trick tests/cli/test_vendor.py's chmod-555 worktree test uses.
+    repo = update.Git(project)
+    head = _create_real_graft(project)
+    replace_dir = repo.git_dir() / "refs" / "replace"
+    replace_dir.chmod(0o555)
+    try:
+        with pytest.raises(UpdateError) as stop:
+            update._ungraft(repo, _pending(head))
+        assert stop.value.cause.startswith(
+            f"the temporary graft on {head[:12]} could not be removed:"
+        )
+        assert stop.value.fix == (
+            f"remove it by hand: git replace -d {head[:12]}, then run pyfr update again"
+        )
+    finally:
+        replace_dir.chmod(0o755)  # let tmp_path clean itself up afterwards
+    assert git(project, "replace", "-l") == head

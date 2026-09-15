@@ -275,8 +275,20 @@ def _resume(
 def _ungraft(git: Git, pending: state.State) -> None:
     """A run that died between grafting and un-grafting left a replacement
     ref behind; drop it before anything reads history."""
-    if pending.graft is not None:
-        git.run("replace", "--delete", pending.graft, check=False)
+    if pending.graft is None:
+        return
+    deleted = git.run("replace", "--delete", pending.graft, check=False)
+    if deleted.returncode != 0 and _has_replacement(git, pending.graft):
+        # The common case is the ref is already gone and only the state
+        # entry was stale (the previous run deleted it) -- that fails here
+        # too, but harmlessly, so only a ref that is still really there is
+        # worth stopping for.
+        raise UpdateError(
+            f"the temporary graft on {pending.graft[:12]} could not be "
+            f"removed: {deleted.stderr.strip()}",
+            f"remove it by hand: git replace -d {pending.graft[:12]}, "
+            "then run pyfr update again",
+        )
 
 
 def _report_conflicts(git: Git, out: TextIO) -> list[str]:
@@ -331,8 +343,19 @@ def _merge(
     try:
         result = git.run("merge", "--no-ff", "--no-commit", vendor.BRANCH, check=False)
     finally:
+        # check=False above never raises, so raising here cannot mask a
+        # real error from the merge itself. The state file's graft entry
+        # (saved above) is left in place on failure, so the next run's
+        # _ungraft retries the delete instead of losing track of the ref.
         if grafted is not None:
-            git.run("replace", "--delete", grafted, check=False)
+            deleted = git.run("replace", "--delete", grafted, check=False)
+            if deleted.returncode != 0:
+                raise UpdateError(
+                    f"the temporary graft on {grafted[:12]} could not be "
+                    f"removed: {deleted.stderr.strip()}",
+                    f"remove it by hand: git replace -d {grafted[:12]}, "
+                    "then run pyfr update again",
+                )
     if result.returncode != 0 and git.operation_in_progress() != "merge":
         # Refused before it started: untracked files in the way, typically.
         # Nothing is in progress, so the state this run just saved is stale
