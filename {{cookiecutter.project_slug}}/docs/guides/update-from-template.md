@@ -125,7 +125,9 @@ a setting that changes shape. The template ships a script for those under
 `updates/<version>/` in its own repository; `just update` runs them for
 every version between yours and the target, before the merge (`before.py`)
 and after it (`after.py`), and commits what they change. They are standard
-library only, idempotent, and never run twice for the same version.
+library only and idempotent: an interrupted update is simply run again, so
+a script may run more than once for the same version and must do nothing
+the second time.
 
 ## A project generated before the update tooling existed
 

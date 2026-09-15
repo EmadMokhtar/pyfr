@@ -805,7 +805,7 @@ def test_the_update_recipes_wrap_pyfr_cli_from_pypi(cookies) -> None:
 
 @pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
 def test_every_render_carries_the_update_guide(cookies, answers) -> None:
-    # Thirteen error messages in pyfr-cli end with "see
+    # Twelve error messages in pyfr-cli end with "see
     # docs/guides/update-from-template.md"; the page must exist in every
     # render, and be in the site's nav (tests/test_site_nav.py checks the
     # example's nav; this checks the render's).
