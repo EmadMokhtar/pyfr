@@ -85,7 +85,7 @@ ALWAYS_FORBIDDEN_MARKERS = (
 # (justfile), Prometheus's alert-label templating (slo.yml), sqlfluff's
 # comment naming its own template markers (.sqlfluff), a raw PromQL query
 # string (test_observability_stack.py), and GitHub Actions' `${{ }}`
-# expressions (the four workflows). None of these are cookiecutter
+# expressions (the five workflows). None of these are cookiecutter
 # collisions. They are still checked for ALWAYS_FORBIDDEN_MARKERS above --
 # only their own raw-guarded braces are excused, not real Jinja mistakes.
 RAW_GUARDED_FILES = frozenset(
@@ -859,8 +859,9 @@ def test_the_readme_documents_the_update_workflow_and_its_token(cookies) -> None
     assert "Five workflows" in section
     assert "`template-update.yml`" in section
     # spec section 5.4: the token's documented permissions widen, and the
-    # two consequences of leaving it out are stated.
+    # consequences of leaving it out are stated.
     assert "Pull requests" in section and "Issues" in section
+    assert "Workflows" in section
     normalized_section = " ".join(section.split())
     assert (
         "Allow GitHub Actions to create and approve pull requests" in normalized_section
