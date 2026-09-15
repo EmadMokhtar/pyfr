@@ -848,3 +848,20 @@ def test_every_render_carries_the_weekly_template_update(cookies, answers) -> No
     assert "persist-credentials: true" in checkout
     assert "pyfr/update-" in workflow
     assert "gh pr create" in workflow and "gh issue create" in workflow
+
+
+def test_the_readme_documents_the_update_workflow_and_its_token(cookies) -> None:
+    root = render(cookies, **EVERYTHING_ON)
+    readme = (root / "README.md").read_text()
+    section = readme.split("## Continuous integration and releases")[1].split("\n## ")[
+        0
+    ]
+    assert "Five workflows" in section
+    assert "`template-update.yml`" in section
+    # spec section 5.4: the token's documented permissions widen, and the
+    # two consequences of leaving it out are stated.
+    assert "Pull requests" in section and "Issues" in section
+    assert "Allow GitHub Actions to create and approve pull requests" in section
+    assert "Six settings" in section
+    contributing = (root / "docs" / "contributing.md").read_text()
+    assert "Six settings" in contributing
