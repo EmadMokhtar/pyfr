@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.12.0 (2026-09-15)
+
+### Feat
+
+- let a generated project update itself from the template (m8 pr 2) (#53)
+
 ## v0.11.0 (2026-09-15)
 
 ### Feat
