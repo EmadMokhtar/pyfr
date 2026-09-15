@@ -451,14 +451,15 @@ GitHub's default.
   stored as `RELEASE_TOKEN` is what `release.yml` pushes with and what
   `template-update.yml` opens its pull requests and issues with. Without
   it both fall back to the workflow token: releases still push where no
-  ruleset forbids it, and the update pull request still opens — but
-  GitHub starts no workflow for an event the workflow token caused, so
-  CI does not run on that pull request until someone closes and reopens
-  it (the workflow leaves a comment saying so).
-- **Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests"**,
-  only if `RELEASE_TOKEN` is not set: without it the workflow token may not
-  open the weekly template-update pull request, and `template-update.yml`
-  fails at `gh pr create`.
+  ruleset forbids it, and the update pull request still opens, provided
+  the Actions setting below is on — but GitHub starts no workflow for an
+  event the workflow token caused, so CI does not run on that pull
+  request until someone closes and reopens it (the workflow leaves a
+  comment saying so).
+- **Settings → Actions → General → "Allow GitHub Actions to create and
+  approve pull requests"**, only if `RELEASE_TOKEN` is not set: without
+  it the workflow token may not open the weekly template-update pull
+  request, and `template-update.yml` fails at `gh pr create`.
 - **Squash-merge as the merge strategy**, so the pull request title — a
   Conventional Commit — becomes the commit on `main` that Commitizen reads.
 - **After the first release, make each GHCR package public** under the

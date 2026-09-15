@@ -861,7 +861,10 @@ def test_the_readme_documents_the_update_workflow_and_its_token(cookies) -> None
     # spec section 5.4: the token's documented permissions widen, and the
     # two consequences of leaving it out are stated.
     assert "Pull requests" in section and "Issues" in section
-    assert "Allow GitHub Actions to create and approve pull requests" in section
+    normalized_section = " ".join(section.split())
+    assert (
+        "Allow GitHub Actions to create and approve pull requests" in normalized_section
+    )
     assert "Six settings" in section
     contributing = (root / "docs" / "contributing.md").read_text()
     assert "Six settings" in contributing
