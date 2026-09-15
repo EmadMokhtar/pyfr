@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-15
 ---
 
 # Why a template, not a framework
@@ -52,8 +52,8 @@ if it were not addressed.
 
 ## How the copy problem is solved
 
-M8 makes a generated project able to pull in later template versions through
-an ordinary git merge.
+A generated project pulls in later template versions through an ordinary
+git merge — `just update`, delivered in M8 and recorded in ADR 0018.
 
 Generation records the answers you gave in a file in your repository. A
 *vendor branch* holds pristine template output and nothing else — no local

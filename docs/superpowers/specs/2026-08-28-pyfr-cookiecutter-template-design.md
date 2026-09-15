@@ -1016,6 +1016,17 @@ rendered from — a detail that matters for Backstage (section 11.7).
 
 ### 11.2 The template branch
 
+> **Amended by M8 (2026-09-14).** The branch is not local-only. It lives on
+> `origin`, and the updater fetches it before an update and pushes it before
+> merging: a squash-merged update pull request discards the merge commit, so
+> the second update needs the first's template commit kept alive on the
+> remote, and the merge base is pinned to it explicitly. The reconstruction
+> from the root commit below holds for the *first* update only. See
+> [`2026-09-14-pyfr-m8-template-updates-design.md`](2026-09-14-pyfr-m8-template-updates-design.md),
+> sections 4.3 and 4.7; its section 13 lists every departure from this
+> section 11, including the `PYFR_REGEN` name, the default ignore list, how
+> migration scripts run, and the updater itself (`pyfr-cli`, ADR 0018).
+
 An update is a three-way merge, which needs a **merge base**: a commit both sides
 descend from, representing the last state they agreed on. The generated repository
 supplies one by keeping a `template` branch that holds pristine generated output

@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 ---
 
 # Glossary
@@ -38,11 +38,14 @@ which every generated project carries for itself.
 | Left-strip tag | A Jinja block tag written `{%- … %}`: the dash removes the newline and whitespace before it, so the tag's own line vanishes from the render. Every conditional in the template body uses this form. |
 | lychee | The external-link checker. `just links` runs it over both sites' Markdown; CI's `links` job does the same from the action. |
 | Merge base | The most recent commit two branches share — the "before" state a three-way merge compares both sides against. |
+| Migration script | A `before.py` or `after.py` under `updates/<version>/` in this repository, run by `pyfr update` around the merge for a template change a merge cannot express — a moved file, a setting that changed shape. Standard library only; must be safe to run twice. |
 | MkDocs | The static-site generator behind both documentation sites, with the Material theme. `mkdocs build --strict` turns every warning into a failure. |
 | `no-docs-needed` | A pull-request label that switches off the hard documentation gate for a refactor or an internal-only change. |
 | pip-audit | A tool that checks pinned Python packages against the PyPI advisory database. `just audit` runs it over the root `uv.lock`; the reference service runs it over its own. |
 | Pruning | Removing everything that belongs to an unchosen backend from a render: whole files and directories by the post-generation hook's `PRUNED` table, lines inside mixed files by Jinja `{%- if %}` blocks. |
-| `.pyfr-answers.yml` | A file the template writes into every generated project, recording the answers and the template version it was rendered from. M8's template updates read it. Kept committed and unedited. |
+| `.pyfr-answers.yml` | A file the template writes into every generated project, recording the answers and the template version it was rendered from. `just update` reads it. Kept committed and unedited. |
+| `pyfr-cli` | The updater a generated project runs as `just update`: a Python package on PyPI, command `pyfr`, run through `uvx` at the target template version. Its version is the template's, and it is the one package this repository publishes (ADR 0018). |
+| `.pyfr-update-ignore` | A file in every generated project, in gitignore syntax, naming the paths `just update` never touches — the ones the team rewrites. A project without it uses the built-in default for its answers. |
 | Reference answers | `tests/reference-answers.yaml`: the fixed, everything-on answers `examples/reference-service/` is rendered from, with the names the reference service has carried since M0. |
 | Reference service | `examples/reference-service/`: the complete, running service rendered from the template with the reference answers, and never edited by hand. Its site is the worked example of the documentation every generated project ships. |
 | Render | The output of running cookiecutter over the template body with one set of answers. The reference service is one render; the generation tests make eight more. |
@@ -50,6 +53,7 @@ which every generated project carries for itself.
 | Squash merge | Merging a pull request as one commit whose message is the pull request title. Why the title must be a Conventional Commit. |
 | Template body | `{{cookiecutter.project_slug}}/`: the directory cookiecutter renders, and the only source of truth for the service. Its name is itself a placeholder, replaced by the project slug. |
 | Three-way merge | A merge using the merge base plus both sides, so a tool can tell "they changed it" apart from "you changed it". |
+| Trusted Publishing | PyPI accepting a short-lived OpenID Connect token — a signed statement of identity — that GitHub Actions mints for one workflow run, instead of a stored PyPI password or token. How `release.yml` publishes `pyfr-cli`. |
 | uv | A fast Python package and project manager. The only Python tool PyFr requires; `uvx` runs cookiecutter through it without an install. |
-| Vendor branch | A branch holding pristine upstream output and nothing else, merged in to receive upstream changes. How M8's template updates work. |
+| Vendor branch | A branch holding pristine upstream output and nothing else, merged in to receive upstream changes. The `template` branch in every generated project, kept on the remote so the second update has the first's commit as its base (ADR 0018). |
 | Walking skeleton | A thin but complete end-to-end implementation, proving the architecture before features are added. M0 was one. |
