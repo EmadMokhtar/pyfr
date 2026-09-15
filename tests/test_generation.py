@@ -782,3 +782,22 @@ def test_the_docs_carry_the_answers_not_the_reference_identity(cookies) -> None:
             ):
                 offenders.append(f"{path.relative_to(root)}: {line.strip()[:80]}")
     assert offenders == []
+
+
+def test_the_update_recipes_wrap_pyfr_cli_from_pypi(cookies) -> None:
+    # spec section 5.1: the newest release on PyPI is, by construction, the
+    # newest template tag, so `@latest` runs the updater at the target
+    # version; a pinned `to` pins both the tool and the target.
+    root = render(cookies, **EVERYTHING_ON)
+    justfile = (root / "justfile").read_text()
+    assert "uvx --from pyfr-cli@latest pyfr update\n" in justfile
+    assert "uvx --from pyfr-cli@latest pyfr update-check\n" in justfile
+    assert (
+        'uvx --from "pyfr-cli==${version}" pyfr update --to "v${version}"' in justfile
+    )
+    # just's own interpolation survived Jinja: the recipe reads {{to}}.
+    assert 'if [ -n "{{to}}" ]; then' in justfile
+    # Neither tool enters the project's environment.
+    pyproject = (root / "pyproject.toml").read_text()
+    assert "pyfr-cli" not in pyproject
+    assert "cookiecutter" not in pyproject
