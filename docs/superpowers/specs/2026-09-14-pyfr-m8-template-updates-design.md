@@ -575,10 +575,14 @@ so where `RELEASE_TOKEN` is already described.
 `RELEASE_TOKEN` today: a fine-grained personal access token, Contents read
 and write, this repository only, needed when a ruleset on `main` requires
 pull requests. M8 widens the documented permissions to Contents, Pull
-requests and Issues (read and write) and states the two consequences of
-leaving it unset: the update pull request opens but its CI does not start
-until someone closes and reopens it, and the repository setting above must
-be on. Documented in the generated README ("Continuous integration and
+requests, Issues and Workflows (read and write) and states the three
+consequences of leaving it unset: the update pull request opens but its CI
+does not start until someone closes and reopens it, the repository setting
+above must be on, and an update that changes a file under
+`.github/workflows/` — most template releases do — cannot be pushed by the
+workflow token at all, since GitHub refuses any push that touches a
+workflow file from a token without the Workflows permission. *(Amended in
+PR 2.)* Documented in the generated README ("Continuous integration and
 releases") and `docs/contributing.md`, where the token already appears.
 
 ---
