@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 ---
 
 # Decision records
@@ -36,6 +36,7 @@ is a reconstruction, and it shows.
 | 0002 | [cookiecutter over Copier and cruft](0002-cookiecutter-over-copier-and-cruft.md) | M0 |
 | 0003 | [uv, not pip or Poetry](0003-uv-over-pip-and-poetry.md) | M0 |
 | 0017 | [The template is the source of truth, and a golden diff proves it](0017-the-template-is-the-source-of-truth.md) | M7 |
+| 0018 | [The updater is a published command-line tool, and the template branch lives on the remote](0018-the-updater-is-a-published-cli.md) | M8 |
 
 Every other decision belongs to the reference service — the project this
 template generates — and is recorded on

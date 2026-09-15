@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 covers:
   - cookiecutter.json
   - hooks/pre_gen_project.py
@@ -68,7 +68,8 @@ uvx cookiecutter gh:EmadMokhtar/pyfr --no-input project_name="Order Service" dat
 
 Your answers are recorded in the generated project as `.pyfr-answers.yml`,
 together with the template version they were rendered from. Keep it
-committed and unedited: M8's template updates read it.
+committed and unedited: `just update` reads it ([Updating
+later](#updating-later)).
 
 ## What the hook does
 
@@ -170,6 +171,20 @@ published container packages public after the first release. The generated
 under *Continuous integration and releases*, with what goes wrong when each
 is missing; the reference service's copy is
 [here](https://github.com/EmadMokhtar/pyfr/blob/main/examples/reference-service/README.md#continuous-integration-and-releases).
+
+## Updating later
+
+A generated project is yours, and it still receives later template
+versions. `just update` re-renders the template at the newest release with
+the answers in `.pyfr-answers.yml` and merges the result into your branch
+through an ordinary git merge: your edits survive, files you deleted stay
+deleted, and paths listed in `.pyfr-update-ignore` are never touched. The
+project's `.github/workflows/template-update.yml` runs the same update
+every Monday and opens a pull request when there is something to merge, or
+an issue naming the files when the merge conflicts. The project's own
+guide, *Update from the template* — published for the reference service at
+<https://emadmokhtar.github.io/pyfr/reference-service/guides/update-from-template/>
+— has the details and the conflict procedure.
 
 **How PyFr itself is built** — the template body, the golden diff, pruning
 and the regeneration loop — is in [Contributing](contributing.md).
