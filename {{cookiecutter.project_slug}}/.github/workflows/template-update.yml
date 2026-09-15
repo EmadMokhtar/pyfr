@@ -31,13 +31,15 @@ jobs:
     timeout-minutes: 30
 {%- raw %}
     env:
-      # RELEASE_TOKEN when the repository has one, the workflow token
-      # otherwise. A pull request opened, or a branch pushed, with the
-      # workflow token starts no workflow, so CI would not run on the
-      # update; the fallback still opens the pull request, and the
-      # comment step below says what to do about CI. README.md,
-      # "Continuous integration and releases", describes the token.
-      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+      # Whether RELEASE_TOKEN exists, read once so the PR step below can
+      # warn when it is missing: GitHub starts no workflow for events the
+      # workflow token caused, so CI would not run on the update; the
+      # fallback still opens the pull request. README.md, "Continuous
+      # integration and releases", describes the token. GH_TOKEN itself
+      # is not set here: uvx's installs and the template's hooks run in
+      # the steps between checkout and the ones that call `gh`, and a
+      # long-lived token must not be readable there -- it is set instead
+      # on each of those three steps directly.
       HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v7
@@ -47,11 +49,10 @@ jobs:
           # Unlike release.yml, the checkout keeps its token -- the
           # WORKFLOW token, which dies with the job, and which `pyfr
           # update` needs to fetch origin/template of a private
-          # repository. The long-lived release token never enters the
-          # checkout: the template's own hooks and uvx's installs run in
-          # the steps below, and a long-lived token must not be readable
-          # there. It reaches the push step only, through its
-          # environment.
+          # repository. RELEASE_TOKEN never enters the checkout: the
+          # template's own hooks and uvx's installs run in the steps
+          # below, and a long-lived token must not be readable there. It
+          # reaches the push step only, through its environment.
           persist-credentials: true
 
       - name: Install uv
@@ -86,6 +87,7 @@ jobs:
         id: existing
         if: steps.check.outputs.behind == 'true'
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           RECORDED: ${{ steps.check.outputs.recorded }}
           NEWEST: ${{ steps.check.outputs.newest }}
         run: |
@@ -106,6 +108,9 @@ jobs:
         # --no-push: the tool's own push of the template branch would
         # need a credential in this step, where the template's hooks and
         # uvx's installs also run. The push step below pushes it instead.
+        # --no-push also makes the tool treat an unreachable origin as "no
+        # template branch"; if the template push below is then rejected,
+        # the cause was the network, and next week's run heals it.
         # Exit 0: clean, the merge is committed. Exit 1: conflicts; the
         # merge is abandoned here, and the issue tells the team to run
         # `just update` locally, where the template branch pushed below
@@ -123,28 +128,36 @@ jobs:
       - name: Push the template branch, and the update branch on a clean merge
         if: steps.update.outcome == 'success'
         env:
-          # RELEASE_TOKEN reaches this step only. A push made with it, unlike
-          # one made with the workflow token, starts CI on the update.
+          # RELEASE_TOKEN reaches this step and the three that call `gh`
+          # -- never checkout, or the steps where uvx's installs and the
+          # template's hooks run. A push made with it, unlike one made
+          # with the workflow token, starts CI on the update.
           PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           NEWEST: ${{ steps.check.outputs.newest }}
           STATUS: ${{ steps.update.outputs.status }}
         run: |
+          # actions/checkout stored the workflow token as an HTTP header that git would send instead of the URL's credential; drop it so RELEASE_TOKEN, when present, is what pushes.
+          git config --unset-all http.https://github.com/.extraheader
           remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push "$remote" template:template
           if [ "$STATUS" = "0" ]; then
-            git push "$remote" "HEAD:refs/heads/pyfr/update-${NEWEST}"
+            # --force: the branch is the workflow's own; a closed pull request may have left an old tip behind.
+            git push "$remote" --force "HEAD:refs/heads/pyfr/update-${NEWEST}"
           fi
 
       - name: Open the pull request
-        if: steps.update.outputs.status == '0'
+        # outcome first: a skipped step has no status output, and GitHub reads a missing output as 0.
+        if: steps.update.outcome == 'success' && steps.update.outputs.status == '0'
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           RECORDED: ${{ steps.check.outputs.recorded }}
           NEWEST: ${{ steps.check.outputs.newest }}
         run: |
-          # The merge commit's body carries the template's changelog
-          # entries for the range; the update may have a `chore: finish`
-          # commit on top of it, so ask for the newest merge commit.
-          git log --merges -1 --format=%b > body.md
+          # `pyfr update` commits the merge (or a plain commit when there
+          # is nothing to merge) with a `chore: update template ...`
+          # subject; grep for it, rather than assume `--merges`, so a
+          # plain commit is found too.
+          git log -1 --format=%b --grep='^chore: update template ' > body.md
           gh pr create \
             --base "${GITHUB_REF_NAME}" \
             --head "pyfr/update-${NEWEST}" \
@@ -155,8 +168,9 @@ jobs:
           fi
 
       - name: Open an issue for the conflicts
-        if: steps.update.outputs.status == '1'
+        if: steps.update.outcome == 'success' && steps.update.outputs.status == '1'
         env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           RECORDED: ${{ steps.check.outputs.recorded }}
           NEWEST: ${{ steps.check.outputs.newest }}
           TEMPLATE: ${{ steps.check.outputs.template }}

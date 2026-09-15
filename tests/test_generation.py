@@ -838,12 +838,13 @@ def test_every_render_carries_the_weekly_template_update(cookies, answers) -> No
     assert "uvx --from pyfr-cli@latest pyfr update-check --json" in workflow
     assert "uvx --from pyfr-cli@latest pyfr update --no-push" in workflow
     assert 'cron: "23 6 * * 1"' in workflow
-    # RELEASE_TOKEN reaches the push step only, never the checkout: the
-    # text before the first step after checkout must not mention it.
+    # RELEASE_TOKEN never enters the checkout: its `with:` block carries
+    # no `token:` override, so it persists whatever the ambient workflow
+    # token is.
     checkout = workflow.split("- uses: actions/checkout@v7")[1].split(
         "- name: Install uv"
     )[0]
-    assert "RELEASE_TOKEN" not in checkout
+    assert "token:" not in checkout
     assert "persist-credentials: true" in checkout
     assert "pyfr/update-" in workflow
     assert "gh pr create" in workflow and "gh issue create" in workflow

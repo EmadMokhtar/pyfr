@@ -548,10 +548,10 @@ Steps, one job:
 3. `uvx --from pyfr-cli@latest pyfr update-check --json`. Exit 0 → done.
    Exit 2 → the job fails.
 4. `git switch -c pyfr/update-<newest>`, then
-   `uvx --from pyfr-cli@latest pyfr update`, output captured to a file.
+   `uvx --from pyfr-cli@latest pyfr update --no-push`, output captured to a file.
    - **Exit 0** → the push step pushes `template` and the branch; `gh pr create` titled
      `chore: update template v0.10.0 -> v0.12.0`, body from the merge
-     commit (`git log -1 --format=%b`). Skipped when an open pull request
+     commit (`git log -1 --format=%b --grep='^chore: update template '`). Skipped when an open pull request
      from that branch exists (`gh pr list --head`). When `RELEASE_TOKEN`
      is unset (`env: HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}`),
      add one comment: GitHub does not start workflows for events the
