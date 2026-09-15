@@ -76,7 +76,11 @@ jobs:
           cat check.json
           case "$status" in
             0) echo "behind=false" >> "$GITHUB_OUTPUT" ;;
-            1) echo "behind=true" >> "$GITHUB_OUTPUT"
+            1) # uvx itself (no network, pyfr-cli unresolvable) also exits 1,
+               # with check.json empty or missing; check the JSON actually
+               # says "behind" before trusting recorded/newest from it.
+               jq -e '.behind == true' check.json >/dev/null || { echo "update-check exited 1 without a 'behind' answer -- uvx or the network failed"; exit 2; }
+               echo "behind=true" >> "$GITHUB_OUTPUT"
                echo "recorded=$(jq -r .recorded check.json)" >> "$GITHUB_OUTPUT"
                echo "newest=$(jq -r .newest check.json)" >> "$GITHUB_OUTPUT"
                echo "template=$(jq -r .template check.json)" >> "$GITHUB_OUTPUT" ;;
@@ -92,7 +96,7 @@ jobs:
           NEWEST: ${{ steps.check.outputs.newest }}
         run: |
           prs=$(gh pr list --head "pyfr/update-${NEWEST}" --state open --json number --jq 'length')
-          issues=$(gh issue list --state open --search "in:title \"chore: template ${RECORDED} -> ${NEWEST} conflicts\"" --json number --jq 'length')
+          issues=$(gh issue list --state open --limit 200 --json title --jq "[.[] | select(.title == \"chore: template ${RECORDED} -> ${NEWEST} conflicts\")] | length")
           if [ "$prs" != "0" ] || [ "$issues" != "0" ]; then
             echo "${NEWEST} already has an open pull request or issue; nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -121,6 +125,13 @@ jobs:
           uvx --from pyfr-cli@latest pyfr update --no-push 2>&1 | tee update.log
           status=${PIPESTATUS[0]}
           set -e
+          if [ "$status" = "1" ]; then
+            # uvx itself (no network, pyfr-cli unresolvable) also exits 1,
+            # with no merge started; without this check that looks like
+            # "conflicts" and the abort below fails on a merge that never
+            # began.
+            git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "pyfr update exited 1 without a merge in progress -- uvx or the network failed"; exit 1; }
+          fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" = "1" ]; then git merge --abort; fi
           if [ "$status" != "0" ] && [ "$status" != "1" ]; then exit "$status"; fi
@@ -137,11 +148,26 @@ jobs:
           STATUS: ${{ steps.update.outputs.status }}
         run: |
           # actions/checkout stored the workflow token as an HTTP header that git would send instead of the URL's credential. An empty -c value resets that header for these two commands, wherever checkout keeps it, so RELEASE_TOKEN -- when present -- is what pushes.
+          # push() captures stderr for both calls below, so a refusal caused
+          # by the token lacking the Workflows permission (GitHub's own
+          # wording mentions "workflow") gets a dedicated ::error:: pointing
+          # at the fix; any other failure still prints and fails the step.
+          push() {
+            if ! output=$(git -c http.https://github.com/.extraheader= push "$@" 2>&1); then
+              echo "$output"
+              case "$output" in
+                *[Ww]orkflow*)
+                  echo "::error::The push was refused because the update changes a workflow file and the token lacks the Workflows permission. Add a RELEASE_TOKEN secret with Contents, Pull requests, Issues and Workflows (read and write) -- README.md, Continuous integration and releases."
+                  ;;
+              esac
+              exit 1
+            fi
+          }
           remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git -c http.https://github.com/.extraheader= push "$remote" template:template
+          push "$remote" template:template
           if [ "$STATUS" = "0" ]; then
             # --force: the branch is the workflow's own; a closed pull request may have left an old tip behind.
-            git -c http.https://github.com/.extraheader= push --force "$remote" "HEAD:refs/heads/pyfr/update-${NEWEST}"
+            push --force "$remote" "HEAD:refs/heads/pyfr/update-${NEWEST}"
           fi
 
       - name: Open the pull request
