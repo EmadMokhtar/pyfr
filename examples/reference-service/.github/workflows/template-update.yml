@@ -135,13 +135,12 @@ jobs:
           NEWEST: ${{ steps.check.outputs.newest }}
           STATUS: ${{ steps.update.outputs.status }}
         run: |
-          # actions/checkout stored the workflow token as an HTTP header that git would send instead of the URL's credential; drop it so RELEASE_TOKEN, when present, is what pushes.
-          git config --unset-all http.https://github.com/.extraheader
+          # actions/checkout stored the workflow token as an HTTP header that git would send instead of the URL's credential. An empty -c value resets that header for these two commands, wherever checkout keeps it, so RELEASE_TOKEN -- when present -- is what pushes.
           remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push "$remote" template:template
+          git -c http.https://github.com/.extraheader= push "$remote" template:template
           if [ "$STATUS" = "0" ]; then
             # --force: the branch is the workflow's own; a closed pull request may have left an old tip behind.
-            git push "$remote" --force "HEAD:refs/heads/pyfr/update-${NEWEST}"
+            git -c http.https://github.com/.extraheader= push --force "$remote" "HEAD:refs/heads/pyfr/update-${NEWEST}"
           fi
 
       - name: Open the pull request
