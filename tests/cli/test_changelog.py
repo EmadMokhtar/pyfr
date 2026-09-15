@@ -104,6 +104,19 @@ def test_release_url_leaves_a_port_on_a_real_https_url_alone() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "path",
+    [r"C:\Users\foo\template", "C:/Users/foo/template"],
+)
+def test_release_url_leaves_a_windows_drive_path_alone(path: str) -> None:
+    # A single-letter "host" before the `:` is never a real ssh host, so
+    # SCP_LIKE_URL requires at least two, which keeps a Windows drive path
+    # (`C:\...`, `C:/...`) from being mistaken for one.
+    assert (
+        changelog.release_url(path, Version(0, 12, 0)) == f"{path}/releases/tag/v0.12.0"
+    )
+
+
 def test_release_url_leaves_a_local_path_alone() -> None:
     # Not a real temp-file access, just a string this function never opens --
     # S108 (it warns about insecure use of a shared /tmp path) does not apply.

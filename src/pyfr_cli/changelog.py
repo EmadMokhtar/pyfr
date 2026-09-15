@@ -13,9 +13,11 @@ from pyfr_cli.versions import Version
 HEADING = re.compile(r"^## v?(?P<version>\d+\.\d+\.\d+)(?P<rest>.*)$")
 # An scp-like ssh clone URL: `[user@]host:path`, no scheme in front. The
 # negative lookahead keeps a real URL (`https://host:port/path`) from
-# matching -- that also has a `:` before the first `/`.
+# matching -- that also has a `:` before the first `/`. The host needs at
+# least two characters so a Windows drive path (`C:\...`, `C:/...`) is not
+# mistaken for one -- no real ssh host is a single letter.
 SCP_LIKE_URL = re.compile(
-    r"^(?![A-Za-z][A-Za-z0-9+.-]*://)(?:[^@/]+@)?(?P<host>[^:/]+):(?P<path>.+)$"
+    r"^(?![A-Za-z][A-Za-z0-9+.-]*://)(?:[^@/]+@)?(?P<host>[^:/]{2,}):(?P<path>.+)$"
 )
 # An ssh:// clone URL, any user, with an optional port that has no https
 # equivalent -- the web UI lives on 443 whatever port ssh uses.
