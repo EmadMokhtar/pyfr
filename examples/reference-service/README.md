@@ -443,19 +443,22 @@ GitHub's default.
 - **A `no-docs-needed` label must exist**, or the documentation-freshness
   check has no escape hatch.
 - **A `RELEASE_TOKEN` secret, if a ruleset on `main` requires a pull
-  request — or if the weekly template update should run CI.** The
-  workflow token cannot pass such a ruleset (`GH013`), and on a
-  user-owned repository GitHub does not let the Actions app be exempted;
-  a fine-grained personal access token of an exempt admin (this
-  repository only; Contents, Pull requests and Issues: read and write)
+  request — or if the weekly template update should run CI.** The workflow
+  token cannot pass such a ruleset (`GH013`), and on a user-owned
+  repository GitHub does not let the Actions app be exempted; a
+  fine-grained personal access token of an exempt admin (this repository
+  only; Contents, Pull requests, Issues and Workflows: read and write)
   stored as `RELEASE_TOKEN` is what `release.yml` pushes with and what
-  `template-update.yml` opens its pull requests and issues with. Without
-  it both fall back to the workflow token: releases still push where no
-  ruleset forbids it, and the update pull request still opens, provided
-  the Actions setting below is on — but GitHub starts no workflow for an
-  event the workflow token caused, so CI does not run on that pull
-  request until someone closes and reopens it (the workflow leaves a
-  comment saying so).
+  `template-update.yml` opens its pull requests and issues with. Without it
+  both fall back to the workflow token: releases still push where no
+  ruleset forbids it, and the update pull request still opens, provided the
+  Actions setting below is on — but GitHub starts no workflow for an event
+  the workflow token caused, so CI does not run on that pull request until
+  someone closes and reopens it (the workflow leaves a comment saying so).
+  And an update that changes a file under `.github/workflows/` — most
+  template releases do — cannot be pushed by the workflow token at all: the
+  run fails at its push step with GitHub's `refusing to allow a GitHub App
+  to create or update workflow` message until the secret exists.
 - **Settings → Actions → General → "Allow GitHub Actions to create and
   approve pull requests"**, only if `RELEASE_TOKEN` is not set: without
   it the workflow token may not open the weekly template-update pull

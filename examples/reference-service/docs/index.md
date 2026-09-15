@@ -52,11 +52,11 @@ Everything below runs today, and every item has a page:
   container](guides/run-in-a-container.md) and [Supply
   chain](reference/supply-chain.md).
 - **Its own workflows**, running from the first push: `ci.yml`,
-  `nightly.yml`, `release.yml` and `docs.yml`, with a Dependabot schedule.
-  [Contributing](contributing.md) has the checks they run;
-  [Supply chain](reference/supply-chain.md#what-is-checked-where) the
-  security ones; the `README.md`'s *Continuous integration and releases*
-  section lists all four and the repository settings they need.
+  `nightly.yml`, `release.yml`, `docs.yml` and `template-update.yml`, with
+  a Dependabot schedule. [Contributing](contributing.md) has the checks
+  they run; [Supply chain](reference/supply-chain.md#what-is-checked-where)
+  the security ones; the `README.md`'s *Continuous integration and
+  releases* section lists all five and the repository settings they need.
 - **An outbound HTTP client** with retries and a circuit breaker, and
   recorded cassettes for its tests — in [Outbound HTTP calls](guides/outbound-http.md).
 

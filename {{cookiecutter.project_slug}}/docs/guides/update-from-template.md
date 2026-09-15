@@ -114,9 +114,13 @@ has one, and with its own workflow token otherwise. With the fallback the
 pull request still opens, but CI does not start on it — GitHub never runs
 workflows for events the workflow token itself caused — so the workflow
 leaves a comment: close and reopen the pull request to start CI, or add
-`RELEASE_TOKEN`. The README's *Continuous integration and releases* says
-what the token needs (Contents, Pull requests and Issues, read and write)
-and names the repository setting the fallback depends on.
+`RELEASE_TOKEN`. And when the update changes a file under
+`.github/workflows/` — most template releases do — the fallback cannot
+push at all: the run fails at its push step with GitHub's `refusing to
+allow a GitHub App to create or update workflow` message. The README's
+*Continuous integration and releases* says what the token needs (Contents,
+Pull requests, Issues and Workflows, read and write) and names the
+repository setting the fallback depends on.
 
 ## Migration scripts
 

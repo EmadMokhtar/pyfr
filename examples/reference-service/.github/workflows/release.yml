@@ -241,8 +241,9 @@ jobs:
         # ruleset that requires a pull request on `main` refuses that push
         # (GH013) -- and on a user-owned repository GitHub does not let
         # the Actions app be exempted -- so add a fine-grained personal
-        # access token of an exempt admin (this repository only; Contents:
-        # read and write) as the `RELEASE_TOKEN` secret (README,
+        # access token of an exempt admin (this repository only; Contents,
+        # Pull requests, Issues and Workflows: read and write -- the
+        # README says why) as the `RELEASE_TOKEN` secret (README,
         # "Continuous integration and releases"). It reaches only this
         # step, through its environment. A push made with RELEASE_TOKEN,
         # unlike one made with GITHUB_TOKEN, DOES start other workflows:
