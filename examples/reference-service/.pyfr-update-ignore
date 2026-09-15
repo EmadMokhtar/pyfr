@@ -1,0 +1,25 @@
+# Paths `just update` leaves exactly as this project has them: yours from
+# the first day, or artifacts of your code. Add paths as you diverge --
+# one gitignore pattern per line, comments on their own lines.
+# Everything not listed is template-owned and receives fixes by default.
+
+# Written by the update itself.
+/.pyfr-answers.yml
+# This file.
+/.pyfr-update-ignore
+/README.md
+/CHANGELOG.md
+# Resolver output; run `uv lock` after an update that touched pyproject.toml.
+/uv.lock
+# Your schema.
+/migrations/
+/schema.sql
+# Artifacts of your code: the contract, and the baseline your release promotes.
+/openapi.json
+/openapi.baseline.json
+# Your decisions.
+/docs/adr/
+# The example slice, then your business model.
+/src/reference_service/domain/
+/src/reference_service/services/
+/src/reference_service/api/v1/

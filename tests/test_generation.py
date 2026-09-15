@@ -266,6 +266,22 @@ def test_a_render_owns_its_commitizen(cookies) -> None:
     assert {"changelog", "next-version"} <= recipe_names(root)
 
 
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_the_ignore_file_is_the_tool_s_built_in_default(cookies, answers) -> None:
+    # `pyfr update` carries the same list as its fallback for a project
+    # generated before the file existed (spec section 5.2, decision M8-5).
+    # One text, two places: the body ships it, the tool embeds it.
+    from pyfr_cli.ignore import default_text
+
+    root = render(cookies, **answers)
+    recorded = yaml.safe_load((root / ".pyfr-answers.yml").read_text())
+    expected = default_text(recorded["package_name"], recorded["database"])
+    assert (root / ".pyfr-update-ignore").read_text() == expected
+    schema_lines = {"/migrations/", "/schema.sql"}
+    present = set(expected.splitlines()) & schema_lines
+    assert bool(present) == (answers["database"] == "postgres")
+
+
 PACKAGE = "my_service"
 
 # Per backend: the libraries a render must not import, the ones .importlinter

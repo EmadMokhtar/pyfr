@@ -1,5 +1,5 @@
-# Written by PyFr when this project was generated. M8's `just update` reads
-# it to re-render the template at a newer version and merge the result;
+# Written by PyFr when this project was generated. `just update` reads it
+# to re-render the template at a newer version and merge the result;
 # nothing else does. Keep it committed and unedited.
 _template: https://github.com/EmadMokhtar/pyfr
 _template_version: "0.11.0"
