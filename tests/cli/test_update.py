@@ -263,3 +263,70 @@ def test_ungraft_raises_when_the_delete_fails_and_the_ref_is_still_there(
     finally:
         replace_dir.chmod(0o755)  # let tmp_path clean itself up afterwards
     assert git(project, "replace", "-l") == head
+
+
+def test_merge_finishes_preparing_a_clean_merge_before_reporting_a_failed_graft_delete(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The squash-merged shape (`previous` not an ancestor of HEAD) makes
+    # _merge graft a temporary parent onto HEAD, merge, then try to remove
+    # the graft. When that removal fails, _merge must not raise on the
+    # spot -- it has to finish writing MERGE_MSG first (and report the
+    # failure through the returned MergeOutcome instead), so update() can
+    # still stage the answers file and leave a real, committable merge
+    # behind before the user ever sees the graft-removal error. Otherwise
+    # a `git commit --no-edit` after that error would produce git's own
+    # default message and miss the new answers file.
+    #
+    # Forcing the delete to fail: chmod 555 on .git/refs/replace (the
+    # trick the _ungraft tests above use) would also block the graft's
+    # own creation a few lines earlier -- both are writes to the same
+    # directory -- so it cannot isolate a delete-only failure. Instead, a
+    # stray refs/replace/<sha>.lock file is dropped in right after the
+    # real graft is created (via a thin wrapper around Git.run): git's own
+    # delete then fails for a real reason (a lock file already there looks
+    # like another git process is mid-write), deterministically and
+    # without touching permissions or needing root, on macOS or Linux
+    # alike.
+    repo = update.Git(project)
+    git(project, "branch", "template")
+    git(project, "switch", "-q", "template")
+    (project / "from-template.txt").write_text("from template\n")
+    commit_all(project, "feat: from template")
+    git(project, "switch", "-q", "main")
+    head = git(project, "rev-parse", "HEAD")
+    empty_tree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    previous = git(project, "commit-tree", empty_tree, "-m", "fake previous")
+
+    lock_file = repo.git_dir() / "refs" / "replace" / f"{head}.lock"
+    real_run = update.Git.run
+
+    def run_and_drop_a_stray_lock(
+        self: update.Git, *args: str, check: bool = True
+    ) -> object:
+        result = real_run(self, *args, check=check)
+        if args[:2] == ("replace", "--graft"):
+            lock_file.write_text("")
+        return result
+
+    monkeypatch.setattr(update.Git, "run", run_and_drop_a_stray_lock)
+
+    recorded = update.Version.parse("v0.10.0")
+    target = update.Version.parse("v0.11.0")
+    out = io.StringIO()
+    try:
+        outcome = update._merge(repo, previous, "", recorded, target, out)
+    finally:
+        lock_file.unlink(missing_ok=True)
+
+    assert outcome.clean is True
+    assert outcome.grafted == head
+    assert outcome.graft_error is not None
+    assert outcome.graft_error.cause.startswith(
+        f"the temporary graft on {head[:12]} could not be removed:"
+    )
+    message = (repo.git_dir() / "MERGE_MSG").read_text()
+    assert message.startswith(f"chore: update template {recorded} -> {target}\n")
+    # The ref itself is still there: the failed delete left it behind, as
+    # the real bug did.
+    assert update._has_replacement(repo, head)

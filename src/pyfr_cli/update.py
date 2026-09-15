@@ -154,7 +154,7 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         # after-scripts, or sees an uncommitted tool merge and reports it as
         # a foreign one.
         state.save(git, state.State(recorded.version, target, "merging"))
-        clean = _merge(git, previous, body, recorded.version, target, out)
+        outcome = _merge(git, previous, body, recorded.version, target, out)
         # Step 10, clean or not: the answers file is an ignored path, so the
         # merge never touched it, and staged here it rides in the merge commit.
         # The recorded URL, not --template: that flag is a one-off override
@@ -168,7 +168,23 @@ def update(project: Path, options: Options, out: TextIO) -> int:
         if ignore.install(rendered.project, project):
             git.run("add", ignore.FILE)
             out.write(f"ignore: installed {ignore.FILE} from the template\n")
-        if not clean:
+        if outcome.graft_error is not None:
+            # Reported only now, with the merge message written and the
+            # answers file staged: a `git commit --no-edit` after this must
+            # still produce a proper merge commit, not git's own default
+            # message and a stale answers file. The graft entry is
+            # re-recorded (it was already there from inside _merge) so the
+            # next run's _ungraft retries the delete before anything else.
+            state.save(
+                git,
+                state.State(recorded.version, target, "merging", graft=outcome.grafted),
+            )
+            out.write(
+                "merge: the merge is ready but the temporary graft is still "
+                "in place; remove it, then run pyfr update again\n"
+            )
+            raise outcome.graft_error
+        if not outcome.clean:
             out.write(CONFLICT_HELP)
             return 1
         # No merge in progress after a clean exit: git said "Already up to
@@ -301,6 +317,17 @@ def _report_conflicts(git: Git, out: TextIO) -> list[str]:
     return paths
 
 
+@dataclass(frozen=True)
+class MergeOutcome:
+    """What `_merge` did. `graft_error` is set, not raised, so the caller
+    can finish preparing the merge (the message, the staged answers file)
+    before reporting it -- see the comment where `_merge` builds it."""
+
+    clean: bool
+    grafted: str | None
+    graft_error: UpdateError | None
+
+
 def _merge(
     git: Git,
     previous: str,
@@ -308,7 +335,7 @@ def _merge(
     recorded: Version,
     target: Version,
     out: TextIO,
-) -> bool:
+) -> MergeOutcome:
     """`git merge --no-ff --no-commit template` with its base pinned to
     `previous`, the template commit at the recorded version (spec 4.7).
 
@@ -316,7 +343,7 @@ def _merge(
     history. After a squash-merged update pull request it is not, so a
     temporary graft -- an extra parent, seen by git but not written into
     the commit -- makes it the base; the graft is deleted right after the
-    merge, whatever happened. Returns True when the merge is clean.
+    merge, whatever happened.
     """
     grafted: str | None = None
     if not git.ok("merge-base", "--is-ancestor", previous, "HEAD"):
@@ -340,17 +367,22 @@ def _merge(
             f"merge: base pinned to template commit {previous[:12]} "
             "(the last update was squash-merged)\n"
         )
+    graft_error: UpdateError | None = None
     try:
         result = git.run("merge", "--no-ff", "--no-commit", vendor.BRANCH, check=False)
     finally:
-        # check=False above never raises, so raising here cannot mask a
-        # real error from the merge itself. The state file's graft entry
-        # (saved above) is left in place on failure, so the next run's
-        # _ungraft retries the delete instead of losing track of the ref.
+        # Recorded here, not raised: raising in `finally` would run before
+        # the merge message is written and the answers file is staged
+        # below, in `update()`, and skip both -- a `git commit --no-edit`
+        # afterwards (the merge itself is real and still needs finishing)
+        # would then get git's own default message and miss the answers
+        # file. The caller raises `graft_error` once that is done. Either
+        # way, the state file's graft entry (saved above) is left in
+        # place, so the next run's _ungraft retries the delete.
         if grafted is not None:
             deleted = git.run("replace", "--delete", grafted, check=False)
             if deleted.returncode != 0:
-                raise UpdateError(
+                graft_error = UpdateError(
                     f"the temporary graft on {grafted[:12]} could not be "
                     f"removed: {deleted.stderr.strip()}",
                     f"remove it by hand: git replace -d {grafted[:12]}, "
@@ -373,9 +405,9 @@ def _merge(
         message += f"\n{body}"
     (git.git_dir() / "MERGE_MSG").write_text(message)
     if result.returncode == 0:
-        return True
+        return MergeOutcome(True, grafted, graft_error)
     _report_conflicts(git, out)
-    return False
+    return MergeOutcome(False, grafted, graft_error)
 
 
 def _has_replacement(git: Git, sha: str) -> bool:
