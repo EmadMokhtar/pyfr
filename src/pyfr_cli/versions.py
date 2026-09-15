@@ -62,7 +62,10 @@ def parse_ls_remote(output: str) -> list[Version]:
 
 def remote_versions(template: str, git: Git) -> list[Version]:
     """The template's release tags, oldest first; never empty."""
-    result = git.run("ls-remote", "--tags", template, check=False)
+    # `template` comes from .pyfr-answers.yml or --template, so it is not
+    # trusted input. `--` stops git from reading a value starting with `-`
+    # (say `--upload-pack=...`) as an option instead of the repository.
+    result = git.run("ls-remote", "--tags", "--", template, check=False)
     if result.returncode != 0:
         raise UpdateError(
             f"could not list the tags of {template}: {result.stderr.strip()}",

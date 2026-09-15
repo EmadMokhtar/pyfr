@@ -172,3 +172,26 @@ def test_clone_template_refuses_a_missing_tag(tmp_path: Path) -> None:
         )
     assert "could not clone" in stop.value.cause
     assert "v9.9.9" in stop.value.cause
+
+
+def test_clone_template_treats_an_option_like_template_as_a_repository_name(
+    tmp_path: Path,
+) -> None:
+    # A template string starting with "-" (from .pyfr-answers.yml or
+    # --template) must not be read by git as an option -- here,
+    # --upload-pack would tell git which program to run on the far end.
+    # With `--` in front of it, git instead treats the string as a
+    # (nonexistent) repository name and echoes it back in its own failure
+    # message. Without `--`, git would consume it as an option instead and
+    # report the destination directory name in its place, never the
+    # template: the cause's fixed "could not clone {template} at {version}:"
+    # prefix always contains the template, so only a second, independent
+    # occurrence -- from git itself -- proves `--` did its job.
+    template = "--upload-pack=/bin/false"
+    with pytest.raises(UpdateError) as stop:
+        render.clone_template(
+            template, Version(1, 0, 0), tmp_path / "clone", Git(tmp_path)
+        )
+    prefix = f"could not clone {template} at v1.0.0: "
+    assert stop.value.cause.startswith(prefix)
+    assert template in stop.value.cause[len(prefix) :]

@@ -31,9 +31,12 @@ class Render:
 
 
 def clone_template(template: str, version: Version, into: Path, git: Git) -> Path:
+    # `template` comes from .pyfr-answers.yml or --template, so it is not
+    # trusted input. `--` stops git from reading a value starting with `-`
+    # (say `--upload-pack=...`) as an option instead of the repository.
     result = git.run(
         "clone", "--quiet", "--depth", "1", "--branch", str(version),
-        template, str(into), check=False,
+        "--", template, str(into), check=False,
     )  # fmt: skip
     if result.returncode != 0:
         raise UpdateError(

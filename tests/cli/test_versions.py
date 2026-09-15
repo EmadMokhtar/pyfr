@@ -100,3 +100,27 @@ def test_remote_versions_refuses_an_unreachable_template(tmp_path: Path) -> None
 
     with pytest.raises(UpdateError, match="could not list the tags"):
         remote_versions(str(tmp_path / "missing"), Git(tmp_path))
+
+
+def test_remote_versions_treats_an_option_like_template_as_a_repository_name(
+    tmp_path: Path,
+) -> None:
+    # A template string starting with "-" (from .pyfr-answers.yml or
+    # --template) must not be read by git as an option -- here,
+    # --upload-pack would tell git which program to run on the far end.
+    # With `--` in front of it, git instead treats the string as a
+    # (nonexistent) repository name and echoes it back in its own failure
+    # message. Without `--`, git would consume it as an option instead, so
+    # git's own message would not repeat the string at all (its actual
+    # wording is "No remote configured to list refs from."): the cause's
+    # fixed "could not list the tags of {template}:" prefix always
+    # contains the template, so only a second, independent occurrence --
+    # from git itself -- proves `--` did its job.
+    from pyfr_cli.git import Git
+
+    template = "--upload-pack=/bin/false"
+    with pytest.raises(UpdateError, match="could not list the tags") as stop:
+        remote_versions(template, Git(tmp_path))
+    prefix = f"could not list the tags of {template}: "
+    assert stop.value.cause.startswith(prefix)
+    assert template in stop.value.cause[len(prefix) :]

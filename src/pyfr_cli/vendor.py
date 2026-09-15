@@ -74,8 +74,11 @@ def remote_tip(git: Git, *, offline: bool = False) -> str | None:
     # The full ref name, not the bare branch name: a pattern matches the
     # tail of a ref, so `template` alone also matches `feature/template`,
     # which sorts first and would be taken for the branch.
+    # `--` before REMOTE: it is always the literal "origin" here, but the
+    # same shape as clone_template and remote_versions keeps the three
+    # calls that take a repository argument uniform.
     result = git.run(
-        "ls-remote", "--exit-code", "--heads", REMOTE, f"refs/heads/{BRANCH}",
+        "ls-remote", "--exit-code", "--heads", "--", REMOTE, f"refs/heads/{BRANCH}",
         check=False,
     )  # fmt: skip
     if result.returncode == 0:
