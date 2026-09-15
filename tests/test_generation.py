@@ -85,7 +85,7 @@ ALWAYS_FORBIDDEN_MARKERS = (
 # (justfile), Prometheus's alert-label templating (slo.yml), sqlfluff's
 # comment naming its own template markers (.sqlfluff), a raw PromQL query
 # string (test_observability_stack.py), and GitHub Actions' `${{ }}`
-# expressions (the three workflows). None of these are cookiecutter
+# expressions (the four workflows). None of these are cookiecutter
 # collisions. They are still checked for ALWAYS_FORBIDDEN_MARKERS above --
 # only their own raw-guarded braces are excused, not real Jinja mistakes.
 RAW_GUARDED_FILES = frozenset(
@@ -98,6 +98,7 @@ RAW_GUARDED_FILES = frozenset(
         ".github/workflows/nightly.yml",
         ".github/workflows/release.yml",
         ".github/workflows/docs.yml",
+        ".github/workflows/template-update.yml",
     }
 )
 
@@ -826,3 +827,23 @@ def test_every_render_carries_the_update_guide(cookies, answers) -> None:
         assert phrase in text, phrase
     nav = (root / "mkdocs.yml").read_text()
     assert "guides/update-from-template.md" in nav
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_every_render_carries_the_weekly_template_update(cookies, answers) -> None:
+    root = render(cookies, **answers)
+    workflow = (root / ".github" / "workflows" / "template-update.yml").read_text()
+    # The decisions are the tool's exit codes (spec section 5.3); the
+    # workflow only pushes and talks to GitHub.
+    assert "uvx --from pyfr-cli@latest pyfr update-check --json" in workflow
+    assert "uvx --from pyfr-cli@latest pyfr update --no-push" in workflow
+    assert 'cron: "23 6 * * 1"' in workflow
+    # RELEASE_TOKEN reaches the push step only, never the checkout: the
+    # text before the first step after checkout must not mention it.
+    checkout = workflow.split("- uses: actions/checkout@v7")[1].split(
+        "- name: Install uv"
+    )[0]
+    assert "RELEASE_TOKEN" not in checkout
+    assert "persist-credentials: true" in checkout
+    assert "pyfr/update-" in workflow
+    assert "gh pr create" in workflow and "gh issue create" in workflow

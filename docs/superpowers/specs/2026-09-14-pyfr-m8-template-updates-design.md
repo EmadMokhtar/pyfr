@@ -533,21 +533,23 @@ permissions:
 
 Steps, one job:
 
-1. `actions/checkout` with `fetch-depth: 0` (the root commit and
-   `template` must be reachable) and
-   `token: ${{ secrets.RELEASE_TOKEN || github.token }}`, persisted. Both
-   the tool (pushing `template`) and the workflow (pushing the pull
-   request's branch) push, and every step after checkout is first-party —
-   `setup-uv`, shell, `gh` — so the persisted token reaches no third-party
-   code. `release.yml` does the opposite (`persist-credentials: false`,
-   the token handed to one step) because third-party actions run after
-   its checkout; the comment in this workflow says why it differs.
+1. `actions/checkout` with `fetch-depth: 0` (the root commit and `template`
+   must be reachable). The checkout keeps the *workflow* token — it dies
+   with the job, and `pyfr update` needs it to fetch `origin/template` of
+   a private repository. `RELEASE_TOKEN` never enters the checkout: the
+   template's own hooks and `uvx`'s installs run in later steps, and a
+   long-lived token must not be readable there — the same rule
+   `release.yml` follows. The tool runs with `--no-push`, and a separate
+   push step pushes `template` and the update branch with `RELEASE_TOKEN`
+   when it exists (so CI starts on the pull request), the workflow token
+   otherwise. *(Amended in PR 2: the original text persisted
+   `RELEASE_TOKEN` in the checkout.)*
 2. Install `uv`; set `user.name`/`user.email` as `release.yml` does.
 3. `uvx --from pyfr-cli@latest pyfr update-check --json`. Exit 0 → done.
    Exit 2 → the job fails.
 4. `git switch -c pyfr/update-<newest>`, then
    `uvx --from pyfr-cli@latest pyfr update`, output captured to a file.
-   - **Exit 0** → push the branch; `gh pr create` titled
+   - **Exit 0** → the push step pushes `template` and the branch; `gh pr create` titled
      `chore: update template v0.10.0 -> v0.12.0`, body from the merge
      commit (`git log -1 --format=%b`). Skipped when an open pull request
      from that branch exists (`gh pr list --head`). When `RELEASE_TOKEN`
