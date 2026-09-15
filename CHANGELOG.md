@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.11.0 (2026-09-15)
+
+### Feat
+
+- add pyfr-cli with pyfr update and update-check (m8 pr 1) (#52)
+
 ## v0.10.0 (2026-09-14)
 
 ### Feat
