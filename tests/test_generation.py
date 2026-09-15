@@ -801,3 +801,28 @@ def test_the_update_recipes_wrap_pyfr_cli_from_pypi(cookies) -> None:
     pyproject = (root / "pyproject.toml").read_text()
     assert "pyfr-cli" not in pyproject
     assert "cookiecutter" not in pyproject
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_every_render_carries_the_update_guide(cookies, answers) -> None:
+    # Thirteen error messages in pyfr-cli end with "see
+    # docs/guides/update-from-template.md"; the page must exist in every
+    # render, and be in the site's nav (tests/test_site_nav.py checks the
+    # example's nav; this checks the render's).
+    from pyfr_cli.answers import GUIDE
+
+    root = render(cookies, **answers)
+    page = root / GUIDE
+    assert page.is_file()
+    text = page.read_text()
+    assert text.startswith("---\nlast_reviewed: ")
+    for phrase in (
+        "just update",
+        "git branch --force template",
+        "git commit --no-edit",
+        ".pyfr-update-ignore",
+        "RELEASE_TOKEN",
+    ):
+        assert phrase in text, phrase
+    nav = (root / "mkdocs.yml").read_text()
+    assert "guides/update-from-template.md" in nav

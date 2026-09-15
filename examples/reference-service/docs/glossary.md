@@ -52,6 +52,8 @@ pruning, `just regen` — are in
 | Property-based testing | Generating many random inputs to check that a rule holds, rather than testing fixed examples. |
 | Protocol | Python's structural interface — satisfied by having the right methods, with no inheritance. |
 | Pydantic | The validation library. Used in the domain layer as a validation tool, not as a web framework. |
+| `pyfr-cli` | The tool behind `just update` and `just update-check`, run from PyPI through `uvx`; nothing of it is installed in this project. |
+| `.pyfr-update-ignore` | The paths `just update` never touches, in `.gitignore` syntax. Yours to grow as the project diverges from the template. |
 | QEMU | A processor emulator. In CI it lets an `amd64` runner build the `arm64` side of a multi-architecture image. |
 | Readiness | "Can this instance serve traffic right now?" — the question `/readyz` answers. |
 | Readiness tier | Which of `/readyz`'s two maps a dependency is reported in. `checks` is gating: a failure returns 503 and takes the instance out of load balancing. `dependencies` is informational: reported, never changes the status. |
@@ -68,6 +70,7 @@ pruning, `just regen` — are in
 | SLI | Service Level Indicator — a measured number describing user-visible quality. |
 | SLO | Service Level Objective — the target for an SLI over a window. |
 | structlog | The structured logging library. A record is key/value data rendered at the end, not a pre-formatted string. |
+| `template` branch | A branch holding pristine template output and nothing else, kept on `origin`; every update merges from it. Never delete it. |
 | Testcontainers | A library that starts real dependencies in Docker for the duration of a test run. |
 | Trivy | A scanner that finds known vulnerabilities in container images. |
 | uv | A fast Python package and project manager. The only Python tool this project requires. |
