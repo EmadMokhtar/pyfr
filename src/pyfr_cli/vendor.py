@@ -203,7 +203,18 @@ def remove_stale_worktrees(git: Git) -> list[Path]:
                 f"git worktree remove {path} (after saving what it holds), "
                 "then run again",
             )
-        git.run("worktree", "remove", "--force", str(path))
+        # A run killed mid-lock (`git worktree lock <path>`) leaves the entry
+        # locked, and `remove --force` refuses a locked worktree outright.
+        if any(line == "locked" or line.startswith("locked ") for line in lines):
+            git.run("worktree", "unlock", str(path))
+        result = git.run("worktree", "remove", "--force", str(path), check=False)
+        if result.returncode != 0:
+            raise UpdateError(
+                f"could not remove the leftover worktree {path}: "
+                f"{result.stderr.strip()}",
+                f"remove it by hand -- git worktree unlock {path}; "
+                f"git worktree remove --force {path} -- then run again",
+            )
         removed.append(path)
     return removed
 

@@ -378,6 +378,61 @@ def test_ensure_removes_a_worktree_a_killed_run_left_behind(
         assert worktree.out("rev-parse", "HEAD") == sha
 
 
+def test_ensure_removes_a_locked_worktree_a_killed_run_left_behind(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    # Same as above, but the run was killed between locking the worktree
+    # (to protect a long render from a concurrent `git worktree prune`) and
+    # its own clean-up: `remove --force` refuses a locked worktree outright,
+    # so the tool must unlock it first.
+    repo = Git(project)
+    sha = update_branch(project, rendered, tmp_path)
+    vendor.push(repo)
+    root = git(project, "rev-list", "--max-parents=0", "HEAD")
+    git(project, "branch", "--force", "template", root)  # the local copy is behind
+    leftover = tmp_path / "pyfr-update-abc" / "worktree"
+    git(project, "worktree", "add", "-q", str(leftover), "template")
+    (leftover / "half-written.txt").write_text("x\n")
+    git(project, "worktree", "lock", str(leftover), "--reason", "rendering")
+    branch = vendor.ensure(repo, V10, V12)
+    assert branch.version == V12
+    assert f"worktree: removed {leftover} (left by a killed run)" in branch.notes
+    assert git(project, "rev-parse", "template") == sha
+    assert "refs/heads/template" not in git(project, "worktree", "list", "--porcelain")
+    assert not leftover.exists()
+
+
+def test_ensure_reports_a_leftover_worktree_git_cannot_remove(
+    project: Path, rendered: Path, tmp_path: Path
+) -> None:
+    # `remove --force` can fail for reasons other than a lock -- here, a
+    # directory permission git cannot delete through. `chmod 555` (read and
+    # list, no write) on the worktree directory itself blocks deleting the
+    # entries inside it, which is enough to make git fail without needing
+    # root.
+    repo = Git(project)
+    update_branch(project, rendered, tmp_path)
+    vendor.push(repo)
+    root = git(project, "rev-list", "--max-parents=0", "HEAD")
+    git(project, "branch", "--force", "template", root)  # the local copy is behind
+    leftover = tmp_path / "pyfr-update-abc" / "worktree"
+    git(project, "worktree", "add", "-q", str(leftover), "template")
+    (leftover / "half-written.txt").write_text("x\n")
+    leftover.chmod(0o555)
+    try:
+        with pytest.raises(UpdateError) as stop:
+            vendor.ensure(repo, V10, V12)
+        assert stop.value.cause.startswith(
+            f"could not remove the leftover worktree {leftover}: "
+        )
+        assert stop.value.fix == (
+            f"remove it by hand -- git worktree unlock {leftover}; "
+            f"git worktree remove --force {leftover} -- then run again"
+        )
+    finally:
+        leftover.chmod(0o755)  # let tmp_path clean itself up afterwards
+
+
 def test_ensure_stops_at_a_worktree_the_user_made_on_template(
     project: Path, tmp_path: Path
 ) -> None:
