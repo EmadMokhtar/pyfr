@@ -1,0 +1,222 @@
+name: Template update
+
+# Once a week, ask whether a newer PyFr template version exists and, if it
+# does, bring it in. `pyfr update` re-renders the template with this
+# project's recorded answers, commits the result on the `template` branch
+# and merges it (docs/guides/update-from-template.md). A clean merge
+# becomes a pull request, which CI checks like any other change; a merge
+# with conflicts becomes an issue, because a pull request cannot carry
+# conflict markers. Every decision below is the tool's exit code; this
+# file only pushes and talks to GitHub.
+
+on:
+  schedule:
+    # Mondays 06:23 UTC. Off the hour, like nightly.yml: every scheduled
+    # job on GitHub is queued at :00.
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # the template branch and the update branch
+  pull-requests: write   # gh pr create, gh pr comment
+  issues: write          # gh issue create
+
+concurrency:
+  group: template-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Whether RELEASE_TOKEN exists, read once so the PR step below can
+      # warn when it is missing: GitHub starts no workflow for events the
+      # workflow token caused, so CI would not run on the update; the
+      # fallback still opens the pull request. README.md, "Continuous
+      # integration and releases", describes the token. GH_TOKEN itself
+      # is not set here: uvx's installs and the template's hooks run in
+      # the steps between checkout and the ones that call `gh`, and a
+      # long-lived token must not be readable there -- it is set instead
+      # on each of those three steps directly.
+      HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The root commit and the template branch must be reachable.
+          fetch-depth: 0
+          # Unlike release.yml, the checkout keeps its token -- the
+          # WORKFLOW token, which dies with the job, and which `pyfr
+          # update` needs to fetch origin/template of a private
+          # repository. RELEASE_TOKEN never enters the checkout: the
+          # template's own hooks and uvx's installs run in the steps
+          # below, and a long-lived token must not be readable there. It
+          # reaches the push step only, through its environment.
+          persist-credentials: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Identify the committer
+        # The update's commits are made by automation and should say so.
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Ask whether a newer template version exists
+        id: check
+        # 0: current, and nothing else runs. 1: behind; the JSON names
+        # the versions. Anything else is an error, and the step fails.
+        run: |
+          set +e
+          uvx --from pyfr-cli@latest pyfr update-check --json > check.json
+          status=$?
+          set -e
+          cat check.json
+          case "$status" in
+            0) echo "behind=false" >> "$GITHUB_OUTPUT" ;;
+            1) # uvx itself (no network, pyfr-cli unresolvable) also exits 1,
+               # with check.json empty or missing; check the JSON actually
+               # says "behind" before trusting recorded/newest from it.
+               jq -e '.behind == true' check.json >/dev/null || { echo "update-check exited 1 without a 'behind' answer -- uvx or the network failed"; exit 2; }
+               echo "behind=true" >> "$GITHUB_OUTPUT"
+               echo "recorded=$(jq -r .recorded check.json)" >> "$GITHUB_OUTPUT"
+               echo "newest=$(jq -r .newest check.json)" >> "$GITHUB_OUTPUT"
+               echo "template=$(jq -r .template check.json)" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
+
+      - name: Stop when this version already has an open pull request or issue
+        id: existing
+        if: steps.check.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RECORDED: ${{ steps.check.outputs.recorded }}
+          NEWEST: ${{ steps.check.outputs.newest }}
+        run: |
+          prs=$(gh pr list --head "pyfr/update-${NEWEST}" --state open --json number --jq 'length')
+          issues=$(gh issue list --state open --limit 200 --json title --jq "[.[] | select(.title == \"chore: template ${RECORDED} -> ${NEWEST} conflicts\")] | length")
+          if [ "$prs" != "0" ] || [ "$issues" != "0" ]; then
+            echo "${NEWEST} already has an open pull request or issue; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the update
+        id: update
+        if: steps.check.outputs.behind == 'true' && steps.existing.outputs.skip == 'false'
+        env:
+          NEWEST: ${{ steps.check.outputs.newest }}
+        # --no-push: the tool's own push of the template branch would
+        # need a credential in this step, where the template's hooks and
+        # uvx's installs also run. The push step below pushes it instead.
+        # --no-push also makes the tool treat an unreachable origin as "no
+        # template branch"; if the template push below is then rejected,
+        # the cause was the network, and next week's run heals it.
+        # Exit 0: clean, the merge is committed. Exit 1: conflicts; the
+        # merge is abandoned here, and the issue tells the team to run
+        # `just update` locally, where the template branch pushed below
+        # is already at the target. Exit 2: an error, and the job fails.
+        run: |
+          git switch -c "pyfr/update-${NEWEST}"
+          set +e
+          uvx --from pyfr-cli@latest pyfr update --no-push 2>&1 | tee update.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" = "1" ]; then
+            # uvx itself (no network, pyfr-cli unresolvable) also exits 1,
+            # with no merge started; without this check that looks like
+            # "conflicts" and the abort below fails on a merge that never
+            # began.
+            git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "pyfr update exited 1 without a merge in progress -- uvx or the network failed"; exit 1; }
+          fi
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" = "1" ]; then git merge --abort; fi
+          if [ "$status" != "0" ] && [ "$status" != "1" ]; then exit "$status"; fi
+
+      - name: Push the template branch, and the update branch on a clean merge
+        if: steps.update.outcome == 'success'
+        env:
+          # RELEASE_TOKEN reaches this step and the three that call `gh`
+          # -- never checkout, or the steps where uvx's installs and the
+          # template's hooks run. A push made with it, unlike one made
+          # with the workflow token, starts CI on the update.
+          PUSH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          NEWEST: ${{ steps.check.outputs.newest }}
+          STATUS: ${{ steps.update.outputs.status }}
+        run: |
+          # actions/checkout stored the workflow token as an HTTP header that git would send instead of the URL's credential. An empty -c value resets that header for these two commands, wherever checkout keeps it, so RELEASE_TOKEN -- when present -- is what pushes.
+          # push() captures stderr for both calls below and always echoes it,
+          # so the log shows what was pushed on success too. On failure, a
+          # refusal matching GitHub's own "create or update workflow" phrase
+          # -- the token lacking the Workflows permission -- gets a dedicated
+          # ::error:: pointing at the fix; any other failure still prints and
+          # fails the step.
+          push() {
+            if ! output=$(git -c http.https://github.com/.extraheader= push "$@" 2>&1); then
+              echo "$output"
+              case "$output" in
+                *"create or update workflow"*)
+                  echo "::error::The push was refused because the update changes a workflow file and the token lacks the Workflows permission. Add a RELEASE_TOKEN secret with Contents, Pull requests, Issues and Workflows (read and write) -- README.md, Continuous integration and releases."
+                  ;;
+              esac
+              exit 1
+            fi
+            echo "$output"
+          }
+          remote="https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          push "$remote" template:template
+          if [ "$STATUS" = "0" ]; then
+            # --force: the branch is the workflow's own; a closed pull request may have left an old tip behind.
+            push --force "$remote" "HEAD:refs/heads/pyfr/update-${NEWEST}"
+          fi
+
+      - name: Open the pull request
+        # outcome first: a skipped step has no status output, and GitHub reads a missing output as 0.
+        if: steps.update.outcome == 'success' && steps.update.outputs.status == '0'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RECORDED: ${{ steps.check.outputs.recorded }}
+          NEWEST: ${{ steps.check.outputs.newest }}
+        run: |
+          # `pyfr update` commits the merge (or a plain commit when there
+          # is nothing to merge) with a `chore: update template ...`
+          # subject; grep for it, rather than assume `--merges`, so a
+          # plain commit is found too.
+          git log -1 --format=%b --grep='^chore: update template ' > body.md
+          gh pr create \
+            --base "${GITHUB_REF_NAME}" \
+            --head "pyfr/update-${NEWEST}" \
+            --title "chore: update template ${RECORDED} -> ${NEWEST}" \
+            --body-file body.md
+          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+            gh pr comment "pyfr/update-${NEWEST}" --body "Opened with the workflow token, which starts no workflows, so CI has not run on this pull request. Close and reopen it to start CI, or add a RELEASE_TOKEN secret (README.md, Continuous integration and releases) so the next update runs CI by itself."
+          fi
+
+      - name: Open an issue for the conflicts
+        if: steps.update.outcome == 'success' && steps.update.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          RECORDED: ${{ steps.check.outputs.recorded }}
+          NEWEST: ${{ steps.check.outputs.newest }}
+          TEMPLATE: ${{ steps.check.outputs.template }}
+        run: |
+          {
+            echo "\`pyfr update\` to ${NEWEST} could not merge these files by itself:"
+            echo
+            grep '^conflict: ' update.log | sed 's/^conflict: /- `/; s/$/`/'
+            echo
+            echo "The \`template\` branch is already at ${NEWEST} on origin, so a local run goes straight to the merge:"
+            echo
+            echo '```'
+            echo "just update ${NEWEST}"
+            echo '```'
+            echo
+            echo "Resolve the files, \`git add\` them, \`git commit --no-edit\`, then run \`just update ${NEWEST}\` once more — docs/guides/update-from-template.md walks through it."
+            echo
+            echo "What changed in the template: ${TEMPLATE}/releases/tag/${NEWEST}"
+          } > issue.md
+          gh issue create \
+            --title "chore: template ${RECORDED} -> ${NEWEST} conflicts" \
+            --body-file issue.md

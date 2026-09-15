@@ -85,7 +85,7 @@ ALWAYS_FORBIDDEN_MARKERS = (
 # (justfile), Prometheus's alert-label templating (slo.yml), sqlfluff's
 # comment naming its own template markers (.sqlfluff), a raw PromQL query
 # string (test_observability_stack.py), and GitHub Actions' `${{ }}`
-# expressions (the three workflows). None of these are cookiecutter
+# expressions (the five workflows). None of these are cookiecutter
 # collisions. They are still checked for ALWAYS_FORBIDDEN_MARKERS above --
 # only their own raw-guarded braces are excused, not real Jinja mistakes.
 RAW_GUARDED_FILES = frozenset(
@@ -98,6 +98,7 @@ RAW_GUARDED_FILES = frozenset(
         ".github/workflows/nightly.yml",
         ".github/workflows/release.yml",
         ".github/workflows/docs.yml",
+        ".github/workflows/template-update.yml",
     }
 )
 
@@ -264,6 +265,22 @@ def test_a_render_owns_its_commitizen(cookies) -> None:
         == "uv run --locked cz check --allow-abort --commit-msg-file"
     )
     assert {"changelog", "next-version"} <= recipe_names(root)
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_the_ignore_file_is_the_tool_s_built_in_default(cookies, answers) -> None:
+    # `pyfr update` carries the same list as its fallback for a project
+    # generated before the file existed (spec section 5.2, decision M8-5).
+    # One text, two places: the body ships it, the tool embeds it.
+    from pyfr_cli.ignore import default_text
+
+    root = render(cookies, **answers)
+    recorded = yaml.safe_load((root / ".pyfr-answers.yml").read_text())
+    expected = default_text(recorded["package_name"], recorded["database"])
+    assert (root / ".pyfr-update-ignore").read_text() == expected
+    schema_lines = {"/migrations/", "/schema.sql"}
+    present = set(expected.splitlines()) & schema_lines
+    assert bool(present) == (answers["database"] == "postgres")
 
 
 PACKAGE = "my_service"
@@ -766,3 +783,89 @@ def test_the_docs_carry_the_answers_not_the_reference_identity(cookies) -> None:
             ):
                 offenders.append(f"{path.relative_to(root)}: {line.strip()[:80]}")
     assert offenders == []
+
+
+def test_the_update_recipes_wrap_pyfr_cli_from_pypi(cookies) -> None:
+    # spec section 5.1: the newest release on PyPI is, by construction, the
+    # newest template tag, so `@latest` runs the updater at the target
+    # version; a pinned `to` pins both the tool and the target.
+    root = render(cookies, **EVERYTHING_ON)
+    justfile = (root / "justfile").read_text()
+    assert "uvx --from pyfr-cli@latest pyfr update\n" in justfile
+    assert "uvx --from pyfr-cli@latest pyfr update-check\n" in justfile
+    assert (
+        'uvx --from "pyfr-cli==${version}" pyfr update --to "v${version}"' in justfile
+    )
+    # just's own interpolation survived Jinja: the recipe reads {{to}}.
+    assert 'if [ -n "{{to}}" ]; then' in justfile
+    # Neither tool enters the project's environment.
+    pyproject = (root / "pyproject.toml").read_text()
+    assert "pyfr-cli" not in pyproject
+    assert "cookiecutter" not in pyproject
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_every_render_carries_the_update_guide(cookies, answers) -> None:
+    # Twelve error messages in pyfr-cli point the reader at
+    # docs/guides/update-from-template.md; the page must exist in every
+    # render, and be in the site's nav (tests/test_site_nav.py checks the
+    # example's nav; this checks the render's).
+    from pyfr_cli.answers import GUIDE
+
+    root = render(cookies, **answers)
+    page = root / GUIDE
+    assert page.is_file()
+    text = page.read_text()
+    assert text.startswith("---\nlast_reviewed: ")
+    for phrase in (
+        "just update",
+        "git branch --force template",
+        "git commit --no-edit",
+        ".pyfr-update-ignore",
+        "RELEASE_TOKEN",
+    ):
+        assert phrase in text, phrase
+    nav = (root / "mkdocs.yml").read_text()
+    assert "guides/update-from-template.md" in nav
+
+
+@pytest.mark.parametrize("answers", COMBINATIONS, ids=combination_id)
+def test_every_render_carries_the_weekly_template_update(cookies, answers) -> None:
+    root = render(cookies, **answers)
+    workflow = (root / ".github" / "workflows" / "template-update.yml").read_text()
+    # The decisions are the tool's exit codes (spec section 5.3); the
+    # workflow only pushes and talks to GitHub.
+    assert "uvx --from pyfr-cli@latest pyfr update-check --json" in workflow
+    assert "uvx --from pyfr-cli@latest pyfr update --no-push" in workflow
+    assert 'cron: "23 6 * * 1"' in workflow
+    # RELEASE_TOKEN never enters the checkout: its `with:` block carries
+    # no `token:` override, so it persists whatever the ambient workflow
+    # token is.
+    checkout = workflow.split("- uses: actions/checkout@v7")[1].split(
+        "- name: Install uv"
+    )[0]
+    assert "token:" not in checkout
+    assert "persist-credentials: true" in checkout
+    assert "pyfr/update-" in workflow
+    assert "gh pr create" in workflow and "gh issue create" in workflow
+
+
+def test_the_readme_documents_the_update_workflow_and_its_token(cookies) -> None:
+    root = render(cookies, **EVERYTHING_ON)
+    readme = (root / "README.md").read_text()
+    section = readme.split("## Continuous integration and releases")[1].split("\n## ")[
+        0
+    ]
+    assert "Five workflows" in section
+    assert "`template-update.yml`" in section
+    # spec section 5.4: the token's documented permissions widen, and the
+    # consequences of leaving it out are stated.
+    assert "Pull requests" in section and "Issues" in section
+    assert "Workflows" in section
+    normalized_section = " ".join(section.split())
+    assert (
+        "Allow GitHub Actions to create and approve pull requests" in normalized_section
+    )
+    assert "Six settings" in section
+    contributing = (root / "docs" / "contributing.md").read_text()
+    assert "Six settings" in contributing

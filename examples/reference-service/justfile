@@ -579,6 +579,28 @@ next-version:
     fi
     uv run --locked cz bump --dry-run
 
+# Pull in a newer template version through a git merge: `pyfr update`
+# re-renders the template with this project's recorded answers, commits
+# the result on the `template` branch, and merges it (docs/guides/
+# update-from-template.md). It runs the updater at the target version --
+# the newest release of pyfr-cli on PyPI is, by construction, the newest
+# template tag -- and `@latest` makes uvx resolve that instead of reusing
+# a cached older tool. `just update v0.12.0` pins both.
+update to="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "{{to}}" ]; then
+        version="{{to}}"; version="${version#v}"
+        uvx --from "pyfr-cli==${version}" pyfr update --to "v${version}"
+    else
+        uvx --from pyfr-cli@latest pyfr update
+    fi
+
+# Exit non-zero when a newer template version exists. The weekly workflow
+# (.github/workflows/template-update.yml) runs this first.
+update-check:
+    uvx --from pyfr-cli@latest pyfr update-check
+
 up:
     docker compose up --build
 

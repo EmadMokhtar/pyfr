@@ -76,6 +76,7 @@ nav:
       - Add a backend: guides/add-a-backend.md
       - Run in a container: guides/run-in-a-container.md
       - Outbound HTTP calls: guides/outbound-http.md
+      - Update from the template: guides/update-from-template.md
   - Reference:
       - Commands: reference/commands.md
       - Configuration: reference/configuration.md

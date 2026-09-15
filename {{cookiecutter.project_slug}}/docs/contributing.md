@@ -292,9 +292,13 @@ Two recipes preview what the release will do, without doing it:
 
 ## Repository settings
 
-Five settings live in the GitHub interface, not in this repository, and
+Six settings live in the GitHub interface, not in this repository, and
 the workflows need them: the Pages source, a `no-docs-needed` label, a
 `RELEASE_TOKEN` secret when a ruleset on `main` requires pull requests,
+or for the weekly template update to push workflow changes and run CI,
+the Actions permission to open pull requests when that secret is absent,
 squash-merge, and making the published container packages public after
-the first release. The `README.md` lists all five under *Continuous
+the first release. The `README.md` lists all six under *Continuous
 integration and releases*, with what goes wrong when each is missing.
+The weekly `template-update.yml` is described in [Update from the
+template](guides/update-from-template.md).

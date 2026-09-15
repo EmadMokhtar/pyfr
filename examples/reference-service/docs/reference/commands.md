@@ -86,6 +86,8 @@ this service reads. Hand-editing `.env.example` or the table in
 | `just promote-latest VERSION` | Point `latest` at the pushed `VERSION` index without rebuilding. Release only, after `scan-published`. |
 | `just changelog` | Preview the changelog entry the next release would write from the Conventional Commits since the last tag. Read-only. |
 | `just next-version` | Preview the version the next release would choose. Read-only — the release itself runs in the project's `release.yml`. |
+| `just update [VERSION]` | Pull in a newer template version through a git merge, the newest by default. Stops with exit 1 on conflicts; run it again after resolving them. Needs the network. See [Update from the template](../guides/update-from-template.md). |
+| `just update-check` | Exit 1 when a newer template version exists, 0 when this project is current. The weekly `template-update.yml` runs the same check, `pyfr update-check` through `uvx`, as its first step. |
 
 [Supply chain](supply-chain.md) says where each of these runs in CI and
 what to do when one is red.

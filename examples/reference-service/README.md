@@ -419,7 +419,7 @@ deliberately not distroless: the start command needs a shell to expand
 
 ## Continuous integration and releases
 
-Four workflows under `.github/workflows/` and a Dependabot schedule ship
+Five workflows under `.github/workflows/` and a Dependabot schedule ship
 with the project and run from the first push:
 
 | Workflow | Runs | What it does |
@@ -428,11 +428,12 @@ with the project and run from the first push:
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
 | `docs.yml` | every push to `main`, or by hand | builds the documentation site with `mkdocs build --strict` and deploys it to GitHub Pages |
+| `template-update.yml` | 06:23 UTC on Mondays, or by hand | asks whether a newer PyFr template version exists and, if so, runs `pyfr update` (the command behind `just update`) on a branch: a clean merge becomes a pull request with the template's changelog in its body, a merge with conflicts becomes an issue naming the files — see [Update from the template](docs/guides/update-from-template.md) |
 
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
 
-Five settings live in the GitHub interface, not in this repository. The
+Six settings live in the GitHub interface, not in this repository. The
 workflow-token permission is not one of them: each workflow declares what
 it needs in its own `permissions:` key, so the repository can stay at
 GitHub's default.
@@ -441,13 +442,27 @@ GitHub's default.
   deploy job fails with an opaque error while its build job succeeds.
 - **A `no-docs-needed` label must exist**, or the documentation-freshness
   check has no escape hatch.
-- **A `RELEASE_TOKEN` secret, only if a ruleset on `main` requires a pull
-  request.** The workflow token cannot pass such a ruleset (`GH013`), and
-  on a user-owned repository GitHub does not let the Actions app be
-  exempted; a fine-grained personal access token of an exempt admin (this
-  repository only; Contents: read and write) stored as `RELEASE_TOKEN` is
-  what `release.yml` pushes with. Without such a ruleset, leave the secret
-  out — the workflow falls back to its own token.
+- **A `RELEASE_TOKEN` secret, if a ruleset on `main` requires a pull
+  request — or if the weekly template update should run CI.** The workflow
+  token cannot pass such a ruleset (`GH013`), and on a user-owned
+  repository GitHub does not let the Actions app be exempted; a
+  fine-grained personal access token of an exempt admin (this repository
+  only; Contents, Pull requests, Issues and Workflows: read and write)
+  stored as `RELEASE_TOKEN` is what `release.yml` pushes with and what
+  `template-update.yml` opens its pull requests and issues with. Without it
+  both fall back to the workflow token: releases still push where no
+  ruleset forbids it, and the update pull request still opens, provided the
+  Actions setting below is on — but GitHub starts no workflow for an event
+  the workflow token caused, so CI does not run on that pull request until
+  someone closes and reopens it (the workflow leaves a comment saying so).
+  And an update that changes a file under `.github/workflows/` — most
+  template releases do — cannot be pushed by the workflow token at all: the
+  run fails at its push step with GitHub's `refusing to allow a GitHub App
+  to create or update workflow` message until the secret exists.
+- **Settings → Actions → General → "Allow GitHub Actions to create and
+  approve pull requests"**, only if `RELEASE_TOKEN` is not set: without
+  it the workflow token may not open the weekly template-update pull
+  request, and `template-update.yml` fails at `gh pr create`.
 - **Squash-merge as the merge strategy**, so the pull request title — a
   Conventional Commit — becomes the commit on `main` that Commitizen reads.
 - **After the first release, make each GHCR package public** under the

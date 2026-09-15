@@ -268,7 +268,14 @@ def test_a_clean_update_merges_the_template_and_keeps_the_team_s_work(
     # What the tool said, in order.
     assert "template: created from root commit" in out
     assert "render: new prompt team_channel defaulted to #platform" in out
-    assert "ignore: no .pyfr-update-ignore; using the built-in default" in out
+    # The body ships the ignore file, so the built-in default is not used
+    # and nothing is installed.
+    assert "ignore:" not in out
+    assert (
+        (project / ".pyfr-update-ignore")
+        .read_text()
+        .startswith("# Paths `just update` leaves")
+    )
     assert "template: committed v100.0.0 -> v100.1.0" in out
     assert "template: pushed to origin" in out
     assert "migrations: v100.1.0/before.py" in out
@@ -755,3 +762,46 @@ def test_no_push_is_pushed_by_the_next_run_even_when_already_current(
         project, monkeypatch, capsys, "update", *template, "--to", "v100.1.0"
     )
     assert (code, out) == (0, "already current at v100.1.0\n")
+
+
+def test_a_project_without_the_ignore_file_receives_it(
+    project: Path,
+    template_remote: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A project generated at v0.7.0-v0.11.0 has no .pyfr-update-ignore. The
+    # update runs with the built-in default and brings the file (spec 5.2,
+    # 8.2 scenario 6). The merge cannot deliver it -- the default ignores
+    # the file itself -- so the tool installs it beside the answers file.
+    git(project, "rm", "-q", ".pyfr-update-ignore")
+    commit_all(project, "chore: pretend this project predates the ignore file")
+    code, out, _ = run(
+        project,
+        monkeypatch,
+        capsys,
+        "update",
+        "--template",
+        str(template_remote),
+        "--to",
+        "v100.1.0",
+    )
+    assert code == 0, out
+    assert "ignore: no .pyfr-update-ignore; using the built-in default" in out
+    assert "ignore: installed .pyfr-update-ignore from the template" in out
+    installed = project / ".pyfr-update-ignore"
+    assert installed.read_text().startswith("# Paths `just update` leaves")
+    assert "/src/reference_service/domain/" in installed.read_text()
+    # The merge commit carries it, like the answers file. `git show
+    # --name-only` on a merge commit hides paths whose content matches one
+    # parent exactly -- true here, since the installed file is byte-for-byte
+    # what the template side already has -- so tree membership is checked
+    # directly instead of the (combined) diff.
+    assert (
+        git(project, "ls-tree", "--name-only", "HEAD~1", ".pyfr-update-ignore")
+        == ".pyfr-update-ignore"
+    )
+    assert (
+        git(project, "ls-tree", "--name-only", "HEAD~1^1", ".pyfr-update-ignore") == ""
+    )
+    assert git(project, "status", "--porcelain") == ""

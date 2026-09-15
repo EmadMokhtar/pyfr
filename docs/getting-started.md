@@ -160,11 +160,13 @@ below is made. Until then, read the reference service's copy of that site
 - [Add an endpoint](https://emadmokhtar.github.io/pyfr/reference-service/guides/add-an-endpoint/)
   builds a feature through all four layers.
 
-**The repository settings.** Five settings live in the GitHub interface,
+**The repository settings.** Six settings live in the GitHub interface,
 not in the generated files, and the workflows need them: the Pages source,
 a `no-docs-needed` label, a `RELEASE_TOKEN` secret when a ruleset requires
-pull requests, squash-merge, and making the published container packages
-public after the first release. The generated `README.md` lists all five
+pull requests or the weekly template update should run CI, letting Actions
+open pull requests when that secret is absent, squash-merge, and making the
+published container packages public after the first release. The generated
+`README.md` lists all six
 under *Continuous integration and releases*, with what goes wrong when each
 is missing; the reference service's copy is
 [here](https://github.com/EmadMokhtar/pyfr/blob/main/examples/reference-service/README.md#continuous-integration-and-releases).

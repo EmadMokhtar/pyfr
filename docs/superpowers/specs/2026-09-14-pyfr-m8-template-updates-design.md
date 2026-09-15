@@ -56,7 +56,7 @@ M8 is done when all of the following are true on `main`:
 | M8-5 | `.pyfr-update-ignore` uses gitignore syntax, matched with the `pathspec` library. A project without the file uses the built-in default, rendered for its answers. | Teams already know gitignore syntax. Projects generated at v0.7.0–v0.11.0 have no ignore file and must still update. |
 | M8-6 | The updater never prompts and never leaves the working tree half-changed. State for a paused run lives in `.git/pyfr-update.json`. A re-run of the same command resumes. | It runs unattended in the weekly workflow. One command, no `--continue` flag to learn. |
 | M8-7 | Publishing uses PyPI Trusted Publishing from `release.yml`; the publish job is last and nothing depends on it. | No long-lived PyPI token in a secret. Until the publisher is registered on pypi.org, only that job is red. |
-| M8-8 | The weekly workflow reuses `RELEASE_TOKEN`, whose documented permissions widen to Contents, Pull requests and Issues (read and write), with `GITHUB_TOKEN` as the fallback. | One secret to manage. The fallback still opens the pull request; it cannot start CI on it, and the workflow says so in a comment. |
+| M8-8 | The weekly workflow reuses `RELEASE_TOKEN`, whose documented permissions widen to Contents, Pull requests, Issues and Workflows (read and write), with `GITHUB_TOKEN` as the fallback. | One secret to manage. The fallback still opens the pull request; it cannot start CI on it, and the workflow says so in a comment. It cannot push an update that changes a workflow file at all (5.4). *(Workflows added in PR 2.)* |
 | M8-9 | Migration scripts live at `updates/vX.Y.Z/before.py` and `after.py` in the template repository, outside the template body, and run with `uv run python` in the project. Standard library only, idempotent. | Outside the body so they are never rendered into a project. Standard library only because they run in the project's environment, which may hold nothing else. |
 
 ---
@@ -533,23 +533,25 @@ permissions:
 
 Steps, one job:
 
-1. `actions/checkout` with `fetch-depth: 0` (the root commit and
-   `template` must be reachable) and
-   `token: ${{ secrets.RELEASE_TOKEN || github.token }}`, persisted. Both
-   the tool (pushing `template`) and the workflow (pushing the pull
-   request's branch) push, and every step after checkout is first-party —
-   `setup-uv`, shell, `gh` — so the persisted token reaches no third-party
-   code. `release.yml` does the opposite (`persist-credentials: false`,
-   the token handed to one step) because third-party actions run after
-   its checkout; the comment in this workflow says why it differs.
+1. `actions/checkout` with `fetch-depth: 0` (the root commit and `template`
+   must be reachable). The checkout keeps the *workflow* token — it dies
+   with the job, and `pyfr update` needs it to fetch `origin/template` of
+   a private repository. `RELEASE_TOKEN` never enters the checkout: the
+   template's own hooks and `uvx`'s installs run in later steps, and a
+   long-lived token must not be readable there — the same rule
+   `release.yml` follows. The tool runs with `--no-push`, and a separate
+   push step pushes `template` and the update branch with `RELEASE_TOKEN`
+   when it exists (so CI starts on the pull request), the workflow token
+   otherwise. *(Amended in PR 2: the original text persisted
+   `RELEASE_TOKEN` in the checkout.)*
 2. Install `uv`; set `user.name`/`user.email` as `release.yml` does.
 3. `uvx --from pyfr-cli@latest pyfr update-check --json`. Exit 0 → done.
    Exit 2 → the job fails.
 4. `git switch -c pyfr/update-<newest>`, then
-   `uvx --from pyfr-cli@latest pyfr update`, output captured to a file.
-   - **Exit 0** → push the branch; `gh pr create` titled
+   `uvx --from pyfr-cli@latest pyfr update --no-push`, output captured to a file.
+   - **Exit 0** → the push step pushes `template` and the branch; `gh pr create` titled
      `chore: update template v0.10.0 -> v0.12.0`, body from the merge
-     commit (`git log -1 --format=%b`). Skipped when an open pull request
+     commit (`git log -1 --format=%b --grep='^chore: update template '`). Skipped when an open pull request
      from that branch exists (`gh pr list --head`). When `RELEASE_TOKEN`
      is unset (`env: HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}`),
      add one comment: GitHub does not start workflows for events the
@@ -573,10 +575,14 @@ so where `RELEASE_TOKEN` is already described.
 `RELEASE_TOKEN` today: a fine-grained personal access token, Contents read
 and write, this repository only, needed when a ruleset on `main` requires
 pull requests. M8 widens the documented permissions to Contents, Pull
-requests and Issues (read and write) and states the two consequences of
-leaving it unset: the update pull request opens but its CI does not start
-until someone closes and reopens it, and the repository setting above must
-be on. Documented in the generated README ("Continuous integration and
+requests, Issues and Workflows (read and write) and states the three
+consequences of leaving it unset: the update pull request opens but its CI
+does not start until someone closes and reopens it, the repository setting
+above must be on, and an update that changes a file under
+`.github/workflows/` — most template releases do — cannot be pushed by the
+workflow token at all, since GitHub refuses any push that touches a
+workflow file from a token without the Workflows permission. *(Amended in
+PR 2.)* Documented in the generated README ("Continuous integration and
 releases") and `docs/contributing.md`, where the token already appears.
 
 ---
@@ -764,8 +770,10 @@ dependencies.
 
 - The PyPI publish: verified by the first release after PR 1.
 - The workflow's `gh` steps: the shell is thin and every branch is a
-  tested exit code. Verified once by `workflow_dispatch` on a freshly
-  generated project as the last step of PR 2.
+  tested exit code. The clean-merge path is verified once by
+  `workflow_dispatch` on a project generated at `v0.10.0` as the last step
+  of PR 2; the conflict path needs two releases whose template bodies
+  differ, and is verified the same way in PR 3, once `v0.12.0` exists.
 - The full-suite tests stay as they are: `just update-check` against real
   PyPI works only after the first publish and needs the network, so it is
   not added to them.
