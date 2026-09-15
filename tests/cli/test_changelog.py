@@ -78,10 +78,36 @@ def test_entries_is_empty_when_nothing_is_in_range() -> None:
         "git@github.com:EmadMokhtar/pyfr",
         "ssh://git@github.com/EmadMokhtar/pyfr.git",
         "ssh://git@github.com/EmadMokhtar/pyfr/",
+        # A port after the host: ssh:// keeps it (dropped -- the web UI is
+        # always on 443) and so does the scp-like form (no scheme means the
+        # `:` there is a delimiter, not a port).
+        "ssh://git@github.com:2222/EmadMokhtar/pyfr.git",
+        # Not the `git` user: scp-like URLs and ssh:// both allow any user.
+        "ssh://deploy@github.com:22/EmadMokhtar/pyfr",
     ],
 )
 def test_release_url_normalises_the_template_url(url: str) -> None:
     assert (
         changelog.release_url(url, Version(0, 12, 0))
         == "https://github.com/EmadMokhtar/pyfr/releases/tag/v0.12.0"
+    )
+
+
+def test_release_url_leaves_a_port_on_a_real_https_url_alone() -> None:
+    # Not an ssh URL at all -- a `:` before the first `/` is a port here,
+    # and there is no ssh equivalent to normalise it away from.
+    assert (
+        changelog.release_url(
+            "https://github.com:8443/EmadMokhtar/pyfr", Version(0, 12, 0)
+        )
+        == "https://github.com:8443/EmadMokhtar/pyfr/releases/tag/v0.12.0"
+    )
+
+
+def test_release_url_leaves_a_local_path_alone() -> None:
+    # Not a real temp-file access, just a string this function never opens --
+    # S108 (it warns about insecure use of a shared /tmp path) does not apply.
+    assert (
+        changelog.release_url("/tmp/template", Version(0, 12, 0))  # noqa: S108
+        == "/tmp/template/releases/tag/v0.12.0"  # noqa: S108
     )

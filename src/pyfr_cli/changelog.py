@@ -11,8 +11,17 @@ import re
 from pyfr_cli.versions import Version
 
 HEADING = re.compile(r"^## v?(?P<version>\d+\.\d+\.\d+)(?P<rest>.*)$")
-# An ssh clone URL: `git@host:owner/repo.git` or `ssh://git@host/owner/repo.git`.
-SSH_URL = re.compile(r"^(?:ssh://)?git@([^:/]+)[:/](.+)$")
+# An scp-like ssh clone URL: `[user@]host:path`, no scheme in front. The
+# negative lookahead keeps a real URL (`https://host:port/path`) from
+# matching -- that also has a `:` before the first `/`.
+SCP_LIKE_URL = re.compile(
+    r"^(?![A-Za-z][A-Za-z0-9+.-]*://)(?:[^@/]+@)?(?P<host>[^:/]+):(?P<path>.+)$"
+)
+# An ssh:// clone URL, any user, with an optional port that has no https
+# equivalent -- the web UI lives on 443 whatever port ssh uses.
+SSH_SCHEME_URL = re.compile(
+    r"^ssh://(?:[^@/]+@)?(?P<host>[^:/]+)(?::\d+)?/(?P<path>.+)$"
+)
 
 
 def sections(text: str) -> list[tuple[Version, str, str]]:
@@ -28,10 +37,19 @@ def sections(text: str) -> list[tuple[Version, str, str]]:
     return [(version, rest, "\n".join(body).strip()) for version, rest, body in found]
 
 
+def _https_base(template: str) -> str:
+    """`template` as an https URL: an scp-like or `ssh://` clone URL is
+    rewritten; anything else (https, http, a local path) is unchanged."""
+    match = SCP_LIKE_URL.match(template) or SSH_SCHEME_URL.match(template)
+    if match is None:
+        return template
+    return f"https://{match['host']}/{match['path']}"
+
+
 def release_url(template: str, version: Version) -> str:
     """The release page for `version` at `template`, as an https URL --
     an ssh clone URL is turned into its https form first."""
-    base = SSH_URL.sub(r"https://\1/\2", template)
+    base = _https_base(template)
     base = base.rstrip("/").removesuffix(".git")
     return f"{base}/releases/tag/{version}"
 
