@@ -43,10 +43,10 @@ which every generated project carries for itself.
 | `no-docs-needed` | A pull-request label that switches off the hard documentation gate for a refactor or an internal-only change. |
 | pip-audit | A tool that checks pinned Python packages against the PyPI advisory database. `just audit` runs it over the root `uv.lock`; the reference service runs it over its own. |
 | Pruning | Removing everything that belongs to an unchosen backend from a render: whole files and directories by the post-generation hook's `PRUNED` table, lines inside mixed files by Jinja `{%- if %}` blocks. |
-| PyPI | Python Package Index — pypi.org, the public registry `pip`, `uv` and `uvx` install from, and where `release.yml` publishes `pyfr-cli`. |
 | `.pyfr-answers.yml` | A file the template writes into every generated project, recording the answers and the template version it was rendered from. `just update` reads it. Kept committed and unedited. |
 | `pyfr-cli` | The updater a generated project runs as `just update`: a Python package on PyPI, command `pyfr`, run through `uvx` at the target template version. Its version is the template's, and it is the one package this repository publishes (ADR 0018). |
 | `.pyfr-update-ignore` | A file in every generated project, in gitignore syntax, naming the paths `just update` never touches — the ones the team rewrites. A project without it uses the built-in default for its answers. |
+| PyPI | Python Package Index — pypi.org, the public registry `pip`, `uv` and `uvx` install from, and where `release.yml` publishes `pyfr-cli`. |
 | Reference answers | `tests/reference-answers.yaml`: the fixed, everything-on answers `examples/reference-service/` is rendered from, with the names the reference service has carried since M0. |
 | Reference service | `examples/reference-service/`: the complete, running service rendered from the template with the reference answers, and never edited by hand. Its site is the worked example of the documentation every generated project ships. |
 | Render | The output of running cookiecutter over the template body with one set of answers. The reference service is one render; the generation tests make eight more. |

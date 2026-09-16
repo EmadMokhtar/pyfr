@@ -324,9 +324,9 @@ Three things about it differ from the rest of the root tooling:
   installs `.pyfr-update-ignore` when it is missing, and every error
   message states a cause and a fix, one line each (`errors.py`); the ones
   about the answers file and the `template` branch point at the guide each
-  project carries, `docs/guides/update-from-template.md`. When you change what the tool
-  needs from a project, the end-to-end test's oldest scenario is the one
-  to extend first.
+  project carries, `docs/guides/update-from-template.md`. When you change
+  what the tool needs from a project, the end-to-end test's oldest scenario
+  is the one to extend first.
 
 ### Writing a migration script
 
