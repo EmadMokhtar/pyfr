@@ -94,8 +94,8 @@ jobs:
           NEWEST: ${{ steps.check.outputs.newest }}
         # Any version, not only the newest: an unmerged pyfr/update-v0.12.0
         # and a fresh pyfr/update-v0.13.0 conflict with each other as soon
-        # as either merges, and an unresolved conflict issue would get a
-        # second one on top. The log names what is open, so the team knows
+        # as either merges, and an unresolved conflict issue would be
+        # duplicated. The log names what is open, so the team knows
         # what to merge or close first.
         run: |
           open_prs=$(gh pr list --state open --limit 200 --json number,headRefName --jq '[.[] | select(.headRefName | startswith("pyfr/update-"))] | map("#\(.number) (\(.headRefName))") | join(", ")')
@@ -243,7 +243,7 @@ jobs:
             if [ "$PUSHED" = "success" ]; then
               echo "The \`template\` branch is already at ${NEWEST} on origin, so a local run goes straight to the merge:"
             else
-              echo "The \`template\` branch could not be pushed from this run (its push step failed -- see the run log for the cause, usually a token without the Workflows permission), so a local run redoes the sync first, then merges:"
+              echo "The \`template\` branch could not be pushed from this run (its push step failed -- see the run log for the cause, usually a token without the Workflows or Contents permission), so a local run redoes the sync first, then merges:"
             fi
             echo
             echo '```'
