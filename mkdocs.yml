@@ -75,6 +75,7 @@ nav:
       - 0002 cookiecutter over Copier and cruft: adr/0002-cookiecutter-over-copier-and-cruft.md
       - 0003 uv over pip and Poetry: adr/0003-uv-over-pip-and-poetry.md
       - 0017 The template is the source of truth: adr/0017-the-template-is-the-source-of-truth.md
+      - 0018 The updater is a published command-line tool: adr/0018-the-updater-is-a-published-cli.md
   - Explanation:
       - Why a template, not a framework: explanation/why-a-template.md
   - Project:

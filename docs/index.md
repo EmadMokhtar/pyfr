@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 ---
 
 # PyFr
@@ -16,7 +16,7 @@ placeholders. The [cookiecutter](https://cookiecutter.readthedocs.io/) tool
 asks you questions, substitutes your answers into the skeleton, and writes a
 new repository to disk.
 
-!!! note "Status: M0–M7 done, M8 to go"
+!!! note "Status: M0–M8 done"
 
     **The template is usable.** `{{cookiecutter.project_slug}}/` is the
     template body and the source of truth: the *reference service* —
@@ -29,13 +29,16 @@ new repository to disk.
     release and documentation workflows, ships its own documentation site
     about itself, and records the template version it came from; and on
     every merge to `main` and every night, three combinations are
-    generated for real and run through their own `just check-all`. M8 —
-    template updates for generated projects — is next.
+    generated for real and run through their own `just check-all`. M8,
+    template updates, is complete too: `just update` pulls a later
+    template version into a generated project through an ordinary git
+    merge, and a weekly workflow in every generated project opens the
+    pull request for it.
 
     PyFr is built in three phases. Phase A (milestones M0 to M6) built that
     service as ordinary Python, with no template placeholders anywhere.
-    Phase B (M7) converted it into the template. Phase C keeps the two in
-    step forever after. The reason is stated plainly in the design: never
+    Phase B (M7) converted it into the template. Phase C (M8, then
+    permanently) keeps the two in step forever after. The reason is stated plainly in the design: never
     debug Jinja and Python at the same time. (Jinja is the placeholder
     language cookiecutter uses.)
 
@@ -47,12 +50,13 @@ new repository to disk.
 
 ## What you own
 
-Generated code belongs entirely to the team that generated it. Nothing is
-published to a package index, and a generated service imports no PyFr
-package. There is no framework to upgrade and no library that can break you.
+Generated code belongs entirely to the team that generated it. A generated
+service imports no PyFr package: there is no framework to upgrade and no
+library that can break you. The one thing PyFr publishes is the updater,
+`pyfr-cli`, which runs at update time and is never imported.
 
 That choice has an obvious cost — a fix in PyFr does not reach services
-already generated — and M8 removes it: a generated project pulls later
+already generated — and M8 removed it: a generated project pulls later
 template versions into itself through a normal git merge. Teams keep full
 ownership *and* receive fixes. The reasoning is in
 [Why a template, not a framework](explanation/why-a-template.md).

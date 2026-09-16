@@ -1,5 +1,5 @@
 ---
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 ---
 
 # Roadmap
@@ -8,7 +8,7 @@ PyFr is built in nine milestones, M0 through M8. Every milestone ends with
 something that runs and is tested — there is no stage where the project is
 half-converted and nothing works.
 
-**M0, M1, M2, M3, M4, M5, M6 and M7 are done; M8 is next.** Everything on this site describes code that exists today.
+**All nine milestones, M0 through M8, are done.** Everything on this site describes code that exists today.
 
 The last row of the table, M9, is not one of the nine. It is a holding place
 for extras deliberately deferred out of the first plan, with no schedule
@@ -24,7 +24,7 @@ attached.
 | **M5** | Docs and release | **Done** | A *generated* configuration reference — `settings.py`'s `Field(description=...)` is the single source of truth for all 38 environment variables, with `docs/reference/configuration.md`'s table and `.env.example` generated from it and drift-gated in `just gates`; `lychee` external link checking, executable `curl` examples run against a live stack, and advisory warnings for stale review dates and `covers:` path coupling, alongside the `mkdocs build --strict` check that already existed; twelve architecture decision records and an on-call runbook; Commitizen, a `CHANGELOG.md` generated from history, version `0.5.0` and a release workflow; the contract gate's version comparison replaced by a Conventional Commits range check; and continuous integration for the reference service, which had none before — `ci.yml` grown from two jobs to eleven, plus a nightly workflow for mutation testing and a full link sweep. The Diátaxis structure and GitHub Pages this site already used arrived earlier, in M0-era work — M5 did not build them, only added to what they already published. |
 | **M6** | Supply chain | **Done** | Dependency auditing with `pip-audit` over both lockfiles, Trivy scanning of both images failing on fixed HIGH and CRITICAL findings with expiring exemptions, a CycloneDX SBOM per image attached to every release, multi-architecture (`amd64` and `arm64`) images published to GHCR on release under the repository's version, Dependabot across five ecosystems with every duplicated tool and image pin collapsed into the one file it updates, log redaction as a processor in the shared chain, `just config-check`, and seed data so `just up` yields orders. pip is removed from the runtime image; the migrate base moved to v4.20.1. |
 | **M7** | Templatise | **Done** | The reference service becomes the template in five pull requests. The first moved the tree under `{{cookiecutter.project_slug}}/`, added `cookiecutter.json` with the identity, port and licence prompts, both hooks, `just regen` and the golden diff that makes the template the source of truth (ADR 0017). The second added the `database`, `cache` and `object_storage` prompts, pruning across the eight combinations proven by a generation-test matrix on every push, and `.pyfr-answers.yml`. The third gave a generated project its own `.github/` — CI, nightly and release workflows and a Dependabot schedule, rendered inert at `examples/reference-service/.github/` — and its own Commitizen; the workflows' action pins follow the root's through `just adopt`. The fourth split the documentation: pages about the service moved into the template as a generated project's own MkDocs site — templatised, pruned per backend, built and deployed by its own `docs.yml` — the hygiene scripts moved with them, PyFr's `docs.yml` deploys both sites as one, and the configuration-reference lookup that kept a generated project's `check` and `gates` jobs red is fixed. The fifth added the full-suite tests — three combinations rendered for real, synced, committed and run through their own `just check-all` on every merge to `main` and nightly — wired `_template_version` to the release, so every generated project records the template version it came from, and made the generator refuse a port the project's own stack binds. **PyFr is a usable template: `uvx cookiecutter gh:EmadMokhtar/pyfr` produces a project whose `just check` passes.** |
-| **M8** | Template updates | Planned | A generated project can pull in later template versions through a git merge, with a weekly job that opens a pull request when one is available. |
+| **M8** | Template updates | **Done** | A generated project pulls later template versions into itself through a git merge. `just update` runs the published `pyfr-cli` at the target version: it re-renders the template with the project's recorded answers onto a `template` branch kept on the remote, merges it with the base pinned to the recorded version's commit — so a squash-merged first update leaves the second a correct base — and runs a release's migration scripts before and after. `.pyfr-update-ignore`, in gitignore syntax, names the paths the team owns and the merge never touches; files the team deleted stay deleted. Every generated project carries `.github/workflows/template-update.yml`, which runs the update each Monday and opens a pull request with the template's changelog on a clean merge, or an issue naming the conflicting files otherwise, and a guide, *Update from the template*, with the conflict procedure. Delivered in three pull requests: `pyfr-cli` on PyPI with Trusted Publishing (v0.11.0), the generated project's side (v0.12.0), and the closing documentation with ADR 0018. |
 | **M9** | Extras | Deferred, not one of the nine | Kubernetes manifests or Helm, a devcontainer, idempotency keys, rate limiting, load tests. |
 
 ## Why M0 ships on its own
@@ -49,7 +49,10 @@ makes the template the source of truth starts with M7's first pull request
 (ADR 0017): the reference service is regenerated from it, and the build
 fails if the result differs from what is committed.
 
-**Phase C** (after M7, permanently) keeps the two in step forever after.
+**Phase C** (M8, then permanently) keeps the two in step forever after: the
+template stays the source of truth, the reference service is regenerated
+from it, and a generated project pulls later template versions into itself
+with `just update` (ADR 0018).
 
 The rule behind this: **never debug Jinja and Python at the same time.**
 More on that in [Why a template, not a

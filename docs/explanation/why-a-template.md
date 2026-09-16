@@ -1,12 +1,13 @@
 ---
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-15
 ---
 
 # Why a template, not a framework
 
 PyFr v1 is a pure cookiecutter template. All code is generated into your
-repository and owned entirely by your team. Nothing is published to a package
-index, and a generated service imports no PyFr package.
+repository and owned entirely by your team. A generated service imports no
+PyFr package; the one thing PyFr publishes is the updater, `pyfr-cli`, which
+runs at update time and is never imported.
 
 That is a deliberate reversal of how this project was first described, and the
 reasoning is worth stating plainly.
@@ -52,8 +53,8 @@ if it were not addressed.
 
 ## How the copy problem is solved
 
-M8 makes a generated project able to pull in later template versions through
-an ordinary git merge.
+A generated project pulls in later template versions through an ordinary
+git merge — `just update`, delivered in M8 and recorded in ADR 0018.
 
 Generation records the answers you gave in a file in your repository. A
 *vendor branch* holds pristine template output and nothing else — no local

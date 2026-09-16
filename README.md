@@ -28,13 +28,14 @@ weeks, and every team's result is a little different.
 PyFr aims to make that a ten-minute step instead — and to make the result the
 same good one every time.
 
-**The generated code is yours.** 🎁 Nothing is published to a package index, and
-a generated service imports no PyFr package. There is no framework to upgrade,
-no runtime dependency on us, and nothing to lock you in. From M8, a generated
-project will still be able to pull later template fixes into itself through an
+**The generated code is yours.** 🎁 A generated service imports no PyFr
+package: no framework to upgrade, no runtime dependency on us, and nothing to
+lock you in. The one thing PyFr publishes is the updater, `pyfr-cli`, which
+runs at update time and is never imported. A generated project still receives
+later template fixes: `just update` pulls them into itself through an
 ordinary `git merge`.
 
-## ✅ Status: M0–M7 done, M8 to go
+## ✅ Status: M0–M8 done
 
 **The template is usable** — `uvx cookiecutter gh:EmadMokhtar/pyfr`
 generates a project whose `just check` passes: three combinations are
@@ -43,7 +44,10 @@ to `main` and every night, and all eight are rendered and lint-checked on
 every pull request and merge. M7, the conversion into a template, is complete: the template
 renders from twelve prompts, prunes the backends you do not choose, gives
 a generated project its own workflows and its own documentation site
-about itself, and records the template version it came from. See the
+about itself, and records the template version it came from. M8, template
+updates, is complete too: `just update` pulls a later template version
+into a generated project through a git merge, and a weekly workflow opens
+the pull request for it. See the
 [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what each
 milestone delivered.
 The [**reference service**](examples/reference-service/) is rendered from
@@ -56,14 +60,14 @@ PyFr is built in three phases:
 | --- | --- | --- |
 | **A** | M0–M6 | Build the reference service as ordinary Python — no template placeholders anywhere |
 | **B** | M7 | Convert it into the cookiecutter template ✨ |
-| **C** | M8+ | Keep the two in step, forever |
+| **C** | M8, then forever | Keep the two in step: the template stays the source of truth, and a generated project pulls later versions into itself 🔁 |
 
 The rule behind that order: never debug Jinja and Python at the same time. 🙂
 
-**M0 through M7 — the reference service and its conversion into a
-template — are complete. M8, template updates for generated projects, is
-next.** See the [roadmap](https://emadmokhtar.github.io/pyfr/roadmap/)
-for what ships when.
+**M0 through M8 — the reference service, its conversion into a template,
+and template updates for generated projects — are complete.** See the
+[roadmap](https://emadmokhtar.github.io/pyfr/roadmap/) for what each
+milestone delivered.
 
 ## 🚀 Try it in one command
 
