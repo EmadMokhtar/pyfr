@@ -52,7 +52,15 @@ def test_update_check_reports_the_versions_and_exits_by_state(
         "newest": "v0.11.0",
         "behind": True,
         "template": str(template),
+        "release_url": f"{template}/releases/tag/v0.11.0",
     }
+    # Behind: the human line names the release page too, so a person
+    # running `just update-check` can read what changed without building
+    # the address by hand. Current (above): the line is unchanged.
+    assert main(["update-check"]) == 1
+    assert capsys.readouterr().out == (
+        f"recorded v0.10.0, newest v0.11.0 -- {template}/releases/tag/v0.11.0\n"
+    )
     # --template overrides the recorded URL.
     other = make_repo(tmp_path / "other")
     git(other, "tag", "v0.10.0")

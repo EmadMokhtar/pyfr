@@ -49,14 +49,21 @@ def check(
     template = options.template or recorded.template
     newest = versions.remote_versions(template, Git(project))[-1]
     behind = recorded.version < newest
+    # The release page of the newest version, so the weekly workflow's
+    # issue and a person reading the line both get the address from one
+    # place instead of rebuilding it from the template URL.
+    release = changelog.release_url(template, newest)
     if as_json:
         record = {
             "recorded": str(recorded.version),
             "newest": str(newest),
             "behind": behind,
             "template": template,
+            "release_url": release,
         }
         out.write(json.dumps(record) + "\n")
+    elif behind:
+        out.write(f"recorded {recorded.version}, newest {newest} -- {release}\n")
     else:
         out.write(f"recorded {recorded.version}, newest {newest}\n")
     return 1 if behind else 0

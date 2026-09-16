@@ -102,8 +102,10 @@ skips pushing the `template` branch (offline work); the next run pushes it
 
 `update-check` prints `recorded v0.10.0, newest v0.12.0` and exits 0 when
 current, 1 when behind, 2 on error. `--json` prints
-`{"recorded": "v0.10.0", "newest": "v0.12.0", "behind": true, "template": "https://github.com/EmadMokhtar/pyfr"}`
-for the workflow.
+`{"recorded": "v0.10.0", "newest": "v0.12.0", "behind": true, "template": "https://github.com/EmadMokhtar/pyfr", "release_url": "https://github.com/EmadMokhtar/pyfr/releases/tag/v0.12.0"}`
+for the workflow. *(Amended for #55: `release_url` is the newest version's
+release page, from `changelog.release_url`; when behind, the human line
+ends with ` -- <release_url>` as well.)*
 
 `update` exits 0 when updated or already current, 1 when the user has to
 act (a merge with conflicts is waiting), 2 on error. Its output uses stable
@@ -569,6 +571,19 @@ The shell stays thin: every decision is the tool's exit code, tested in
 section 8. The `GITHUB_TOKEN` fallback also needs the repository setting
 "Allow GitHub Actions to create and approve pull requests"; the README says
 so where `RELEASE_TOKEN` is already described.
+
+*(Amended after the live verification, issue #55.)* Three changes to the
+steps above: (a) the stop before step 4 looks for **any** open
+`pyfr/update-*` pull request or any open `chore: template … conflicts`
+issue, whatever its version, and names it — two open update branches
+conflict with each other as soon as either merges; (b) the issue step
+runs even when the push step failed (`!cancelled()` in its `if:`), and its
+body says whether `template` was pushed — a refused push must not hide
+the conflict; the job still fails when the push did; (c) a refused
+`gh pr create` or `gh issue create` prints an `::error::` naming the
+missing permission (or the Actions setting), as the push step does, and
+the release link comes from `update-check --json`'s `release_url` field
+(added in `pyfr-cli` for this) instead of being rebuilt from `template`.
 
 ### 5.4 The token
 

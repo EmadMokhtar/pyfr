@@ -689,7 +689,7 @@ with the project and run from the first push:
 | `nightly.yml` | 03:17 UTC daily, or by hand | `just mutants-gate`, `just audit`, and a Trivy scan of the images last published — an advisory published against a version already shipped is the failure nothing else would catch |
 | `release.yml` | every push to `main`, or by hand | Commitizen reads the Conventional Commits since the last tag, decides the version, writes `CHANGELOG.md`, promotes the API contract baseline, tags, and the images are published under that version; the very first release tags `v0.1.0` without a bump, because there is no tag yet for Commitizen to count from |
 | `docs.yml` | every push to `main`, or by hand | builds the documentation site with `mkdocs build --strict` and deploys it to GitHub Pages |
-| `template-update.yml` | 06:23 UTC on Mondays, or by hand | asks whether a newer PyFr template version exists and, if so, runs `pyfr update` (the command behind `just update`) on a branch: a clean merge becomes a pull request with the template's changelog in its body, a merge with conflicts becomes an issue naming the files — see [Update from the template](docs/guides/update-from-template.md) |
+| `template-update.yml` | 06:23 UTC on Mondays, or by hand | asks whether a newer PyFr template version exists and, if so, runs `pyfr update` (the command behind `just update`) on a branch: a clean merge becomes a pull request with the template's changelog in its body, a merge with conflicts becomes an issue naming the files; it waits while an earlier update pull request or conflict issue is still open — see [Update from the template](docs/guides/update-from-template.md) |
 
 `.github/dependabot.yml` opens one grouped pull request per ecosystem each
 week: `uv`, `github-actions`, `docker`, `docker-compose` and `pre-commit`.
@@ -719,7 +719,10 @@ GitHub's default.
   And an update that changes a file under `.github/workflows/` — most
   template releases do — cannot be pushed by the workflow token at all: the
   run fails at its push step with GitHub's `refusing to allow a GitHub App
-  to create or update workflow` message until the secret exists.
+  to create or update workflow` message until the secret exists (a
+  conflict still gets its issue, which says the branch was not pushed).
+  Each of the four permissions is needed: a token missing one fails at the
+  step that needs it, with an error annotation naming the permission.
 - **Settings → Actions → General → "Allow GitHub Actions to create and
   approve pull requests"**, only if `RELEASE_TOKEN` is not set: without
   it the workflow token may not open the weekly template-update pull
