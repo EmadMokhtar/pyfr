@@ -50,9 +50,10 @@ new repository to disk.
 
 ## What you own
 
-Generated code belongs entirely to the team that generated it. Nothing is
-published to a package index, and a generated service imports no PyFr
-package. There is no framework to upgrade and no library that can break you.
+Generated code belongs entirely to the team that generated it. A generated
+service imports no PyFr package: there is no framework to upgrade and no
+library that can break you. The one thing PyFr publishes is the updater,
+`pyfr-cli`, which runs at update time and is never imported.
 
 That choice has an obvious cost — a fix in PyFr does not reach services
 already generated — and M8 removed it: a generated project pulls later

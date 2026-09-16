@@ -28,11 +28,12 @@ weeks, and every team's result is a little different.
 PyFr aims to make that a ten-minute step instead — and to make the result the
 same good one every time.
 
-**The generated code is yours.** 🎁 Nothing is published to a package index, and
-a generated service imports no PyFr package. There is no framework to upgrade,
-no runtime dependency on us, and nothing to lock you in. A generated project
-still receives later template fixes: `just update` pulls them into itself
-through an ordinary `git merge`.
+**The generated code is yours.** 🎁 A generated service imports no PyFr
+package: no framework to upgrade, no runtime dependency on us, and nothing to
+lock you in. The one thing PyFr publishes is the updater, `pyfr-cli`, which
+runs at update time and is never imported. A generated project still receives
+later template fixes: `just update` pulls them into itself through an
+ordinary `git merge`.
 
 ## ✅ Status: M0–M8 done
 

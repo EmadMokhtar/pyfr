@@ -322,8 +322,9 @@ Three things about it differ from the rest of the root tooling:
 - **It must work for every version a project can record.** A project
   generated at v0.7.0 has an answers file and nothing else. The tool
   installs `.pyfr-update-ignore` when it is missing, and every error
-  message points at the guide each project carries,
-  `docs/guides/update-from-template.md`. When you change what the tool
+  message states a cause and a fix, one line each (`errors.py`); the ones
+  about the answers file and the `template` branch point at the guide each
+  project carries, `docs/guides/update-from-template.md`. When you change what the tool
   needs from a project, the end-to-end test's oldest scenario is the one
   to extend first.
 
@@ -365,7 +366,7 @@ This repository builds two MkDocs sites and deploys them as one.
 - **PyFr's site** is the root `docs/` with the root `mkdocs.yml`, built
   into `site/` and served at `https://emadmokhtar.github.io/pyfr/`. Its
   pages are this one, the home page, getting started, the roadmap, the
-  glossary, PyFr's three decision records (0002, 0003 and 0017) and *Why a
+  glossary, PyFr's four decision records (0002, 0003, 0017 and 0018) and *Why a
   template, not a framework*.
 - **The reference service's site** is `examples/reference-service/docs/`
   with that project's `mkdocs.yml`, built into `site/reference-service/`
@@ -646,7 +647,7 @@ construction, and `tests/test_generation.py` fails the pull request that
 edits one by hand; `cz bump --check-consistency` in `release.yml` refuses
 to release if they have drifted anyway. A generated project's
 `_template_version` is therefore the tag its template body was released
-under — what M8 will read to bring it up to date.
+under — what `just update` reads to bring it up to date.
 
 ## One-time repository settings
 

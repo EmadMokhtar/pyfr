@@ -14,7 +14,7 @@ covers:
 ## Context
 
 A generated project imports nothing from PyFr (ADR 0002; the original
-specification's section 3). M8 has to put the update logic somewhere —
+specification's section 1.1). M8 has to put the update logic somewhere —
 render the template at a newer version with the project's recorded
 answers, merge the result, run a release's migration scripts — and has to
 give that merge a base commit: the last state both sides agreed on.
@@ -67,7 +67,7 @@ argues both halves in sections 4.3 and 4.7.
 
 ## Consequences
 
-- The root `pyproject.toml` is a package. `src/pyfr_cli/` is the one thing
+- The root `pyproject.toml` is a package. `src/pyfr_cli/` is the one package
   this repository publishes: typed with `mypy --strict`, tested in
   `tests/cli/` and by the end-to-end update test, built and run from its
   wheel in CI.

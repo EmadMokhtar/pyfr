@@ -13,7 +13,7 @@ which every generated project carries for itself.
 
 | Term | Meaning |
 | --- | --- |
-| ADR | Architecture Decision Record — a one-page note recording a decision, its context, and its consequences. PyFr's own are 0002, 0003 and 0017; the rest belong to the service. |
+| ADR | Architecture Decision Record — a one-page note recording a decision, its context, and its consequences. PyFr's own are 0002, 0003, 0017 and 0018; the rest belong to the service. |
 | Answers | The values given to the twelve prompts. `tests/reference-answers.yaml` holds the fixed set the reference service is rendered from; a generated project records its own in `.pyfr-answers.yml`. |
 | Backend combination | One choice for each of the three backend prompts — `database`, `cache`, `object_storage` — so eight combinations in all. "Everything on" is the default; "everything off" is `none` three times. |
 | Commitizen | The tool that checks each commit message against Conventional Commits, decides the next version from the commits since the last tag, writes the changelog and tags the release. Pinned once, in `uv.lock`, and run through `uv run --locked cz`. |
@@ -43,6 +43,7 @@ which every generated project carries for itself.
 | `no-docs-needed` | A pull-request label that switches off the hard documentation gate for a refactor or an internal-only change. |
 | pip-audit | A tool that checks pinned Python packages against the PyPI advisory database. `just audit` runs it over the root `uv.lock`; the reference service runs it over its own. |
 | Pruning | Removing everything that belongs to an unchosen backend from a render: whole files and directories by the post-generation hook's `PRUNED` table, lines inside mixed files by Jinja `{%- if %}` blocks. |
+| PyPI | Python Package Index — pypi.org, the public registry `pip`, `uv` and `uvx` install from, and where `release.yml` publishes `pyfr-cli`. |
 | `.pyfr-answers.yml` | A file the template writes into every generated project, recording the answers and the template version it was rendered from. `just update` reads it. Kept committed and unedited. |
 | `pyfr-cli` | The updater a generated project runs as `just update`: a Python package on PyPI, command `pyfr`, run through `uvx` at the target template version. Its version is the template's, and it is the one package this repository publishes (ADR 0018). |
 | `.pyfr-update-ignore` | A file in every generated project, in gitignore syntax, naming the paths `just update` never touches — the ones the team rewrites. A project without it uses the built-in default for its answers. |

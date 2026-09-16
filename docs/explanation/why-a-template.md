@@ -5,8 +5,9 @@ last_reviewed: 2026-09-15
 # Why a template, not a framework
 
 PyFr v1 is a pure cookiecutter template. All code is generated into your
-repository and owned entirely by your team. Nothing is published to a package
-index, and a generated service imports no PyFr package.
+repository and owned entirely by your team. A generated service imports no
+PyFr package; the one thing PyFr publishes is the updater, `pyfr-cli`, which
+runs at update time and is never imported.
 
 That is a deliberate reversal of how this project was first described, and the
 reasoning is worth stating plainly.
