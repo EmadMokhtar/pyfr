@@ -13,7 +13,7 @@
 # examples/reference-service/. The two are never synced together.
 [project]
 name = "pyfr-cli"
-version = "0.12.0"
+version = "0.13.0"
 description = "PyFr — a cookiecutter template for production-ready Python microservices, and the tool that keeps a generated project up to date with it"
 readme = "README.md"
 requires-python = ">=3.13"

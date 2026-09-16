@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.13.0 (2026-09-16)
+
+### Feat
+
+- harden the weekly template update and report the release url (#56)
+
 ## v0.12.0 (2026-09-15)
 
 ### Feat

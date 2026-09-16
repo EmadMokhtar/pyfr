@@ -11,7 +11,7 @@
   "object_storage": ["s3", "none"],
   "http_port": "8000",
   "license": ["Apache-2.0", "MIT", "MPL-2.0", "Proprietary"],
-  "_template_version": "0.12.0",
+  "_template_version": "0.13.0",
   "_copy_without_render": [
     "ops/grafana/dashboards/*.json",
     "ops/grafana/provisioning/dashboards/*.yaml"

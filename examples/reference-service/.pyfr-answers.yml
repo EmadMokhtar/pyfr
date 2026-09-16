@@ -2,7 +2,7 @@
 # to re-render the template at a newer version and merge the result;
 # nothing else does. Keep it committed and unedited.
 _template: https://github.com/EmadMokhtar/pyfr
-_template_version: "0.12.0"
+_template_version: "0.13.0"
 project_name: "Reference Service"
 project_slug: "reference-service"
 package_name: "reference_service"
