@@ -110,8 +110,9 @@ When a newer template exists it runs the update on a branch named
   step failed — usually the token below); the issue says so, and the
   local run then redoes the sync before the merge.
 
-Nothing is opened twice, and nothing piles up: the workflow stops while
-*any* `pyfr/update-*` pull request or *any* conflict issue is still open,
+Nothing is opened twice, and unfinished updates do not accumulate: the
+workflow stops while *any* `pyfr/update-*` pull request or *any* conflict
+issue is still open,
 whatever its version, and names it in the run log. Two open update
 branches would conflict with each other as soon as either merged, so
 merge or close the older one first.
@@ -126,7 +127,8 @@ leaves a comment: close and reopen the pull request to start CI, or add
 push at all: the run fails at its push step with GitHub's `refusing to
 allow a GitHub App to create or update workflow` message. A refused push,
 pull request or issue each print an error annotation naming the missing
-permission. The README's *Continuous integration and releases* says what
+permission — or, for the workflow token, the repository setting it needs.
+The README's *Continuous integration and releases* says what
 the token needs (Contents, Pull requests, Issues and Workflows, read and
 write) and names the repository setting the fallback depends on.
 

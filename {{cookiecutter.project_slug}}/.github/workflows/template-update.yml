@@ -83,8 +83,7 @@ jobs:
                echo "behind=true" >> "$GITHUB_OUTPUT"
                echo "recorded=$(jq -r .recorded check.json)" >> "$GITHUB_OUTPUT"
                echo "newest=$(jq -r .newest check.json)" >> "$GITHUB_OUTPUT"
-               echo "template=$(jq -r .template check.json)" >> "$GITHUB_OUTPUT"
-               echo "release_url=$(jq -r .release_url check.json)" >> "$GITHUB_OUTPUT" ;;
+               echo "release_url=$(jq -r '.release_url // empty' check.json)" >> "$GITHUB_OUTPUT" ;;
             *) exit "$status" ;;
           esac
 
@@ -158,16 +157,20 @@ jobs:
           # actions/checkout stored the workflow token as an HTTP header that git would send instead of the URL's credential. An empty -c value resets that header for these two commands, wherever checkout keeps it, so RELEASE_TOKEN -- when present -- is what pushes.
           # push() captures stderr for both calls below and always echoes it,
           # so the log shows what was pushed on success too. On failure, a
-          # refusal matching GitHub's own "create or update workflow" phrase
-          # -- the token lacking the Workflows permission -- gets a dedicated
-          # ::error:: pointing at the fix; any other failure still prints and
-          # fails the step.
+          # refusal matching one of GitHub's own phrases -- "create or update
+          # workflow" for a token without the Workflows permission, "Write
+          # access to repository not granted" for one without Contents write
+          # -- gets a dedicated ::error:: pointing at the fix; any other
+          # failure still prints and fails the step.
           push() {
             if ! output=$(git -c http.https://github.com/.extraheader= push "$@" 2>&1); then
               echo "$output"
               case "$output" in
                 *"create or update workflow"*)
                   echo "::error::The push was refused because the update changes a workflow file and the token lacks the Workflows permission. Add a RELEASE_TOKEN secret with Contents, Pull requests, Issues and Workflows (read and write) -- README.md, Continuous integration and releases."
+                  ;;
+                *"Write access to repository not granted"*)
+                  echo "::error::The push was refused because the token lacks the Contents permission (read and write). Give RELEASE_TOKEN Contents, Pull requests, Issues and Workflows (read and write) -- README.md, Continuous integration and releases."
                   ;;
               esac
               exit 1

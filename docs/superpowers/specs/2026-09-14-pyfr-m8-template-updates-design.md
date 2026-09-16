@@ -102,8 +102,10 @@ skips pushing the `template` branch (offline work); the next run pushes it
 
 `update-check` prints `recorded v0.10.0, newest v0.12.0` and exits 0 when
 current, 1 when behind, 2 on error. `--json` prints
-`{"recorded": "v0.10.0", "newest": "v0.12.0", "behind": true, "template": "https://github.com/EmadMokhtar/pyfr"}`
-for the workflow.
+`{"recorded": "v0.10.0", "newest": "v0.12.0", "behind": true, "template": "https://github.com/EmadMokhtar/pyfr", "release_url": "https://github.com/EmadMokhtar/pyfr/releases/tag/v0.12.0"}`
+for the workflow. *(Amended for #55: `release_url` is the newest version's
+release page, from `changelog.release_url`; when behind, the human line
+ends with ` -- <release_url>` as well.)*
 
 `update` exits 0 when updated or already current, 1 when the user has to
 act (a merge with conflicts is waiting), 2 on error. Its output uses stable
