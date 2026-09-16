@@ -570,6 +570,19 @@ section 8. The `GITHUB_TOKEN` fallback also needs the repository setting
 "Allow GitHub Actions to create and approve pull requests"; the README says
 so where `RELEASE_TOKEN` is already described.
 
+*(Amended after the live verification, issue #55.)* Three changes to the
+steps above: (a) the stop before step 4 looks for **any** open
+`pyfr/update-*` pull request or any open `chore: template … conflicts`
+issue, whatever its version, and names it — two open update branches
+conflict with each other as soon as either merges; (b) the issue step
+runs even when the push step failed (`!cancelled()` in its `if:`), and its
+body says whether `template` was pushed — a refused push must not hide
+the conflict; the job still fails when the push did; (c) a refused
+`gh pr create` or `gh issue create` prints an `::error::` naming the
+missing permission (or the Actions setting), as the push step does, and
+the release link comes from `update-check --json`'s `release_url` field
+(added in `pyfr-cli` for this) instead of being rebuilt from `template`.
+
 ### 5.4 The token
 
 `RELEASE_TOKEN` today: a fine-grained personal access token, Contents read

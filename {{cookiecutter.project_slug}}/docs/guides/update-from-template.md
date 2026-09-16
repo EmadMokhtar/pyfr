@@ -106,9 +106,15 @@ When a newer template exists it runs the update on a branch named
 - **Conflicts** become an issue, `chore: template vA -> vB conflicts`,
   naming the files. Run `just update vB` locally: the `template` branch
   is already at `vB` on `origin`, so the run goes straight to the merge.
+  The issue opens even when the run could not push that branch (its push
+  step failed — usually the token below); the issue says so, and the
+  local run then redoes the sync before the merge.
 
-Nothing is opened twice: the workflow stops when a pull request or issue
-for that version is already open.
+Nothing is opened twice, and nothing piles up: the workflow stops while
+*any* `pyfr/update-*` pull request or *any* conflict issue is still open,
+whatever its version, and names it in the run log. Two open update
+branches would conflict with each other as soon as either merged, so
+merge or close the older one first.
 
 The workflow pushes with the `RELEASE_TOKEN` secret when the repository
 has one, and with its own workflow token otherwise. With the fallback the
@@ -118,10 +124,11 @@ leaves a comment: close and reopen the pull request to start CI, or add
 `RELEASE_TOKEN`. And when the update changes a file under
 `.github/workflows/` — most template releases do — the fallback cannot
 push at all: the run fails at its push step with GitHub's `refusing to
-allow a GitHub App to create or update workflow` message. The README's
-*Continuous integration and releases* says what the token needs (Contents,
-Pull requests, Issues and Workflows, read and write) and names the
-repository setting the fallback depends on.
+allow a GitHub App to create or update workflow` message. A refused push,
+pull request or issue each print an error annotation naming the missing
+permission. The README's *Continuous integration and releases* says what
+the token needs (Contents, Pull requests, Issues and Workflows, read and
+write) and names the repository setting the fallback depends on.
 
 ## Migration scripts
 
