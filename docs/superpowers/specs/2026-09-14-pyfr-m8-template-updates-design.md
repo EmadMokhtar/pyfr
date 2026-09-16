@@ -774,6 +774,11 @@ dependencies.
   `workflow_dispatch` on a project generated at `v0.10.0` as the last step
   of PR 2; the conflict path needs two releases whose template bodies
   differ, and is verified the same way in PR 3, once `v0.12.0` exists.
+  *(Verified in PR 3 on `EmadMokhtar/pyfr-m8-verify`, `v0.11.0 -> v0.12.0`
+  after a squash-merged first update: the refused push without
+  `RELEASE_TOKEN` and its annotation, conflict → issue, issue → stop, and
+  clean → pull request with CI running under a token that has the
+  Workflows permission. The run links are in the pull request.)*
 - The full-suite tests stay as they are: `just update-check` against real
   PyPI works only after the first publish and needs the network, so it is
   not added to them.
