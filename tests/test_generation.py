@@ -848,6 +848,22 @@ def test_every_render_carries_the_weekly_template_update(cookies, answers) -> No
     assert "persist-credentials: true" in checkout
     assert "pyfr/update-" in workflow
     assert "gh pr create" in workflow and "gh issue create" in workflow
+    # #55: the run stops while any update pull request or conflict issue
+    # is open, whatever its version -- not only the newest version's.
+    assert 'startswith("pyfr/update-")' in workflow
+    assert 'startswith("chore: template ")' in workflow
+    # #55: the conflict issue opens even when the push step failed, and
+    # says so; a failed step otherwise skips everything after it.
+    assert "!cancelled() && steps.update.outcome == 'success'" in workflow
+    assert "steps.push.outcome" in workflow
+    # #55: the release page comes from the tool, not from the workflow.
+    assert "release_url=$(jq -r .release_url check.json)" in workflow
+    assert "/releases/tag/" not in workflow
+    # #55: a refused `gh pr create` or `gh issue create` names the missing
+    # permission, as the refused push already does.
+    assert workflow.count("::error::") >= 3
+    assert "lacks the Pull requests permission" in workflow
+    assert "lacks the Issues permission" in workflow
 
 
 def test_the_readme_documents_the_update_workflow_and_its_token(cookies) -> None:

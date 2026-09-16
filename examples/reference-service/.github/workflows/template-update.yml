@@ -82,22 +82,29 @@ jobs:
                echo "behind=true" >> "$GITHUB_OUTPUT"
                echo "recorded=$(jq -r .recorded check.json)" >> "$GITHUB_OUTPUT"
                echo "newest=$(jq -r .newest check.json)" >> "$GITHUB_OUTPUT"
-               echo "template=$(jq -r .template check.json)" >> "$GITHUB_OUTPUT" ;;
+               echo "template=$(jq -r .template check.json)" >> "$GITHUB_OUTPUT"
+               echo "release_url=$(jq -r .release_url check.json)" >> "$GITHUB_OUTPUT" ;;
             *) exit "$status" ;;
           esac
 
-      - name: Stop when this version already has an open pull request or issue
+      - name: Stop while an update pull request or a conflict issue is open
         id: existing
         if: steps.check.outputs.behind == 'true'
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
-          RECORDED: ${{ steps.check.outputs.recorded }}
           NEWEST: ${{ steps.check.outputs.newest }}
+        # Any version, not only the newest: an unmerged pyfr/update-v0.12.0
+        # and a fresh pyfr/update-v0.13.0 conflict with each other as soon
+        # as either merges, and an unresolved conflict issue would get a
+        # second one on top. The log names what is open, so the team knows
+        # what to merge or close first.
         run: |
-          prs=$(gh pr list --head "pyfr/update-${NEWEST}" --state open --json number --jq 'length')
-          issues=$(gh issue list --state open --limit 200 --json title --jq "[.[] | select(.title == \"chore: template ${RECORDED} -> ${NEWEST} conflicts\")] | length")
-          if [ "$prs" != "0" ] || [ "$issues" != "0" ]; then
-            echo "${NEWEST} already has an open pull request or issue; nothing to do."
+          open_prs=$(gh pr list --state open --limit 200 --json number,headRefName --jq '[.[] | select(.headRefName | startswith("pyfr/update-"))] | map("#\(.number) (\(.headRefName))") | join(", ")')
+          open_issues=$(gh issue list --state open --limit 200 --json number,title --jq '[.[] | select(.title | startswith("chore: template ") and endswith(" conflicts"))] | map("#\(.number) (\(.title))") | join(", ")')
+          if [ -n "$open_prs" ] || [ -n "$open_issues" ]; then
+            [ -n "$open_prs" ] && echo "An update pull request is still open: ${open_prs}. Merge or close it before the next update."
+            [ -n "$open_issues" ] && echo "A conflict issue is still open: ${open_issues}. Resolve it with \`just update\` locally, then close it."
+            echo "Nothing to do for ${NEWEST} until then."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -136,6 +143,7 @@ jobs:
           if [ "$status" != "0" ] && [ "$status" != "1" ]; then exit "$status"; fi
 
       - name: Push the template branch, and the update branch on a clean merge
+        id: push
         if: steps.update.outcome == 'success'
         env:
           # RELEASE_TOKEN reaches this step and the three that call `gh`
@@ -185,29 +193,55 @@ jobs:
           # subject; grep for it, rather than assume `--merges`, so a
           # plain commit is found too.
           git log -1 --format=%b --grep='^chore: update template ' > body.md
-          gh pr create \
-            --base "${GITHUB_REF_NAME}" \
-            --head "pyfr/update-${NEWEST}" \
-            --title "chore: update template ${RECORDED} -> ${NEWEST}" \
-            --body-file body.md
+          # A refusal names its cause, as the push step's does: a token
+          # without the Pull requests permission, or the workflow token in
+          # a repository whose Actions settings forbid it to open pull
+          # requests. Any other failure still prints and fails the step.
+          if ! output=$(gh pr create \
+              --base "${GITHUB_REF_NAME}" \
+              --head "pyfr/update-${NEWEST}" \
+              --title "chore: update template ${RECORDED} -> ${NEWEST}" \
+              --body-file body.md 2>&1); then
+            echo "$output"
+            case "$output" in
+              *"not permitted to create or approve pull requests"*)
+                echo "::error::The workflow token may not open pull requests here. Turn on Settings -> Actions -> General -> 'Allow GitHub Actions to create and approve pull requests', or add a RELEASE_TOKEN secret -- README.md, Continuous integration and releases."
+                ;;
+              *"Resource not accessible"*)
+                echo "::error::The pull request could not be opened because the token lacks the Pull requests permission. Give RELEASE_TOKEN Contents, Pull requests, Issues and Workflows (read and write); the update branch pyfr/update-${NEWEST} is pushed, so open the pull request by hand this time -- README.md, Continuous integration and releases."
+                ;;
+            esac
+            exit 1
+          fi
+          echo "$output"
           if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
             gh pr comment "pyfr/update-${NEWEST}" --body "Opened with the workflow token, which starts no workflows, so CI has not run on this pull request. Close and reopen it to start CI, or add a RELEASE_TOKEN secret (README.md, Continuous integration and releases) so the next update runs CI by itself."
           fi
 
       - name: Open an issue for the conflicts
-        if: steps.update.outcome == 'success' && steps.update.outputs.status == '1'
+        # !cancelled(): a failed step skips the steps after it, so without
+        # this a refused push of the template branch would hide the
+        # conflict -- the team would learn of it only from the failed run.
+        # The issue opens either way and says whether the push landed; the
+        # job still fails when it did not.
+        if: ${{ !cancelled() && steps.update.outcome == 'success' && steps.update.outputs.status == '1' }}
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
           RECORDED: ${{ steps.check.outputs.recorded }}
           NEWEST: ${{ steps.check.outputs.newest }}
-          TEMPLATE: ${{ steps.check.outputs.template }}
+          RELEASE_URL: ${{ steps.check.outputs.release_url }}
+          PUSHED: ${{ steps.push.outcome }}
         run: |
           {
             echo "\`pyfr update\` to ${NEWEST} could not merge these files by itself:"
             echo
             grep '^conflict: ' update.log | sed 's/^conflict: /- `/; s/$/`/'
             echo
-            echo "The \`template\` branch is already at ${NEWEST} on origin, so a local run goes straight to the merge:"
+            if [ "$PUSHED" = "success" ]; then
+              echo "The \`template\` branch is already at ${NEWEST} on origin, so a local run goes straight to the merge:"
+            else
+              echo "The \`template\` branch could not be pushed from this run (its push step failed -- see the run log for the cause, usually a token without the Workflows permission), so a local run redoes the sync first, then merges:"
+            fi
             echo
             echo '```'
             echo "just update ${NEWEST}"
@@ -215,8 +249,18 @@ jobs:
             echo
             echo "Resolve the files, \`git add\` them, \`git commit --no-edit\`, then run \`just update ${NEWEST}\` once more — docs/guides/update-from-template.md walks through it."
             echo
-            echo "What changed in the template: ${TEMPLATE}/releases/tag/${NEWEST}"
+            echo "What changed in the template: ${RELEASE_URL}"
           } > issue.md
-          gh issue create \
-            --title "chore: template ${RECORDED} -> ${NEWEST} conflicts" \
-            --body-file issue.md
+          # A refusal names its cause, as the push step's does.
+          if ! output=$(gh issue create \
+              --title "chore: template ${RECORDED} -> ${NEWEST} conflicts" \
+              --body-file issue.md 2>&1); then
+            echo "$output"
+            case "$output" in
+              *"Resource not accessible"*)
+                echo "::error::The conflict issue could not be opened because the token lacks the Issues permission. Give RELEASE_TOKEN Contents, Pull requests, Issues and Workflows (read and write); the conflicting files are listed in the 'Run the update' step above -- README.md, Continuous integration and releases."
+                ;;
+            esac
+            exit 1
+          fi
+          echo "$output"
