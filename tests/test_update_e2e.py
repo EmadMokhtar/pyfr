@@ -356,6 +356,7 @@ def test_a_second_run_is_current_and_update_check_sees_the_newer_tag(
         "newest": "v100.2.0",
         "behind": True,
         "template": str(template_remote),
+        "release_url": f"{template_remote}/releases/tag/v100.2.0",
     }
 
 
