@@ -110,7 +110,7 @@ dev = [
     # (.pre-commit-config.yaml). Pinned exactly, and pinned HERE only: the
     # version that numbers each release must be one version, in one file
     # Dependabot updates. Every caller runs it through `uv run --locked cz`.
-    "commitizen==4.18.0",
+    "commitizen==4.18.1",
     # Alembic is NOT a migration tool in this project — golang-migrate owns the
     # schema (spec D12), and there is deliberately no alembic/ directory and no
     # alembic_version table. It is installed for exactly one job: its
