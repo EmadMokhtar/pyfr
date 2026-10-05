@@ -16,7 +16,7 @@ the service starts and serves correctly with none of them configured.
   for `just security`, which scans the built images
 - [just](https://github.com/casey/just) — the command runner
 - PostgreSQL 18, Redis 8 and MinIO — none installed locally; pulled as
-  `postgres:18-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
+  `postgres:18-alpine`, `redis:8-alpine` and the pinned `pgsty/silo` image by
   `just up` and by the integration tests
 
 ## Five-minute start
