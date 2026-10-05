@@ -348,7 +348,7 @@ def minio_container() -> Iterator[MinioContainer]:
     quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
     legacy pair with InvalidAccessKeyId and honours only MINIO_ROOT_USER /
     MINIO_ROOT_PASSWORD, which is why both are set below, to the same
-    values, with `.with_env`. The current pin (pgsty/minio, see
+    values, with `.with_env`. The current pin (pgsty/silo, see
     compose.yaml) passes this suite, but the probe itself was not repeated
     against it.
 

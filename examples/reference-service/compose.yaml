@@ -91,14 +91,17 @@ services:
   # here runs against Amazon S3 in production with only endpoint_url
   # changing (spec 9.1).
   minio:
-    # pgsty/minio, a community-maintained fork of minio/minio: MinIO withdrew
+    # pgsty/silo, a community-maintained fork of minio/minio: MinIO withdrew
     # its official images, first from Docker Hub (`docker pull minio/minio`
     # answers "pull access denied ... repository does not exist") and then
     # from quay.io (anonymous pulls answer "unauthorized"), which broke every
-    # pull of the previous pin. The fork keeps the same server flags,
-    # MINIO_ROOT_* variables and `mc` inside the image. The integration tests
-    # read this pin from here, so this is the one place to change it.
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    # pull of the previous pin. Not pgsty/minio: that is the same project's
+    # older image name, frozen at its August 2026 release, so Dependabot
+    # would never find a newer tag there. The image's entrypoint still takes
+    # the `server` subcommand and the MINIO_ROOT_* variables, and `mc` is
+    # inside it. The integration tests read this pin from here, so this is
+    # the one place to change it.
+    image: pgsty/silo:RELEASE.2026-09-16T00-00-00Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
