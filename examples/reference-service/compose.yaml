@@ -291,7 +291,7 @@ services:
   # telemetry rather than failing.
   lgtm:
     profiles: ["o11y"]
-    image: grafana/otel-lgtm:0.33.0
+    image: grafana/otel-lgtm:0.35.0
     ports:
       # The image does declare EXPOSE for these, but EXPOSE only documents
       # a port — it does not publish one. Every port that must be reachable
@@ -333,7 +333,7 @@ services:
   # run take seconds rather than re-downloading the vulnerability database.
   trivy:
     profiles: ["tools"]
-    image: aquasec/trivy:0.74.0
+    image: aquasec/trivy:0.75.0
     environment:
       # Registry credentials for scanning a remote image that is not
       # public. Empty locally, where every scan is of a local image.
