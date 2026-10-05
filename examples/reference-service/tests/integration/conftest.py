@@ -344,18 +344,19 @@ def minio_container() -> Iterator[MinioContainer]:
 
     MinioContainer's constructor sets the LEGACY credential variables
     (MINIO_ACCESS_KEY / MINIO_SECRET_KEY). This is now KNOWN, not hedged: a
-    divergent-credentials probe against the pinned MINIO_IMAGE
-    (quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
+    divergent-credentials probe against the pinned MINIO_IMAGE (at that time
+    quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z) proved it REJECTS that
     legacy pair with InvalidAccessKeyId and honours only MINIO_ROOT_USER /
     MINIO_ROOT_PASSWORD, which is why both are set below, to the same
-    values, with `.with_env`.
+    values, with `.with_env`. The current pin (pgsty/minio, see
+    compose.yaml) passes this suite, but the probe itself was not repeated
+    against it.
 
-    The legacy pair is still passed to the constructor, even though this
-    release ignores it for authentication, because MinioContainer.get_client()
-    builds its client FROM those constructor arguments — both make_bucket
-    below and the key-layout test's list_objects use that client, so the
-    legacy pair still has to be correct even though the server itself never
-    checks it.
+    The legacy pair is still passed to the constructor because
+    MinioContainer.get_client() builds its client FROM those constructor
+    arguments — both make_bucket below and the key-layout test's
+    list_objects use that client, so the values must be credentials the
+    server accepts. That is why they equal the MINIO_ROOT_* values set below.
     """
     container = (
         MinioContainer(

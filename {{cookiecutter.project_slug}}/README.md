@@ -46,7 +46,7 @@ serves correctly with none of them configured.
 - [just](https://github.com/casey/just) — the command runner
 {%- if cookiecutter.database == "postgres" and cookiecutter.cache == "redis" and cookiecutter.object_storage == "s3" %}
 - PostgreSQL 18, Redis 8 and MinIO — none installed locally; pulled as
-  `postgres:18-alpine`, `redis:8-alpine` and the pinned `quay.io/minio/minio` image by
+  `postgres:18-alpine`, `redis:8-alpine` and the pinned `pgsty/minio` image by
   `just up` and by the integration tests
 {%- else %}
 {%- if cookiecutter.database == "postgres" %}
@@ -58,7 +58,7 @@ serves correctly with none of them configured.
   by the integration tests
 {%- endif %}
 {%- if cookiecutter.object_storage == "s3" %}
-- MinIO — not installed locally; pulled as the pinned `quay.io/minio/minio`
+- MinIO — not installed locally; pulled as the pinned `pgsty/minio`
   image by `just up` and by the integration tests
 {%- endif %}
 {%- endif %}

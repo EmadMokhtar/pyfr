@@ -91,13 +91,14 @@ services:
   # here runs against Amazon S3 in production with only endpoint_url
   # changing (spec 9.1).
   minio:
-    # quay.io, not Docker Hub: MinIO withdrew its Docker Hub images in
-    # September 2026 (`docker pull minio/minio:latest` answers "pull access
-    # denied ... repository does not exist"), which broke every pull of the
-    # previous pin. The same release tags are published on quay.io. The
-    # integration tests read this pin from here, so this is the one place
-    # to change it.
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # pgsty/minio, a community-maintained fork of minio/minio: MinIO withdrew
+    # its official images, first from Docker Hub (`docker pull minio/minio`
+    # answers "pull access denied ... repository does not exist") and then
+    # from quay.io (anonymous pulls answer "unauthorized"), which broke every
+    # pull of the previous pin. The fork keeps the same server flags,
+    # MINIO_ROOT_* variables and `mc` inside the image. The integration tests
+    # read this pin from here, so this is the one place to change it.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -129,8 +130,9 @@ services:
   # once, exits 0, and that `app` waits on with
   # service_completed_successfully.
   minio-bootstrap:
-    # quay.io for the same reason as the `minio` service above.
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    # pgsty/mc, the matching fork of the `mc` client, for the same reason as
+    # the `minio` service above.
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy
