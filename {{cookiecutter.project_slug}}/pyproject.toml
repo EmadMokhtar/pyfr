@@ -28,7 +28,12 @@ dependencies = [
     "structlog>=24.4",
     "orjson>=3.10",
 {%- if cookiecutter.database == "postgres" %}
-    "sqlalchemy[asyncio]>=2.0.52",
+    # Capped below 2.1 on purpose. opentelemetry-instrumentation-sqlalchemy
+    # declares `sqlalchemy<2.1.0` (still true in 0.66b1). Against SQLAlchemy
+    # 2.1 it logs a DependencyConflict and attaches nothing, so no query
+    # ever produces a database span. Raise this cap in the same change that
+    # raises the instrumentation's own cap.
+    "sqlalchemy[asyncio]>=2.0.52,<2.1",
     "asyncpg>=0.31",
 {%- endif %}
     # Traces, metrics and logs. The API/SDK/exporter line and the
