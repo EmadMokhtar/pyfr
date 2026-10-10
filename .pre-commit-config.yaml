@@ -70,7 +70,7 @@ repos:
       - id: gitleaks
 
   - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 4.3.0
+    rev: 4.4.0
     hooks:
       - id: sqlfluff-lint
         files: ^examples/reference-service/migrations/.*\.sql$
