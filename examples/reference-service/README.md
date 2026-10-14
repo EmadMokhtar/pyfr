@@ -397,7 +397,7 @@ just build-multiarch   both images for linux/amd64 and linux/arm64, no output â€
 
 A finding is exempted only through `.trivyignore.yaml`, where every entry
 names a reason, a path and an `expired_at` date; after that date the finding
-fails the scan again. There is no skip flag anywhere else. The five entries
+fails the scan again. There is no skip flag anywhere else. The eight entries
 there today are all in the `migrate/migrate` Go binary, in code `migrate up`
 never runs; a Dependabot bump of that base image is the moment to re-scan
 and drop them.
