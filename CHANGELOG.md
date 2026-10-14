@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.3 (2026-10-14)
+
+### Fix
+
+- **security**: exempt three new migrate findings and resync the example (#71)
+
 ## v0.14.2 (2026-10-14)
 
 ## v0.14.1 (2026-10-08)
