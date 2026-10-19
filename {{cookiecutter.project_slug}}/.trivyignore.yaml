@@ -6,13 +6,13 @@
 # file is currently hiding.
 {%- if cookiecutter.database == "postgres" %}
 #
-# All eight below are vendored inside the migrate/migrate Go binary or
+# All nine below are vendored inside the migrate/migrate Go binary or
 # compiled into it with its Go toolchain. The newest release (v4.20.1,
 # 2026-09-09) still carries them, so no image bump can clear them today
 # (M6 plan, Verified Fact 6). None is reachable from `migrate up` against
 # PostgreSQL: the ssh client, the gRPC xDS server paths, the unicode
-# normaliser, the net/http file server, HTTP/2 peers and the TLS server are
-# not on that code path. A Dependabot bump to the next migrate release is
+# normaliser, the PRECIS Nickname profile, the net/http file server,
+# HTTP/2 peers and the TLS server are not on that code path. A Dependabot bump to the next migrate release is
 # the moment to re-scan and drop whichever have gone.
 vulnerabilities:
   - id: CVE-2026-56854
@@ -22,6 +22,10 @@ vulnerabilities:
   - id: CVE-2026-56852
     paths: ["usr/local/bin/migrate"]
     statement: "golang.org/x/text denial of service on invalid UTF-8 in the normaliser. Not on the migrate up code path. Fixed in x/text 0.39.0; not in any migrate release yet."
+    expired_at: 2026-12-10
+  - id: CVE-2026-56851
+    paths: ["usr/local/bin/migrate"]
+    statement: "golang.org/x/text/secure/precis: the Nickname profile can panic on crafted input. migrate up against PostgreSQL uses lib/pq, which does not import precis; the pgx drivers in the binary call only the OpaqueString profile. Fixed in x/text 0.41.0; not in any migrate release yet."
     expired_at: 2026-12-10
   - id: CVE-2026-84304
     paths: ["usr/local/bin/migrate"]
