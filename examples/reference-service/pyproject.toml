@@ -171,12 +171,17 @@ prerelease = "explicit"
 # (see the `0.65b0` floors above). Under `explicit` a pre-release is only
 # allowed where a first-party requirement carries the marker; the direct
 # dependencies above carry their own, and these constraints carry it for
-# the four packages that arrive only transitively. A constraint changes
+# the five packages that arrive only transitively. A constraint changes
 # nothing for a package that is not in the graph, so this list is the
-# same for every answer set. A new instrumentation package that drags in
-# another beta-only transitive dependency fails `uv lock` with that
-# package's name in the hint: add it here.
+# same for every answer set. A new package that drags in another
+# beta-only transitive dependency either fails `uv lock` with that
+# package's name in the hint, or -- when an older release does not need
+# it -- makes uv silently keep the older release. Add it here.
+# opentelemetry-exporter-otlp-common is the second case: the exporter
+# needs it from 1.45.0, so without this entry uv kept the exporter, the
+# SDK and the API on 1.44.0, which has CVE-2026-114603.
 constraint-dependencies = [
+    "opentelemetry-exporter-otlp-common>=0.66b0",
     "opentelemetry-instrumentation>=0.65b0",
     "opentelemetry-instrumentation-asgi>=0.65b0",
     "opentelemetry-semantic-conventions>=0.65b0",
