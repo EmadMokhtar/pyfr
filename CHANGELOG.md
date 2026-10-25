@@ -8,6 +8,13 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.8 (2026-10-25)
+
+### Fix
+
+- **security**: build migrate from source with Go 1.26.10 in the migrations image (#93)
+- **deps**: clear every pip-audit finding in both locks (#91)
+
 ## v0.14.7 (2026-10-20)
 
 ### Fix
