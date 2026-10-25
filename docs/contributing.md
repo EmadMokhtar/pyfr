@@ -221,8 +221,8 @@ list item has no blank line at all, because one would end the table.
 
 `{%- else %}` is the exception, for the rare spot where the pruned render
 needs a *reduced* line rather than none at all: an import list that loses
-one name (`from tests.compose_images import compose_image,
-dockerfile_base_image` becomes `from tests.compose_images import
+some names (`from tests.compose_images import DOCKERFILE_MIGRATIONS,
+PROJECT_ROOT, compose_image` becomes `from tests.compose_images import
 compose_image`), or `container.py`'s `close_container`, whose nested
 `try`/`finally` cannot be dedented by Jinja, so the branches with the
 database or the cache off repeat the surrounding `try`/`finally` one level

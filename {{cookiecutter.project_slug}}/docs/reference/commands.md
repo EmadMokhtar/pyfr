@@ -201,7 +201,7 @@ arrangement it already has with the migration container.
 | --- | --- |
 | `just test` | Unit and API tests. Milliseconds, and needs no Docker. |
 {%- if cookiecutter.database == "postgres" %}
-| `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the real migrate image. |
+| `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the migrations image built from `Dockerfile.migrations` (the one that ships). |
 {%- else %}
 | `just test-integration` | The container-backed tier. Needs a running Docker daemon; `just test` does not. |
 {%- endif %}

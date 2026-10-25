@@ -166,7 +166,7 @@ arrangement it already has with the migration container.
 | Command | What it does |
 | --- | --- |
 | `just test` | Unit and API tests. Milliseconds, and needs no Docker. |
-| `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the real migrate image. |
+| `just test-integration` | The container-backed tier: real PostgreSQL, migrated by the migrations image built from `Dockerfile.migrations` (the one that ships). |
 | `just test-all` | Both tiers. |
 | `just gates` | All five schema governance gates, plus `config-docs-check`. |
 
