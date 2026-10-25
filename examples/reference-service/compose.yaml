@@ -333,7 +333,7 @@ services:
   # run take seconds rather than re-downloading the vulnerability database.
   trivy:
     profiles: ["tools"]
-    image: aquasec/trivy:0.76.0
+    image: aquasec/trivy:0.76.1
     environment:
       # Registry credentials for scanning a remote image that is not
       # public. Empty locally, where every scan is of a local image.
