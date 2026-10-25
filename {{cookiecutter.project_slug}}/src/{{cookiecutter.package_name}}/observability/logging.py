@@ -33,6 +33,43 @@ from {{ cookiecutter.package_name }}.observability.redaction import (
     make_redactor,
 )
 
+# structlog's `wrap_for_formatter` puts the bound logger and the method name
+# on every record it hands to the standard library, as `_logger` and `_name`,
+# so that ProcessorFormatter can find them again. They are plumbing for this
+# process, not telemetry.
+_STRUCTLOG_RECORD_ATTRIBUTES = frozenset({"_logger", "_name"})
+
+
+class _OtlpLoggingHandler(LoggingHandler):
+    """The OTLP handler, minus structlog's private record attributes.
+
+    The handler copies every record attribute that is not a standard one
+    into the exported record's attributes. `_logger` is a logger OBJECT, not
+    an OTLP value: OpenTelemetry 0.66b1 logs a warning ("Invalid type ...")
+    for it on EVERY record, and that warning travels back through the root
+    logger onto standard output, where it lands as a second JSON line beside
+    the record that caused it. What was left in the backend was a
+    stringified logger object on every log line.
+
+    Dropped here, in the one place that builds the OTLP attributes, rather
+    than deleted from the record: the record is shared with the standard
+    output handler, and ProcessorFormatter needs both attributes to format
+    it at all.
+    """
+
+    def _get_attributes(
+        self, record: logging.LogRecord
+    ) -> tuple[dict[str, Any], str | None]:
+        attributes, event_name = super()._get_attributes(record)
+        return (
+            {
+                key: value
+                for key, value in attributes.items()
+                if key not in _STRUCTLOG_RECORD_ATTRIBUTES
+            },
+            event_name,
+        )
+
 
 def _json_dumps(obj: Any, default: Any = None, **_: Any) -> str:
     """orjson returns bytes; structlog's renderer wants str."""
@@ -229,7 +266,7 @@ def configure_logging(
         # LoggingHandler from the active span; the copies inside the JSON
         # body come from _add_otel_context and are for whoever reads the
         # body directly.
-        otlp_handler = LoggingHandler(logger_provider=logger_provider)
+        otlp_handler = _OtlpLoggingHandler(logger_provider=logger_provider)
         # The body goes through the redacting chain below, but the handler
         # copies `extra=` attributes straight across -- see RedactingFilter.
         otlp_handler.addFilter(RedactingFilter(redact_fields))

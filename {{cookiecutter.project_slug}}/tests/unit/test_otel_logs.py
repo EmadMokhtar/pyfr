@@ -153,3 +153,28 @@ def test_a_third_party_extra_field_is_redacted_in_the_exported_attributes(
     assert attributes["attempt"] == 2
     assert "Bearer abc" not in json.dumps(attributes)
     assert "Bearer abc" not in str(exported.log_record.body)
+
+
+def test_structlog_private_attributes_are_not_exported(
+    capsys: pytest.CaptureFixture[str],
+    exporter: InMemoryLogRecordExporter,
+    logger_provider: LoggerProvider,
+) -> None:
+    """`_logger` and `_name` are structlog plumbing: a logger object is not an
+    OTLP value, and OpenTelemetry warns about it on every record -- onto
+    standard output, as a second JSON line beside the real one."""
+    configure_logging(
+        environment="production",
+        level="info",
+        levels={},
+        logger_provider=logger_provider,
+    )
+
+    structlog.get_logger().info("order.placed", order_id="abc")
+
+    [exported] = exporter.get_finished_logs()
+    attributes = dict(exported.log_record.attributes or {})
+    assert "_logger" not in attributes
+    assert "_name" not in attributes
+    [stdout_line] = capsys.readouterr().out.strip().splitlines()
+    assert json.loads(stdout_line)["event"] == "order.placed"
