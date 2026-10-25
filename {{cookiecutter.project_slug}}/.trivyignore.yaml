@@ -6,13 +6,14 @@
 # file is currently hiding.
 {%- if cookiecutter.database == "postgres" %}
 #
-# All nine below are vendored inside the migrate/migrate Go binary or
+# All ten below are vendored inside the migrate/migrate Go binary or
 # compiled into it with its Go toolchain. The newest release (v4.20.1,
 # 2026-09-09) still carries them, so no image bump can clear them today
 # (M6 plan, Verified Fact 6). None is reachable from `migrate up` against
 # PostgreSQL: the ssh client, the gRPC xDS server paths, the unicode
 # normaliser, the PRECIS Nickname profile, the net/http file server,
-# HTTP/2 peers and the TLS server are not on that code path. A Dependabot bump to the next migrate release is
+# HTTP/2 peers and the TLS server are not on that code path, and the s2
+# package of klauspost/compress is not compiled into the binary at all. A Dependabot bump to the next migrate release is
 # the moment to re-scan and drop whichever have gone.
 vulnerabilities:
   - id: CVE-2026-56854
@@ -50,6 +51,10 @@ vulnerabilities:
   - id: CVE-2026-97031
     paths: ["usr/local/bin/migrate"]
     statement: "Go crypto/tls: memory exhaustion in a TLS server from a crafted ECH ClientHello. migrate runs no TLS server. Fixed in Go 1.26.9 and 1.27.2; not in any migrate release yet."
+    expired_at: 2027-01-12
+  - id: CVE-2026-63209
+    paths: ["usr/local/bin/migrate"]
+    statement: "klauspost/compress s2.NewDict out-of-bounds read. The s2 package is not compiled into migrate: the binary links only the root, fse, huff0, snapref and zstd packages of compress v1.16.7 (checked with go list -deps on the v4.20.1 source with the image build tags, and by searching the image binary for s2 symbols: none). govulncheck in source mode lists the module as required but never called. Fixed in compress 1.18.7; not in any migrate release yet."
     expired_at: 2027-01-12
 {%- else %}
 vulnerabilities: []
