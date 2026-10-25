@@ -390,7 +390,7 @@ Dependabot has a failing check.
    new version *did* fix are no longer needed and can be dropped, and a
    finding the new version *introduced* may need a new entry, with its own
 {%- if cookiecutter.database == "postgres" %}
-   reason and expiry. The five entries the file carries today all belong to
+   reason and expiry. The eight entries the file carries today all belong to
    the `migrate/migrate` binary, so a bump of `Dockerfile.migrations`'s
    `FROM` line is exactly this case.
 {%- else %}

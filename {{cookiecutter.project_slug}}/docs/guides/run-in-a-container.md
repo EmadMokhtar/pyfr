@@ -90,7 +90,8 @@ docker run --rm -p {{ cookiecutter.http_port }}:{{ cookiecutter.http_port }} ghc
 {%- if cookiecutter.database == "postgres" %}
 
 The migrations image is the schema and nothing else, built `FROM
-migrate/migrate` with `migrations/` copied in. Its entrypoint is `migrate`
+migrate/migrate`, with the `migrate` binary rebuilt from source on a patched
+Go toolchain, and `migrations/` copied in. Its entrypoint is `migrate`
 itself and its default command is `-path=/migrations up`; the database URL is
 deliberately absent from the image and is passed at run time, so it runs as a
 Kubernetes init container or a pre-deployment job with the arguments spelled

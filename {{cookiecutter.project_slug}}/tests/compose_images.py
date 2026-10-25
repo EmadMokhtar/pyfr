@@ -41,4 +41,23 @@ def dockerfile_base_image(dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
         if match:
             return match.group(1)
     raise ValueError(f"no FROM line in {dockerfile}")
+
+
+def dockerfile_stage_image(stage: str, dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
+    """The image of the stage declared as `FROM <image> AS <stage>`."""
+    pattern = rf"^FROM\s+(?:--\S+\s+)*(\S+)\s+AS\s+{re.escape(stage)}\s*$"
+    for line in dockerfile.read_text(encoding="utf-8").splitlines():
+        match = re.match(pattern, line, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    raise ValueError(f"no stage named {stage} in {dockerfile}")
+
+
+def dockerfile_arg_default(name: str, dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
+    """The default of an `ARG <name>=<default>` line."""
+    for line in dockerfile.read_text(encoding="utf-8").splitlines():
+        match = re.match(rf"^ARG\s+{re.escape(name)}=(\S+)\s*$", line)
+        if match:
+            return match.group(1)
+    raise ValueError(f"no ARG {name} with a default in {dockerfile}")
 {%- endif %}
