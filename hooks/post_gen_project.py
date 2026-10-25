@@ -53,6 +53,7 @@ PRUNED: dict[str, list[str]] = {
         "tests/integration/test_order_repository.py",
         "tests/integration/test_db_instrumentation.py",
         "tests/integration/test_schema_drift.py",
+        "tests/integration/test_migrations_image.py",
         "tests/integration/test_schema_gates.py",
         "docs/adr/0004-golang-migrate-owns-the-schema.md",
     ],

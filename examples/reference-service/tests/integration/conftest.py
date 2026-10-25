@@ -27,6 +27,7 @@ protects against.
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import AsyncIterator, Callable, Iterator
 from pathlib import Path
 
@@ -58,7 +59,7 @@ from reference_service.settings import (
     DatabaseSettings,
     StorageSettings,
 )
-from tests.compose_images import compose_image, dockerfile_base_image
+from tests.compose_images import DOCKERFILE_MIGRATIONS, PROJECT_ROOT, compose_image
 
 # Read from compose.yaml and Dockerfile.migrations rather than pinned here
 # (ADR 0014): a gate that passes against a different PostgreSQL than
@@ -70,14 +71,12 @@ from tests.compose_images import compose_image, dockerfile_base_image
 # filterwarnings=["error"], so importing them would fail outright. The
 # community paths above are the supported ones.
 POSTGRES_IMAGE = compose_image("postgres")
-MIGRATE_IMAGE = dockerfile_base_image()
+MIGRATIONS_IMAGE = "reference-service-migrations:integration"
 REDIS_IMAGE = compose_image("redis")
 MINIO_IMAGE = compose_image("minio")
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
 RECEIPTS_BUCKET = "receipts"
-
-MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 # The alias the database answers to INSIDE the shared network. The migrate
 # container cannot use the mapped localhost port — that port belongs to the
@@ -181,18 +180,50 @@ def postgres_container(docker_network: Network) -> Iterator[PostgresContainer]:
 
 
 @pytest.fixture(scope="session")
-def run_migrate(docker_network: Network) -> MigrateRunner:
+def migrations_image() -> str:
+    """Build Dockerfile.migrations and return its tag.
+
+    The image that ships, not the upstream migrate image it is based on:
+    Dockerfile.migrations rebuilds the migrate binary from source on a
+    patched Go toolchain, and migrations/ is copied in. Running anything
+    else here would leave the one binary production runs untested. Built
+    with the `docker` CLI rather than testcontainers' DockerImage because
+    that goes through the Docker SDK's classic builder, which does not
+    support the BuildKit build arguments (BUILDPLATFORM, TARGETARCH) the
+    Dockerfile uses. `--load` puts the image in the local store whichever
+    builder is the default. Layers are cached, so only the first run pays
+    for compiling migrate.
+    """
+    subprocess.run(  # noqa: S603 -- fixed argument list, no input from outside
+        [  # noqa: S607 -- the docker CLI from PATH, as `just build-images` uses
+            "docker",
+            "build",
+            "--load",
+            "-f",
+            str(DOCKERFILE_MIGRATIONS),
+            "-t",
+            MIGRATIONS_IMAGE,
+            str(PROJECT_ROOT),
+        ],
+        check=True,
+    )
+    return MIGRATIONS_IMAGE
+
+
+@pytest.fixture(scope="session")
+def run_migrate(docker_network: Network, migrations_image: str) -> MigrateRunner:
     """Return a function running one migrate command to completion.
 
     Returns (exit code, logs) rather than raising, so the reversibility gate
-    can assert on a specific failure instead of only on success.
+    can assert on a specific failure instead of only on success. Runs the
+    migrations baked into the built image, exactly as a Kubernetes init
+    container does.
     """
 
     def run(args: str) -> tuple[int, str]:
         container = (
-            DockerContainer(MIGRATE_IMAGE)
+            DockerContainer(migrations_image)
             .with_network(docker_network)
-            .with_volume_mapping(str(MIGRATIONS_DIR), "/migrations", "ro")
             .with_command(f"-path=/migrations -database {MIGRATE_URL} {args}")
         )
         container.start()

@@ -78,7 +78,7 @@ removes the `trivy-cache` volume with the others.
 | --- | --- |
 | `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}` | The service — the two-stage build in `Dockerfile`. |
 {%- if cookiecutter.database == "postgres" %}
-| `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with `migrations/` copied in. |
+| `ghcr.io/{{ cookiecutter.github_org | lower }}/{{ cookiecutter.project_slug }}-migrations` | The schema and nothing else — `Dockerfile.migrations`, `FROM migrate/migrate:v4.20.1` with the `migrate` binary rebuilt from that release's source on a pinned, patched Go toolchain and `migrations/` copied in. |
 {%- endif %}
 
 Each carries two tags: `vX.Y.Z`, the **repository's** version — the same
@@ -193,9 +193,11 @@ Debian package in the operating-system layer, a rebuild against the current
 base image is usually enough — the `python:3.13-slim-trixie` tag moves as
 Debian publishes fixes, so `docker pull python:3.13-slim-trixie` and then
 {%- if cookiecutter.database == "postgres" %}
-`just security` again. For the Go binary inside the migrations image, only a
-new `migrate/migrate` release can carry the fix; Dependabot's `docker` entry
-proposes it when one exists.
+`just security` again. For the Go binary inside the migrations image, a finding in
+the Go toolchain is fixed by bumping the pinned `golang` tag of the `build`
+stage in `Dockerfile.migrations` (Dependabot's `docker` entry proposes it); a
+finding in a dependency of migrate itself still needs a new `migrate/migrate`
+release.
 {%- else %}
 `just security` again.
 {%- endif %}
@@ -240,8 +242,8 @@ table after the findings, one row per entry with its statement:
 docker compose run --rm trivy image --ignorefile /.trivyignore.yaml --show-suppressed {{ cookiecutter.project_slug }}-migrations:ci
 ```
 
-The five entries in the file today all belong to the `migrate/migrate` Go
-binary. A Dependabot bump of that base image is the moment to re-scan and drop
+The eight entries in the file today all belong to dependencies vendored in the
+`migrate/migrate` Go binary. A Dependabot bump of that base image is the moment to re-scan and drop
 whichever have gone.
 {%- else %}
 

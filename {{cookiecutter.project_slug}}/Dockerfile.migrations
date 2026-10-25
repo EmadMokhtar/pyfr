@@ -5,7 +5,50 @@
 # no Python interpreter and no service code, so applying the schema never
 # depends on the application being importable — which is the reason spec D12
 # chose golang-migrate over Alembic.
-FROM migrate/migrate:v4.20.1
+# golang-migrate is rebuilt from its own release source with a newer Go
+# toolchain than the one the upstream image was built with. The release
+# image, v4.20.1 (2026-09-09), is still the newest and carries Go 1.26.7,
+# whose crypto/x509 has CVE-2026-111943: it is reachable whenever the
+# migrate connection uses TLS, so ADR 0016 allows no exemption for it.
+# This stage is the stop-gap; the end state is an upstream release built
+# with a patched Go, at which point the `build` stage is deleted and the
+# final stage copies nothing.
+#
+# `upstream` supplies the runtime base (Alpine, CA certificates, the
+# `migrate` entrypoint). It is also the line Dependabot bumps, and the
+# signal to re-check this file: the unit test
+# tests/unit/test_compose_images.py fails until MIGRATE_VERSION below
+# names the same release.
+FROM migrate/migrate:v4.20.1 AS upstream
+
+# Reproducible: an exact Go patch release, pinned by digest as well as tag
+# (Dependabot moves both); the migrate source is fetched at a fixed version
+# and verified against the Go checksum database and the module's own
+# go.sum; `-trimpath` and `-buildvcs=false` keep build paths and VCS
+# state out of the binary. GOTOOLCHAIN=local stops `go` from downloading a
+# different toolchain than the one this image carries.
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.24@sha256:27f2d3b83cfc5803c8078f8e730af0f7c431bf067afaec8f60a36fb763187cba AS build
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG MIGRATE_VERSION=v4.20.1
+
+ENV CGO_ENABLED=0 \
+    GOTOOLCHAIN=local
+
+# The same driver and source tags as upstream's `make build-docker`, so this
+# binary accepts every URL scheme the upstream one does. The version string
+# drops the leading `v`, as upstream's Makefile does.
+RUN set -eu; \
+    module="github.com/golang-migrate/migrate/v4"; \
+    go mod download "${module}@${MIGRATE_VERSION}"; \
+    cd "$(go env GOMODCACHE)/${module}@${MIGRATE_VERSION}"; \
+    GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" go build -trimpath -buildvcs=false \
+        -ldflags="-s -w -X main.Version=${MIGRATE_VERSION#v}" \
+        -tags 'postgres mysql redshift cassandra spanner cockroachdb yugabytedb clickhouse mongodb sqlserver firebird neo4j pgx pgx5 rqlite file go_bindata github github_ee bitbucket aws_s3 google_cloud_storage godoc_vfs gitlab' \
+        -o /out/migrate ./cmd/migrate
+
+FROM upstream
 
 # See the application Dockerfile for why this label exists.
 LABEL org.opencontainers.image.source="https://github.com/{{ cookiecutter.github_org }}/{{ cookiecutter.project_slug }}"
@@ -14,6 +57,10 @@ LABEL org.opencontainers.image.source="https://github.com/{{ cookiecutter.github
 # application Dockerfile runs `apt-get upgrade`: the base tag is rebuilt on
 # the upstream project's schedule, not the distribution's.
 RUN apk upgrade --no-cache
+
+# Replaces upstream's binary; the `/migrate` symlink and the entrypoint in the
+# base image already point here.
+COPY --from=build /out/migrate /usr/local/bin/migrate
 
 COPY migrations/ /migrations/
 
