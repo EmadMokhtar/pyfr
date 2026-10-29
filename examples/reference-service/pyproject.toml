@@ -212,6 +212,12 @@ major_version_zero = true
 addopts = "-q --strict-markers --strict-config -m 'not integration and not contract'"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# pytest-asyncio warns at start-up when this is unset, and since pytest 9.2
+# `filterwarnings = ["error"]` below already applies there, so the warning
+# stops the whole run. "function" is the default pytest-asyncio is moving
+# to; the session-scoped async fixtures in tests/integration/conftest.py
+# set `loop_scope` themselves, so this changes nothing for them.
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     # Anything needing a container. Excluded from the default run by the `-m`
     # in addopts above, so `just test` stays a few seconds and needs no Docker.
