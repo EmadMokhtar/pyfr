@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.10 (2026-10-30)
+
+### Fix
+
+- **template**: set the pytest-asyncio default fixture loop scope (#96)
+
 ## v0.14.9 (2026-10-29)
 
 ### Fix
