@@ -61,8 +61,10 @@ updates:
       # with the Python it was made by. Dependabot can move the `python` tag
       # but not the Python version inside the uv tag, so a minor bump of
       # `python` alone ships an image that cannot import its own
-      # dependencies. Move the Python minor version by hand, in both lines.
-      # Patch releases still arrive: the `X.Y` tag moves to each one.
+      # dependencies. Move the Python minor version by hand, in both lines;
+      # tests/unit/test_compose_images.py fails while they differ. Patch
+      # releases need no pull request: the `X.Y` tag moves to each one, and
+      # the next image build picks it up.
       - dependency-name: "python"
         update-types: ["version-update:semver-minor"]
     commit-message:

@@ -2,7 +2,13 @@
 # Debian trixie, not bookworm: astral-sh no longer publishes a
 # bookworm-slim variant for the 0.11 line. The runtime stage below must
 # stay on the same Debian release — a virtual environment built against
-# one glibc is not safe to run on an older one.
+# one glibc is not safe to run on an older one. It must also run the same
+# Python minor version as this tag's `pythonX.Y`: the virtual environment
+# works only with the Python that made it, and under any other the app
+# cannot import its dependencies. Change both tags together;
+# tests/unit/test_compose_images.py fails while they differ, and
+# Dependabot ignores minor bumps of `python` because it can move only the
+# runtime's tag (.github/dependabot.yml).
 FROM ghcr.io/astral-sh/uv:0.13-python3.14-trixie-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
@@ -21,7 +27,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 # Runtime: no uv, no build tools, no shell utilities beyond the base image.
-# Must match the builder's Debian release; see the note above.
+# Must match the builder's Debian release and Python minor version; see
+# the note above.
 FROM python:3.14-slim-trixie AS runtime
 
 # Apply Debian's security updates at build time. The official python:slim

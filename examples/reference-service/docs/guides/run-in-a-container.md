@@ -44,12 +44,17 @@ Other properties worth knowing:
   scanned, and why it is still not distroless, is in
   [Supply chain](../reference/supply-chain.md#the-hardened-image).
 
-!!! warning "Both stages must stay on the same Debian release"
+!!! warning "Both stages must stay on the same Debian release and Python version"
 
-    The builder is `uv:0.11-python3.13-trixie-slim` and the runtime is
-    `python:3.13-slim-trixie`. Both are Debian trixie, and that is load-bearing:
-    a virtual environment built against one version of the C library is not
-    safe to run on an older one. If you change one base image, change both.
+    The builder is `ghcr.io/astral-sh/uv:<uv>-pythonX.Y-trixie-slim` and the
+    runtime is `python:X.Y-slim-trixie`. Both are Debian trixie, and that is
+    load-bearing: a virtual environment built against one version of the C
+    library is not safe to run on an older one. Both name the same Python
+    minor version `X.Y` too, because the virtual environment works only with
+    the Python that made it. If you change one base image, change both;
+    `tests/unit/test_compose_images.py` fails while their Python versions
+    differ, and [Supply chain](../reference/supply-chain.md#dependency-updates)
+    says how to check that a new version is ready.
 
 ## Pull the published images instead of building
 
