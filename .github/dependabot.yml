@@ -53,6 +53,18 @@ updates:
     groups:
       images:
         patterns: ["*"]
+    ignore:
+      # The Dockerfile's builder tag, `ghcr.io/astral-sh/uv:...-pythonX.Y-...`,
+      # and its runtime tag, `python:X.Y-...`, must name the same Python
+      # minor version: the virtual environment the builder makes works only
+      # with the Python it was made by. Dependabot can move the `python` tag
+      # but not the Python version inside the uv tag, so a minor bump of
+      # `python` alone ships an image that cannot import its own
+      # dependencies (PR #99: 3.14 to 3.15, `No module named 'uvicorn'`).
+      # Move the Python minor version by hand, in both lines, in the
+      # template. Patch releases still arrive: the `X.Y` tag moves to each.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor"]
     commit-message:
       prefix: "build(deps)"
     labels: ["dependencies", "no-docs-needed"]

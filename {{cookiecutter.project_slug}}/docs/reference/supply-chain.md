@@ -353,6 +353,18 @@ reports new findings — and the `tufin/oasdiff:v1.31.0` image in
 `scripts/check_contract_compatibility.py`, a pin older than the Dependabot
 arrangement. See [ADR 0014](../adr/0014-dependabot-and-one-pin-per-tool.md).
 
+One pin is inside Dependabot's reach but changed by hand: the Python minor
+version of the image. The `Dockerfile` names it twice — in the builder's
+`ghcr.io/astral-sh/uv` tag and in the runtime's `python` tag — and the two
+must match, because the virtual environment the builder makes works only with
+the Python that made it. Dependabot can move the `python` tag but not the
+version inside the uv tag, so the `docker` entry ignores minor bumps of
+`python`. To move to a new minor version, change both lines together, and
+check first that every compiled package in `uv.lock` ships a wheel for it:
+the builder has no C or C++ compiler, so a package without one fails
+`just build-images`.
+Patch releases need nothing: the `python:X.Y` tag moves to each one.
+
 ## The hardened image
 
 The runtime stage of `Dockerfile` is what ships, and it is deliberately
