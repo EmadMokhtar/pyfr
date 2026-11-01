@@ -118,7 +118,9 @@ against the same `lychee.toml`.
 prose: it runs every `curl` example marked `<!-- exec -->` against a real,
 running service. `just docs-examples` starts the compose stack in its own
 Compose project, runs the script, then tears the stack down whether it
-passed or failed. The script runs every example and fails if any does not
+passed or failed. On a failure it prints every service's log before the
+teardown, so a container that exited during startup leaves its traceback in
+the output rather than only compose's "exited (1)". The script runs every example and fails if any does not
 succeed. Where the other three mechanisms ask "did the right files change
 together", this one asks "does the documented example still work" — a
 stale sentence is a nuisance, but a `curl` example that 404s is a reader

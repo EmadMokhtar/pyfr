@@ -41,6 +41,7 @@ where a sentence says otherwise.
 {%- else %}
 | `just build-multiarch` | The image for `linux/amd64` and `linux/arm64`, with no output — proof that both architectures still build. | Every pull request, in CI's `build` job. |
 {%- endif %}
+| `just smoke-image` | The locally built application image, started: it imports uvicorn and the application module, so an image that builds but cannot start fails with the Python traceback. | Every pull request, in CI's `build` job, after `build-images`. |
 {%- if cookiecutter.database == "postgres" %}
 | `just publish-images` | Both images, both architectures, pushed to GHCR (the GitHub Container Registry) under the version given — and only the version. | Release only, in `release.yml`'s `publish-images` job. |
 {%- else %}
