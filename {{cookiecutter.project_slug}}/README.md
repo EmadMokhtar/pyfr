@@ -140,7 +140,7 @@ the ids. `just seed` does the same against `just dev`.
 {%- else %}
 | `just build-images` | Build the service's container image for this machine's architecture without starting it, exactly as CI's `security` job and the release workflow do before scanning |
 {%- endif %}
-| `just smoke-image` | Start the image `build-images` built and import what its command imports — uvicorn and the application module — so an image that builds but cannot start fails with the Python traceback; what CI's `build` job runs after `build-multiarch` |
+| `just smoke-image` | Start the image `build-images` built and import what its command loads — uvicorn and the `create_app` factory — so an image that builds but cannot start fails with the Python traceback; what CI's `build` job runs after `build-multiarch` |
 | `just audit` | pip-audit over every pin in `uv.lock`, reading a `uv export` so nothing is resolved or installed — see [Supply chain](#supply-chain) |
 {%- if cookiecutter.database == "postgres" %}
 | `just scan` | Trivy over both built images; fails on a fixed HIGH or CRITICAL finding, exemptions only through `.trivyignore.yaml` — needs Docker |
@@ -638,7 +638,7 @@ just scan              Trivy over both built images — fails on a fixed HIGH or
 just sbom              a CycloneDX bill of materials per image, into sbom/
 just security          build-images, then all three — what CI's security job runs
 just build-multiarch   both images for linux/amd64 and linux/arm64, no output — what CI's build job runs
-just smoke-image       start the built image and import the service — CI's build job runs it next
+just smoke-image       start the built image and import its create_app — CI's build job runs it next
 ```
 
 A finding is exempted only through `.trivyignore.yaml`, where every entry
@@ -655,7 +655,7 @@ just scan              Trivy over the built image — fails on a fixed HIGH or C
 just sbom              a CycloneDX bill of materials for the image, into sbom/
 just security          build-images, then all three — what CI's security job runs
 just build-multiarch   the image for linux/amd64 and linux/arm64, no output — what CI's build job runs
-just smoke-image       start the built image and import the service — CI's build job runs it next
+just smoke-image       start the built image and import its create_app — CI's build job runs it next
 ```
 
 A finding is exempted only through `.trivyignore.yaml`, where every entry

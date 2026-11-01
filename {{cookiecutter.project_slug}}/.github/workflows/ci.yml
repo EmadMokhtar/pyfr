@@ -249,7 +249,7 @@ jobs:
     # release.yml's job.
     #
     # Then the runner's own architecture, loaded into the daemon and
-    # started: `smoke-image` imports what the image's CMD imports. A build
+    # started: `smoke-image` imports what the image's CMD loads. A build
     # says nothing about whether the service inside can start -- a runtime
     # stage on a newer Python than the builder's builds cleanly and fails
     # on its first import -- and without this step the first job to start

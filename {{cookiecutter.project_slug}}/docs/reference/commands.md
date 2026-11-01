@@ -43,7 +43,7 @@ Run these from the project root.
 {%- else %}
 | `just build-images` | Build the service's container image for this machine's architecture without starting it, exactly as CI's `security` job and the release workflow do before scanning. |
 {%- endif %}
-| `just smoke-image` | Start the image `build-images` built, as its own user, and import what its command imports: uvicorn, then the application module. An image that builds but cannot start — a runtime Python newer than the one its virtual environment was built with, for example — fails here with the Python traceback. Needs Docker and nothing else: no settings are read and no connection is opened. CI's `build` job runs it. |
+| `just smoke-image` | Start the image `build-images` built, as its own user, and import what its command loads: uvicorn, then the `create_app` factory. An image that builds but cannot start — a runtime Python newer than the one its virtual environment was built with, for example — fails here with the Python traceback. Needs Docker and nothing else: no settings are read and no connection is opened. CI's `build` job runs it. |
 
 ## Observability
 

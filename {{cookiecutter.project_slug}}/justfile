@@ -512,8 +512,9 @@ build-images:
     docker build --load -f Dockerfile.migrations -t {{ cookiecutter.project_slug }}-migrations:ci .
 {%- endif %}
 
-# Start the application image and import what its CMD imports -- uvicorn,
-# then the application module -- as the image's own user. `build-images`
+# Start the application image and import what its CMD loads -- uvicorn,
+# then the `create_app` factory it names -- as the image's own user. A
+# factory that was renamed or moved fails here too. `build-images`
 # and `build-multiarch` prove the image builds; this proves the
 # interpreter inside it can load the service, which is not the same
 # thing. A runtime stage on a newer Python than the builder stage still
@@ -529,7 +530,7 @@ build-images:
 # is not called. `--entrypoint python` runs the interpreter in place of
 # the image's `sh -c` CMD. Takes an image reference, like `scan`.
 smoke-image app="{{ cookiecutter.project_slug }}:ci":
-    docker run --rm --entrypoint python {% raw %}{{app}}{% endraw %} -c "import uvicorn, {{ cookiecutter.package_name }}.main"
+    docker run --rm --entrypoint python {% raw %}{{app}}{% endraw %} -c "import uvicorn; from {{ cookiecutter.package_name }}.main import create_app"
 
 # A buildx builder that can build two platforms at once. The default
 # builder on Docker Desktop uses the `docker` driver, which cannot

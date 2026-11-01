@@ -66,7 +66,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just up` / `just down` | Start / stop the container stack; `up` seeds five orders once the API is healthy, `down` removes the volumes, the seed's state included |
 | `just seed` | Create the same five orders against `just dev` (`localhost:${APP_HTTP_PORT}`), idempotently — state in `.seed-state.json`, ignored by git |
 | `just build-images` | Build both container images for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning |
-| `just smoke-image` | Start the image `build-images` built and import what its command imports — uvicorn and the application module — so an image that builds but cannot start fails with the Python traceback; what CI's `build` job runs after `build-multiarch` |
+| `just smoke-image` | Start the image `build-images` built and import what its command loads — uvicorn and the `create_app` factory — so an image that builds but cannot start fails with the Python traceback; what CI's `build` job runs after `build-multiarch` |
 | `just audit` | pip-audit over every pin in `uv.lock`, reading a `uv export` so nothing is resolved or installed — see [Supply chain](#supply-chain) |
 | `just scan` | Trivy over both built images; fails on a fixed HIGH or CRITICAL finding, exemptions only through `.trivyignore.yaml` — needs Docker |
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
@@ -394,7 +394,7 @@ just scan              Trivy over both built images — fails on a fixed HIGH or
 just sbom              a CycloneDX bill of materials per image, into sbom/
 just security          build-images, then all three — what CI's security job runs
 just build-multiarch   both images for linux/amd64 and linux/arm64, no output — what CI's build job runs
-just smoke-image       start the built image and import the service — CI's build job runs it next
+just smoke-image       start the built image and import its create_app — CI's build job runs it next
 ```
 
 A finding is exempted only through `.trivyignore.yaml`, where every entry
