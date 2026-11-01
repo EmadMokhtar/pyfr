@@ -8,6 +8,8 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.11 (2026-11-01)
+
 ## v0.14.10 (2026-10-30)
 
 ### Fix
