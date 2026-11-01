@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Runtime: no uv, no build tools, no shell utilities beyond the base image.
 # Must match the builder's Debian release; see the note above.
-FROM python:3.14-slim-trixie AS runtime
+FROM python:3.15-slim-trixie AS runtime
 
 # Apply Debian's security updates at build time. The official python:slim
 # tag is rebuilt on Python's schedule, not Debian's, so it lags the
