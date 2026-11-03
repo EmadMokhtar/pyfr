@@ -356,6 +356,14 @@ jobs:
     # default `docker` driver cannot target two platforms at once -- M6
     # plan, Verified Fact 2). `docker buildx` itself is preinstalled on
     # ubuntu-latest. Pushing is release.yml's job.
+    #
+    # Then the runner's own architecture, loaded into the daemon and
+    # started: `smoke-image` imports what the image's CMD loads. A build
+    # says nothing about whether the service inside can start -- a runtime
+    # stage on a newer Python than the builder's builds cleanly and fails
+    # on its first import (EmadMokhtar/pyfr#99) -- and without this step
+    # the first job to start the image is `docs-examples`, where the
+    # failure reads only "container ... exited (1)".
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -366,6 +374,10 @@ jobs:
       - uses: extractions/setup-just@v4
       - name: Build both images for both architectures
         run: just build-multiarch
+      - name: Build both images for this runner
+        run: just build-images
+      - name: Start the application image
+        run: just smoke-image
 
   security:
     # Spec 10.4's `security` row: pip-audit, Trivy, SBOM. Four recipes as

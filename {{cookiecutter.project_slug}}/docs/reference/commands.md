@@ -43,6 +43,7 @@ Run these from the project root.
 {%- else %}
 | `just build-images` | Build the service's container image for this machine's architecture without starting it, exactly as CI's `security` job and the release workflow do before scanning. |
 {%- endif %}
+| `just smoke-image` | Start the image `build-images` built, as its own user, and import what its command loads: uvicorn, then the `create_app` factory. An image that builds but cannot start — a runtime Python newer than the one its virtual environment was built with, for example — fails here with the Python traceback. Needs Docker and nothing else: no settings are read and no connection is opened. CI's `build` job runs it. |
 
 ## Observability
 
@@ -264,7 +265,7 @@ Run this from the project root.
 
 | Command | What it does |
 | --- | --- |
-| `just docs-examples` | Start the full compose stack, run every `curl` example marked in `docs/` against it, then tear the stack down — pass or fail. Needs Docker. |
+| `just docs-examples` | Start the full compose stack, run every `curl` example marked in `docs/` against it, then tear the stack down — pass or fail. On a failure it prints every service's log before the teardown, so a container that exited shows its traceback. Needs Docker. |
 
 This is an executable check on the documentation's own prose, not on the
 code: breaking one of the documented examples, or the endpoint it calls,

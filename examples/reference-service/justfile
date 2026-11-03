@@ -320,9 +320,21 @@ docs-examples:
     # cache is optional, fail-open), so naming `app` alone would start the
     # stack without a cache and the examples would exercise the fail-open
     # path rather than the cached one `just up` runs.
+    #
+    # On a failure the trap prints every service's log before `down -v`
+    # deletes the containers. When a container exits during `up --wait`,
+    # compose reports only "container ... exited (1)"; the traceback that
+    # says why is in that container's log, and after `down -v` it is gone.
+    # `|| true` so a failing `logs` cannot skip the teardown under `set -e`.
     set -euo pipefail
     project=reference-service-docs-examples
-    trap 'docker compose -p "$project" down -v' EXIT
+    teardown() {
+        if [ "$1" -ne 0 ]; then
+            docker compose -p "$project" logs --no-color || true
+        fi
+        docker compose -p "$project" down -v
+    }
+    trap 'teardown $?' EXIT
     docker compose -p "$project" up -d --wait app redis
     python3 scripts/check_doc_examples.py docs
 
@@ -475,6 +487,26 @@ build-images:
     # `scan` and `sbom` read the daemon over the socket.
     docker build --load -t reference-service:ci .
     docker build --load -f Dockerfile.migrations -t reference-service-migrations:ci .
+
+# Start the application image and import what its CMD loads -- uvicorn,
+# then the `create_app` factory it names -- as the image's own user. A
+# factory that was renamed or moved fails here too. `build-images`
+# and `build-multiarch` prove the image builds; this proves the
+# interpreter inside it can load the service, which is not the same
+# thing. A runtime stage on a newer Python than the builder stage still
+# builds cleanly, but the virtual environment copied into it keeps its
+# packages under the builder's lib/python3.X/, which the runtime
+# interpreter never reads, so nothing imports. Here that is a
+# ModuleNotFoundError with its traceback, in the job that built the
+# image; under `docker compose up --wait` it is only "container ...
+# exited (1)", and `docs-examples` is the first job to see it.
+#
+# Needs no database, cache or other service: importing the module reads
+# no settings and opens no connection -- `create_app` does that, and it
+# is not called. `--entrypoint python` runs the interpreter in place of
+# the image's `sh -c` CMD. Takes an image reference, like `scan`.
+smoke-image app="reference-service:ci":
+    docker run --rm --entrypoint python {{app}} -c "import uvicorn; from reference_service.main import create_app"
 
 # A buildx builder that can build two platforms at once. The default
 # builder on Docker Desktop uses the `docker` driver, which cannot

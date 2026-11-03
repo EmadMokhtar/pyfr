@@ -35,6 +35,7 @@ Run these from the project root.
 | `just down` | Stop the stack and remove its volumes, the seed's state included. |
 | `just seed` | Create the same five orders against a service on `localhost:${APP_HTTP_PORT}` (8000 by default) — for `just dev`, which the compose one-shot does not reach. Idempotent: the ids it issued are kept in `.seed-state.json` (ignored by git), and only an order that has gone missing is re-created. The compose one-shot and `just seed` keep separate state — a named volume versus `.seed-state.json` — so running `just seed` against the `just up` stack creates a second set of five orders; it is for `just dev`. |
 | `just build-images` | Build both container images (the service and the migrations runner) for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning. |
+| `just smoke-image` | Start the image `build-images` built, as its own user, and import what its command loads: uvicorn, then the `create_app` factory. An image that builds but cannot start — a runtime Python newer than the one its virtual environment was built with, for example — fails here with the Python traceback. Needs Docker and nothing else: no settings are read and no connection is opened. CI's `build` job runs it. |
 
 ## Observability
 
@@ -214,7 +215,7 @@ Run this from the project root.
 
 | Command | What it does |
 | --- | --- |
-| `just docs-examples` | Start the full compose stack, run every `curl` example marked in `docs/` against it, then tear the stack down — pass or fail. Needs Docker. |
+| `just docs-examples` | Start the full compose stack, run every `curl` example marked in `docs/` against it, then tear the stack down — pass or fail. On a failure it prints every service's log before the teardown, so a container that exited shows its traceback. Needs Docker. |
 
 This is an executable check on the documentation's own prose, not on the
 code: breaking one of the documented examples, or the endpoint it calls,

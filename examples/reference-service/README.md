@@ -66,6 +66,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just up` / `just down` | Start / stop the container stack; `up` seeds five orders once the API is healthy, `down` removes the volumes, the seed's state included |
 | `just seed` | Create the same five orders against `just dev` (`localhost:${APP_HTTP_PORT}`), idempotently — state in `.seed-state.json`, ignored by git |
 | `just build-images` | Build both container images for this machine's architecture without starting them, exactly as CI's `security` job and the release workflow do before scanning |
+| `just smoke-image` | Start the image `build-images` built and import what its command loads — uvicorn and the `create_app` factory — so an image that builds but cannot start fails with the Python traceback; what CI's `build` job runs after `build-multiarch` |
 | `just audit` | pip-audit over every pin in `uv.lock`, reading a `uv export` so nothing is resolved or installed — see [Supply chain](#supply-chain) |
 | `just scan` | Trivy over both built images; fails on a fixed HIGH or CRITICAL finding, exemptions only through `.trivyignore.yaml` — needs Docker |
 | `just sbom` | A CycloneDX software bill of materials per image, into `sbom/` — needs Docker |
@@ -87,7 +88,7 @@ before anyone has typed a `POST`; `docker compose logs seed` prints the ids.
 | `just docs-build` | Build the site into `site/` with `mkdocs build --strict`, exactly as CI's `docs` job and `docs.yml` do — a broken internal link or a renamed heading anchor fails it |
 | `just links` | Check every external link in `docs/` and this README with `lychee`, against `lychee.toml` — needs the `lychee` binary (`brew install lychee`); CI's `links` job gets it from the action |
 | `just docs-freshness [BASE] [HEAD]` | Advisory warnings only, never a failure: a stale `last_reviewed` date, or a `covers:` path that changed while its page did not — what CI's `docs-warnings` job runs; not CI's `docs-freshness` job, which runs `scripts/check_docs_updated.py` |
-| `just docs-examples` | Start the compose stack, run every marked `curl` example in `docs/` against it, then tear it down — pass or fail |
+| `just docs-examples` | Start the compose stack, run every marked `curl` example in `docs/` against it, then tear it down — pass or fail; on a failure, every service's log is printed first |
 | `just redis-cli` | An interactive `redis-cli` session against the running compose cache |
 | `just minio-console` | Print, and try to open, the MinIO web console — see [Object storage](#object-storage) |
 
@@ -393,6 +394,7 @@ just scan              Trivy over both built images — fails on a fixed HIGH or
 just sbom              a CycloneDX bill of materials per image, into sbom/
 just security          build-images, then all three — what CI's security job runs
 just build-multiarch   both images for linux/amd64 and linux/arm64, no output — what CI's build job runs
+just smoke-image       start the built image and import its create_app — CI's build job runs it next
 ```
 
 A finding is exempted only through `.trivyignore.yaml`, where every entry
