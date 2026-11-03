@@ -625,6 +625,14 @@ def assert_workflows_are_coherent(root: Path, answers: dict[str, str]) -> None:
             updates = document["updates"]
             assert [u["package-ecosystem"] for u in updates] == DEPENDABOT_ECOSYSTEMS
             assert all(u["directory"] == "/" for u in updates), relative
+            # The Dockerfile's builder and runtime must name the same Python
+            # minor version, and Dependabot can move only the runtime's, so
+            # it must never be allowed to (pyfr PR #99).
+            docker = next(u for u in updates if u["package-ecosystem"] == "docker")
+            assert {
+                "dependency-name": "python",
+                "update-types": ["version-update:semver-minor"],
+            } in docker.get("ignore", []), relative
             continue
         for script in run_scripts(document):
             for recipe in JUST_CALL.findall(script):

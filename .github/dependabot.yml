@@ -53,6 +53,14 @@ updates:
     groups:
       images:
         patterns: ["*"]
+    ignore:
+      # Dependabot can move the runtime's `python:X.Y` tag but not the
+      # `pythonX.Y` inside the builder's uv tag, and the two must match
+      # (PR #99: 3.14 to 3.15, `No module named 'uvicorn'`). The template's
+      # dependabot.yml and Dockerfile say why; move both lines by hand, in
+      # the template.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor"]
     commit-message:
       prefix: "build(deps)"
     labels: ["dependencies", "no-docs-needed"]

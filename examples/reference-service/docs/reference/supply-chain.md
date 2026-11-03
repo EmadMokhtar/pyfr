@@ -137,8 +137,9 @@ uv lock --upgrade-package <name>
 then `just security` again, and commit `uv.lock`. Dependabot opens the same
 bump weekly on its own; a red scan is the reason not to wait a week. For a
 Debian package in the operating-system layer, a rebuild against the current
-base image is usually enough — the `python:3.13-slim-trixie` tag moves as
-Debian publishes fixes, so `docker pull python:3.13-slim-trixie` and then
+base image is usually enough — the runtime's `python:X.Y-slim-trixie` tag
+moves as Debian publishes fixes, so `docker pull` the tag on the `Dockerfile`'s
+`FROM ... AS runtime` line and then
 `just security` again. For the Go binary inside the migrations image, a finding in
 the Go toolchain is fixed by bumping the pinned `golang` tag of the `build`
 stage in `Dockerfile.migrations` (Dependabot's `docker` entry proposes it); a
@@ -254,6 +255,35 @@ reports new findings — and the `tufin/oasdiff:v1.31.0` image in
 `scripts/check_contract_compatibility.py`, a pin older than the Dependabot
 arrangement. See [ADR 0014](../adr/0014-dependabot-and-one-pin-per-tool.md).
 
+One pin is inside Dependabot's reach but changed by hand: the Python minor
+version of the image. The `Dockerfile` names it twice — in the builder's
+`ghcr.io/astral-sh/uv` tag and in the runtime's `python` tag — and the two
+must match, because the virtual environment the builder makes works only with
+the Python that made it. Dependabot can move the `python` tag but not the
+version inside the uv tag, so the `docker` entry ignores minor bumps of
+`python`, and `tests/unit/test_compose_images.py` fails while the two differ.
+Patch releases need nothing: the `python:X.Y` tag moves to each one.
+
+To move to a new minor version, check first that every compiled package in
+`uv.lock` ships a wheel for it. The builder has no C or C++ compiler, so a
+package without a wheel fails `just build-images`. This resolves the locked
+runtime dependencies for the new version (replace `X.Y`), accepting wheels
+only, and names the first package that has none:
+
+```bash
+uv export --frozen --no-dev --no-emit-project --no-hashes \
+  | uv pip compile - --quiet --only-binary :all: \
+      --python "$(cat .python-version)" --python-version X.Y \
+      --python-platform x86_64-manylinux_2_28 > /dev/null
+```
+
+Run it again with `--python-platform aarch64-manylinux_2_28`, because the
+image is built for both architectures. When both pass, change the two `FROM`
+lines together. This moves the image's Python only: `.python-version`,
+`requires-python` in `pyproject.toml` and the type checker's `python_version`
+set the interpreter for local development and CI's tests, and they do not
+move with it.
+
 ## The hardened image
 
 The runtime stage of `Dockerfile` is what ships, and it is deliberately
@@ -263,7 +293,7 @@ small in what it can do:
   everything under `/app`.
 - **No build tools.** The first stage resolves and installs dependencies with
   uv; the second copies the finished virtual environment into a clean
-  `python:3.13-slim-trixie` base and adds nothing else — no uv, no compiler,
+  `python:X.Y-slim-trixie` base and adds nothing else — no uv, no compiler,
   no shell utilities beyond the base image.
 - **`uv sync --locked`.** Installs exactly the versions in `uv.lock`, and fails
   the build if the lock is out of date with `pyproject.toml`, rather than

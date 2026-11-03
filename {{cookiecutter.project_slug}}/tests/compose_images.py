@@ -9,19 +9,15 @@ comment into a property (ADR 0014).
 """
 
 from __future__ import annotations
-{%- if cookiecutter.database == "postgres" %}
 
 import re
 from pathlib import Path
-{%- else %}
-
-from pathlib import Path
-{%- endif %}
 
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 COMPOSE_FILE = PROJECT_ROOT / "compose.yaml"
+DOCKERFILE = PROJECT_ROOT / "Dockerfile"
 {%- if cookiecutter.database == "postgres" %}
 DOCKERFILE_MIGRATIONS = PROJECT_ROOT / "Dockerfile.migrations"
 {%- endif %}
@@ -31,6 +27,16 @@ def compose_image(service: str) -> str:
     """The `image:` of one compose service, as written."""
     services = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))["services"]
     return str(services[service]["image"])
+
+
+def dockerfile_stage_image(stage: str, dockerfile: Path) -> str:
+    """The image of the stage declared as `FROM <image> AS <stage>`."""
+    pattern = rf"^FROM\s+(?:--\S+\s+)*(\S+)\s+AS\s+{re.escape(stage)}\s*$"
+    for line in dockerfile.read_text(encoding="utf-8").splitlines():
+        match = re.match(pattern, line, re.IGNORECASE)
+        if match:
+            return match.group(1)
+    raise ValueError(f"no stage named {stage} in {dockerfile}")
 {%- if cookiecutter.database == "postgres" %}
 
 
@@ -41,16 +47,6 @@ def dockerfile_base_image(dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
         if match:
             return match.group(1)
     raise ValueError(f"no FROM line in {dockerfile}")
-
-
-def dockerfile_stage_image(stage: str, dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
-    """The image of the stage declared as `FROM <image> AS <stage>`."""
-    pattern = rf"^FROM\s+(?:--\S+\s+)*(\S+)\s+AS\s+{re.escape(stage)}\s*$"
-    for line in dockerfile.read_text(encoding="utf-8").splitlines():
-        match = re.match(pattern, line, re.IGNORECASE)
-        if match:
-            return match.group(1)
-    raise ValueError(f"no stage named {stage} in {dockerfile}")
 
 
 def dockerfile_arg_default(name: str, dockerfile: Path = DOCKERFILE_MIGRATIONS) -> str:
