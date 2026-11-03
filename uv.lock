@@ -796,7 +796,7 @@ wheels = [
 
 [[package]]
 name = "pyfr-cli"
-version = "0.14.11"
+version = "0.14.12"
 source = { editable = "." }
 dependencies = [
     { name = "cookiecutter" },
