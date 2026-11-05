@@ -309,7 +309,7 @@ services:
   # telemetry rather than failing.
   lgtm:
     profiles: ["o11y"]
-    image: grafana/otel-lgtm:0.38.1
+    image: grafana/otel-lgtm:0.39.0
     ports:
       # The image does declare EXPOSE for these, but EXPOSE only documents
       # a port — it does not publish one. Every port that must be reachable
