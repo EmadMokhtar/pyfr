@@ -60,7 +60,10 @@ jobs:
     # images LAST PUBLISHED rather than freshly built: a CVE is published
     # against a version already shipped, and nothing else here would
     # re-check the image anyone is actually running. Fails on the night a
-    # new advisory lands, which is the point.
+    # new advisory lands, which is the point. When the fix is a Debian
+    # package, the code has nothing to change: `apt-get upgrade` in the
+    # Dockerfile installs it on the next build, so start the Release
+    # workflow by hand with `patch_release` to publish a rebuilt image.
     #
     # `packages: read` and the two TRIVY_* variables are what let Trivy
     # pull a package that has not been made public yet; once it is public

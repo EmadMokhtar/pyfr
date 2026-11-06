@@ -118,3 +118,69 @@ def test_a_dry_run_writes_nothing_and_runs_no_hook(repository: Path) -> None:
     subprocess.run([str(CZ), "bump", "--dry-run"], cwd=repository, check=True)
     assert git("status", "--porcelain", cwd=repository) == ""
     assert (repository / "regen-saw.json").read_text() == "{}\n"
+
+
+# What release.yml adds to `cz bump` when a person starts the workflow by
+# hand with the `patch_release` input. A published image only picks up
+# Debian's security fixes when it is rebuilt, and it is only rebuilt for a
+# new version, so this must work when the commits alone would cut nothing.
+FORCED_PATCH = "--increment PATCH --allow-no-commit"
+
+
+def tag_head(repository: Path) -> None:
+    # Moves the tag the fixture made, so its feat: commit is already released.
+    git("tag", "-f", f"v{version_in(repository)}", cwd=repository)
+
+
+def commit_a_dependency_bump(repository: Path) -> None:
+    (repository / "feature.txt").write_text("newer\n")
+    git("add", "feature.txt", cwd=repository)
+    git("commit", "-q", "-m", "build(deps): bump a dependency", cwd=repository)
+
+
+@pytest.mark.parametrize(
+    "commits_since_the_tag",
+    [lambda repository: None, commit_a_dependency_bump],
+    ids=["no-commits", "only-a-dependency-bump"],
+)
+def test_a_forced_patch_cuts_a_release_the_commits_alone_would_not(
+    repository: Path, commits_since_the_tag
+) -> None:
+    tag_head(repository)
+    commits_since_the_tag(repository)
+    before = version_in(repository)
+    major, minor, patch = before.split(".")
+    expected = f"{major}.{minor}.{int(patch) + 1}"
+
+    # Without the flags cz finds nothing to release: the exit codes
+    # release.yml treats as a no-op.
+    plain = subprocess.run(
+        [str(CZ), "bump", "--yes", "--changelog", "--check-consistency"],
+        cwd=repository,
+        capture_output=True,
+    )
+    assert plain.returncode in {3, 21}
+    assert version_in(repository) == before
+
+    subprocess.run(
+        [
+            str(CZ),
+            "bump",
+            "--yes",
+            "--changelog",
+            "--check-consistency",
+            *FORCED_PATCH.split(),
+        ],
+        cwd=repository,
+        check=True,
+    )
+
+    assert version_in(repository) == expected
+    assert f"v{expected}" in git("tag", cwd=repository).split()
+    assert git("status", "--porcelain", cwd=repository) == ""
+
+
+def test_the_release_workflow_passes_the_forced_patch_flags() -> None:
+    workflow = (ROOT / ".github/workflows/release.yml").read_text()
+    assert f"force=({FORCED_PATCH})" in workflow
+    assert "patch_release:" in workflow
