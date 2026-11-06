@@ -18,8 +18,18 @@ name: Release
 on:
   push:
     branches: [main]
-  # Allows cutting a release without a code change.
+  # Allows cutting a release without a code change. By default it releases
+  # only what the commits since the last tag imply, which also repairs a
+  # tag left without its GitHub Release or images. `patch_release` cuts a
+  # new patch version even when they imply nothing: the way to republish
+  # images whose Debian packages have a fix, since an image is only rebuilt
+  # for a new version and `build(deps)` commits do not cut one.
   workflow_dispatch:
+    inputs:
+      patch_release:
+        description: Cut a new patch version even if no commit implies one
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -137,6 +147,9 @@ jobs:
         # there is nothing to bump and nothing to rewrite. With a tag
         # already in place, run `cz bump` exactly as normal; it is fully
         # reliable once it has a base to work from.
+        env:
+          # Empty on a push, so a push always takes the plain `cz bump`.
+          PATCH_RELEASE: ${{ inputs.patch_release }}
         run: |
           if [ -z "$(git tag -l)" ]; then
             echo "No tags found: bootstrapping the first release."
@@ -189,14 +202,21 @@ jobs:
             # wrong version.
             cp '{{cookiecutter.project_slug}}/openapi.json' '{{cookiecutter.project_slug}}/openapi.baseline.json'
 
+            # --allow-no-commit: without it cz refuses when there are no
+            # commits at all since the last tag.
+            force=()
+            if [ "$PATCH_RELEASE" = "true" ]; then
+              force=(--increment PATCH --allow-no-commit)
+            fi
+
             set +e
-            uv run --locked --group dev cz bump --yes --changelog --check-consistency
+            uv run --locked --group dev cz bump --yes --changelog --check-consistency "${force[@]}"
             status=$?
             set -e
 
             # Exit 3 is NO_COMMITS_FOUND (no commits at all since the last
-            # tag -- reachable via workflow_dispatch, whose whole purpose
-            # is cutting a release with no new commit) and exit 21 is
+            # tag -- reachable via a workflow_dispatch without
+            # `patch_release`, or a rerun) and exit 21 is
             # NO_INCREMENT (commits exist but none of them imply a version
             # bump, e.g. a docs-only merge). Both mean "nothing to
             # release", not a failure, so both take the same graceful
