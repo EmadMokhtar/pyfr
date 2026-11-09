@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.14 (2026-11-09)
+
+### Fix
+
+- **security**: build migrate with golang.org/x/net 0.62.0 in the migrations image (#115)
+
 ## v0.14.13 (2026-11-06)
 
 ### Fix
