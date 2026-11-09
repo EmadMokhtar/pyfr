@@ -38,6 +38,12 @@ ARG MIGRATE_VERSION=v4.20.1
 # drop this, and the `go get` below, once MIGRATE_VERSION moves to one
 # that does.
 ARG GO_JOSE_VERSION=v4.1.6
+# migrate v4.20.1 also requires golang.org/x/net v0.56.0, which has
+# CVE-2026-78661 (a denial of service in x/net/html on crafted HTML input,
+# fixed in v0.62.0). Raised for the same reason as go-jose above; drop it,
+# and its `go get` argument below, once MIGRATE_VERSION moves to a release
+# that requires the fix.
+ARG X_NET_VERSION=v0.62.0
 
 ENV CGO_ENABLED=0 \
     GOTOOLCHAIN=local
@@ -54,7 +60,8 @@ RUN set -eu; \
     cp -R "$(go env GOMODCACHE)/${module}@${MIGRATE_VERSION}" /src; \
     chmod -R u+w /src; \
     cd /src; \
-    go get "github.com/go-jose/go-jose/v4@${GO_JOSE_VERSION}"; \
+    go get "github.com/go-jose/go-jose/v4@${GO_JOSE_VERSION}" \
+        "golang.org/x/net@${X_NET_VERSION}"; \
     GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" go build -trimpath -buildvcs=false \
         -ldflags="-s -w -X main.Version=${MIGRATE_VERSION#v}" \
         -tags 'postgres mysql redshift cassandra spanner cockroachdb yugabytedb clickhouse mongodb sqlserver firebird neo4j pgx pgx5 rqlite file go_bindata github github_ee bitbucket aws_s3 google_cloud_storage godoc_vfs gitlab' \
