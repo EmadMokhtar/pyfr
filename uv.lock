@@ -626,7 +626,7 @@ wheels = [
 
 [[package]]
 name = "mkdocs-material"
-version = "9.8.0"
+version = "9.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "babel" },
@@ -641,9 +641,9 @@ dependencies = [
     { name = "pymdown-extensions" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b9/02/3c0df248819286810d8479b3a72d9531db0cc36c042fe1ab3985f137c664/mkdocs_material-9.8.0.tar.gz", hash = "sha256:1ed4c5edaf405a3fb62e55288b8fdff592971729361548b1ffa757bf9849fb81", size = 4094495, upload-time = "2026-10-24T09:50:16.181Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/b2/dee93bf227b481e28ba4d800c322dffc41b16d524ae84ca8d85aa7ec3a81/mkdocs_material-9.8.1.tar.gz", hash = "sha256:cddae7d77bb98d1d347aa68ee252ab40926171a1b34ba8777c44e16de9629f00", size = 4160481, upload-time = "2026-11-07T13:05:04.482Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/16/360f44c7702f27ff4670a647a16c72432291e311371d72b4c34a57e990e0/mkdocs_material-9.8.0-py3-none-any.whl", hash = "sha256:19304a7263c5700428227122b3b2699aa73f432c9de8816876adaec7d7293ce3", size = 9302245, upload-time = "2026-10-24T09:50:12.636Z" },
+    { url = "https://files.pythonhosted.org/packages/70/05/a4011d6a6af86cd03059a5b165cd69a3695ef4bd7bd477c66befe399640a/mkdocs_material-9.8.1-py3-none-any.whl", hash = "sha256:2115af67ee680e1398bdd0ea02e517721e4bba88b342503a93f97ea8eb3de51c", size = 9302217, upload-time = "2026-11-07T13:05:00.747Z" },
 ]
 
 [[package]]
@@ -1081,11 +1081,11 @@ wheels = [
 
 [[package]]
 name = "types-pyyaml"
-version = "6.0.12.20261103"
+version = "6.0.12.20261111"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d9/82/2ed4d215a2840b467a9a864f03b0d21904250e28f5e1f006ad36fba0311a/types_pyyaml-6.0.12.20261103.tar.gz", hash = "sha256:7a1b5f837881dd35d5448b5f18275164f89f206185e31e8eae6e0b42607bc001", size = 18911, upload-time = "2026-11-03T08:45:23.714Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/49/96041fdb54de08a5b47bcfcbb4881873b25bae367d1e4dec79d19dfeb84b/types_pyyaml-6.0.12.20261111.tar.gz", hash = "sha256:c511f563eaf820b948c4ff6f43fe0b9d48b227be442a69058d9f68f139cae1fb", size = 18970, upload-time = "2026-11-11T08:32:30.036Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/10/4353eb86278f6a59aeb9fe2be4d979c20b110b4009fa455a3ea6467cf5cb/types_pyyaml-6.0.12.20261103-py3-none-any.whl", hash = "sha256:444654c61f635dab82c092a511aa96a0ce31164810784b9a37314e3e56532ac8", size = 21299, upload-time = "2026-11-03T08:45:22.749Z" },
+    { url = "https://files.pythonhosted.org/packages/54/ec/b23dd6911cd0e870e9396b48929ef7c92b58a551c3651d184bb573f371eb/types_pyyaml-6.0.12.20261111-py3-none-any.whl", hash = "sha256:b7e46cbc847dc235305e95e3e3570792d72e6ccf64bf9b831306f48da490322d", size = 21317, upload-time = "2026-11-11T08:32:29.148Z" },
 ]
 
 [[package]]
