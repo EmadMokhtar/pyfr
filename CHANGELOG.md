@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.16 (2026-11-17)
+
+### Fix
+
+- **template**: accept BaseException in the stamina retry hook (#124)
+
 ## v0.14.15 (2026-11-16)
 
 ### Fix
