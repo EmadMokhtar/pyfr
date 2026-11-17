@@ -7,6 +7,8 @@ covers:
   - .github/workflows/ci.yml
   - .github/workflows/docs.yml
   - .github/workflows/full-suite.yml
+  - .github/workflows/claude.yml
+  - .github/workflows/claude-code-review.yml
   - "{{cookiecutter.project_slug}}/scripts/check_docs_updated.py"
   - "{{cookiecutter.project_slug}}/scripts/check_docs_freshness.py"
 ---
@@ -651,7 +653,7 @@ under — what `just update` reads to bring it up to date.
 
 ## One-time repository settings
 
-Seven settings live in the GitHub interface and one on pypi.org, not in
+Eight settings live in the GitHub interface and one on pypi.org, not in
 this repository, so they are easy to miss when standing up a fork. The repository's default
 workflow-token permission is *not* one of them: every workflow that writes
 declares the permission it needs in its own `permissions:` key, which
@@ -698,6 +700,16 @@ images with the workflow token alone.
   tells you about a new advisory between two weekly runs, and security
   updates are what opens a pull request for it the same day rather than at
   the next weekly run.
+- **The Claude GitHub App and an `ANTHROPIC_API_KEY` secret, for the two
+  Claude workflows.** `.github/workflows/claude.yml` answers an `@claude`
+  mention in an issue or pull request, and
+  `.github/workflows/claude-code-review.yml` reviews every pull request
+  and posts its findings as inline comments. Both need the app installed
+  on this repository and the key stored as an *Actions* secret. Neither
+  runs in a generated project: the template does not ship them. The review
+  skips Dependabot's pull requests and forks' pull requests, because
+  GitHub gives neither of them Actions secrets; without the skip, each of
+  them would carry a failed check.
 - **A pending publisher on pypi.org for `pyfr-cli`, before the first
   release.** Project `pyfr-cli`, owner `EmadMokhtar`, repository `pyfr`,
   workflow `release.yml`, no environment. `release.yml`'s `publish-pypi`
