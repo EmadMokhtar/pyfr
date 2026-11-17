@@ -287,6 +287,9 @@ shape — an inserted hook, a new dependency — fails with the file name,
 and you make it in the template by hand. If `main` is ever red on
 `golden` after a Dependabot merge — `adopt.yml` lost a race with another
 merge, or its rebase conflicted — run `just adopt`, commit and push.
+Do this before the next release. The release runs `just regen`, which
+resets the example to the template, so an unadopted bump is erased
+without any check failing.
 
 Action versions go the other way. Dependabot's `github-actions` ecosystem
 reads `/.github/workflows` only, so its bumps land in this repository's

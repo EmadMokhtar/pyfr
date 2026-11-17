@@ -24,8 +24,18 @@ permissions:
 # two runs, and the loser would push onto a `main` that has moved. Not
 # cancelling: a cancelled run leaves its pins unadopted, and `main` red on
 # `golden` until someone runs `just adopt` by hand.
+#
+# Only Dependabot's runs join `adopt-main`. GitHub keeps one pending run per
+# group, and a new run that joins cancels the pending one. Every other push
+# to `main` -- this workflow's own adopt commit, a human merge, a release --
+# starts a run that skips its job. If such a run joined the group, it would
+# cancel a pending Dependabot run and then do nothing. That is how #117's
+# pins were lost. So each skipping run gets a group of its own. When a newer
+# Dependabot run cancels an older pending one, nothing is lost: the newer
+# run checks out a later `main`, which holds both merges, and adopts both.
+# tests/test_regen.py checks this group against the job's `if`.
 concurrency:
-  group: adopt-main
+  group: ${{ github.event.head_commit.author.name == 'dependabot[bot]' && 'adopt-main' || format('adopt-skipped-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
