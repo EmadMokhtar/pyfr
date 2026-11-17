@@ -8,6 +8,12 @@ this file on every release.
 Versions before v0.5.0 were never tagged: v0.5.0 is the first release, and
 the entries below it are the history that produced it.
 
+## v0.14.17 (2026-11-17)
+
+### Fix
+
+- **ci**: restore #117's compose pins and stop adopt runs being cancelled (#128)
+
 ## v0.14.16 (2026-11-17)
 
 ### Fix
