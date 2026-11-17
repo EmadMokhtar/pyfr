@@ -3,31 +3,41 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+
+# One review per pull request at a time. Every push starts a paid review;
+# without this, the review of the previous push keeps running beside the
+# new one, and both can post the same inline comment. A cancelled review
+# only loses comments on code that has already been replaced.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
-
+    # Two kinds of pull request cannot read ANTHROPIC_API_KEY, so the job
+    # would fail on every one of them:
+    #   - Dependabot's: a run Dependabot starts gets the Dependabot
+    #     secrets only, and the key is an Actions secret.
+    #   - A fork's: GitHub gives `pull_request` runs from a fork no secrets.
+    # Skipping them keeps a red check off up to six Dependabot pull
+    # requests every Monday.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # The default is six hours. A review that has not finished in 30
+    # minutes is stuck, and it is billed for every minute it runs.
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
       issues: read
+      # The action exchanges this OIDC token for its GitHub App token.
       id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -40,6 +50,4 @@ jobs:
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-
+          # Options: https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
