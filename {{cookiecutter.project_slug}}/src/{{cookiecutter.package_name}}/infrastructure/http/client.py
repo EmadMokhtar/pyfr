@@ -41,8 +41,16 @@ from {{ cookiecutter.package_name }}.settings import HttpClientSettings
 RETRYABLE_STATUS = frozenset({429, 503})
 
 
-def is_retryable(exc: Exception) -> bool:
+def is_retryable(exc: BaseException) -> bool:
     """What may be retried, and — more to the point — what may not.
+
+    The parameter is `BaseException`, not `Exception`, because this is
+    passed to stamina as its `on` hook, and stamina 26.2 types that hook
+    as `Callable[[BaseException], ...]`. A function that only accepts
+    `Exception` cannot stand in for one that must accept any
+    `BaseException`, so mypy rejects it. The wider type also satisfies
+    stamina 26.1's narrower hook type. The checks below are all
+    `isinstance`, so anything outside httpx still returns False.
 
     The rule is "can this have been delivered?", not "did this fail?".
 
