@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -262,3 +263,19 @@ def test_the_template_workflows_pin_what_the_root_workflows_pin() -> None:
         if root.get(action) != ref
     }
     assert drift == {}
+
+
+def test_only_runs_that_adopt_share_the_adopt_concurrency_group() -> None:
+    # GitHub keeps one pending run per concurrency group. When a new run
+    # joins the group, GitHub cancels the pending one. adopt.yml once used
+    # one fixed group for every push to main. Its own adopt commit then
+    # started a run that cancelled the pending run for Dependabot's #117
+    # and skipped its job, so #117's pins were never adopted. A run whose
+    # job skips must not join the group: it gets a group of its own.
+    workflow = yaml.safe_load((ROOT_WORKFLOWS / "adopt.yml").read_text())
+    condition = workflow["jobs"]["adopt"]["if"]
+    group = workflow["concurrency"]["group"]
+    assert group == (
+        f"${{{{ {condition} && 'adopt-main' "
+        f"|| format('adopt-skipped-{{0}}', github.run_id) }}}}"
+    )
